@@ -13,7 +13,8 @@ export function buildCodexInitialize() {
 }
 
 export function buildCodexThreadStart(model) {
-  return { method: "thread/start", id: 1, params: { model } };
+  const modelId = model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model;
+  return { method: "thread/start", id: 1, params: { model: modelId } };
 }
 
 export function buildCodexArtTurn(threadId, prompt) {

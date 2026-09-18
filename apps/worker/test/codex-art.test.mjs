@@ -10,6 +10,7 @@ test("builds the experimental app-server handshake and image turn", () => {
   assert.deepEqual(buildCodexThreadStart("least-cost-model"), {
     method: "thread/start", id: 1, params: { model: "least-cost-model" },
   });
+  assert.equal(buildCodexThreadStart("openai-codex/gpt-5.6-luna").params.model, "gpt-5.6-luna");
   assert.deepEqual(buildCodexArtTurn("thread-1", "a tiny blue square"), {
     method: "turn/start", id: 2,
     params: { threadId: "thread-1", input: [{ type: "text", text: "a tiny blue square" }] },
