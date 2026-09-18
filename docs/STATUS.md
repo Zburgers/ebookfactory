@@ -58,8 +58,8 @@ model gateway inside containment, Codex subscription image bridge, provider
 quota availability, EPUBCheck/Kindle preview, a real Codex image artifact,
 Telegram loop, isolated restore, and the rest of the integrated product. P10
 revision `e15ceb1` adds runnable `make acceptance` and `make restore-check`
-entrypoints; acceptance deliberately exits PARTIAL while those gates remain
-unproven.
+entrypoints; target composition was corrected in `1a7c100`, and acceptance
+deliberately exits PARTIAL while those gates remain unproven.
 
 Operating instruction: for future probes and delegated work, explicitly select
 the least-cost available route, preferably GPT 5.6 Luna low when the runtime
