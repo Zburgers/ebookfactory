@@ -18,3 +18,4 @@ verify:
 	./scripts/tests/test_doctor.sh
 	./scripts/tests/test_migrations.sh
 	./scripts/tests/test_contract_generation.sh
+	./scripts/tests/test_recovery_postgres.sh

@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from sqlalchemy import Engine, create_engine, text
+from sqlalchemy.orm import Session, sessionmaker
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,15 @@ class Database:
         except Exception as exc:  # noqa: BLE001 - sanitize all driver failures
             return DatabaseCheck("unavailable", type(exc).__name__)
         return DatabaseCheck("ok")
+
+    def session(self) -> Session:
+        """Open a short-lived ORM session for one API transaction."""
+
+        if not self.url:
+            raise RuntimeError("DATABASE_URL is not configured")
+        if self._engine is None:
+            self._engine = create_engine(self.url, pool_pre_ping=True)
+        return sessionmaker(self._engine, expire_on_commit=False)()
 
     def close(self) -> None:
         """Dispose the connection pool if a readiness check created one."""

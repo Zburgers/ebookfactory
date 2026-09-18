@@ -20,6 +20,8 @@ from app.settings import Settings  # noqa: E402
 def schema_type(schema: dict[str, Any]) -> str:
     """Translate the subset of OpenAPI schema types emitted by this API."""
 
+    if not isinstance(schema, dict):
+        return "unknown"
     if "$ref" in schema:
         return schema["$ref"].rsplit("/", 1)[-1]
     if "anyOf" in schema:

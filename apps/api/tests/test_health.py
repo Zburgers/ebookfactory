@@ -44,3 +44,16 @@ def test_openapi_lists_health_contracts() -> None:
 
     assert "/health" in schema["paths"]
     assert "/ready" in schema["paths"]
+
+
+def test_private_worker_requires_configured_token() -> None:
+    client = TestClient(create_app(Settings(database_url=None, worker_token="local-secret")))
+
+    response = client.post(
+        "/private/worker/claim",
+        json={"worker_id": "worker-a"},
+        headers={"X-Ebook-Worker-Token": "wrong"},
+    )
+
+    assert response.status_code == 401
+    assert "local-secret" not in response.text

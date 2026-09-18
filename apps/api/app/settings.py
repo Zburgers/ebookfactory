@@ -22,6 +22,10 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("EBOOK_FACTORY_DATABASE_URL", "DATABASE_URL"),
     )
     artifact_root: Path = Path("var/artifacts")
+    worker_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("EBOOK_FACTORY_WORKER_TOKEN", "WORKER_TOKEN"),
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
