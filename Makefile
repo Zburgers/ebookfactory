@@ -20,5 +20,6 @@ verify:
 	./scripts/tests/test_contract_generation.sh
 	./scripts/tests/test_recovery_postgres.sh
 	npm run verify --prefix apps/worker
+	npm run verify --prefix apps/web
 	./scripts/tests/test_sandbox_args.sh
 	./scripts/check-isolation.sh

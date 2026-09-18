@@ -2,11 +2,13 @@
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import select
@@ -27,7 +29,7 @@ from app.jobs import (
     fail_job,
     heartbeat_job,
 )
-from app.models import Project, ProviderSetting
+from app.models import Message, Project, ProviderSetting
 from app.providers import save_provider_setting
 from app.tools import InvalidCapability, issue_capability, verify_capability
 from app.models import Job, ProductionRun, Task
@@ -150,6 +152,16 @@ class MessageResponse(BaseModel):
     message_id: UUID
     sequence: int
     duplicate: bool
+
+
+class MessageView(BaseModel):
+    message_id: UUID
+    sequence: int
+    channel: str
+    role: str
+    content: str
+    turn_state: str
+    created_at: datetime
 
 
 class ProviderSettingRequest(BaseModel):
@@ -304,6 +316,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             session.close()
 
+    @application.get("/projects", response_model=list[ProjectResponse])
+    def list_projects() -> list[ProjectResponse]:
+        session = database.session()
+        try:
+            projects = session.scalars(select(Project).order_by(Project.updated_at.desc())).all()
+            return [
+                ProjectResponse(
+                    project_id=project.id,
+                    conversation_id=project.conversation_id,
+                    title=project.title,
+                    profile=project.profile,
+                    language=project.language,
+                    state=project.state,
+                )
+                for project in projects
+                if project.conversation_id is not None
+            ]
+        finally:
+            session.close()
+
     @application.post("/projects/{project_id}/messages", response_model=MessageResponse, status_code=201)
     def post_message(project_id: UUID, payload: MessageCreateRequest) -> MessageResponse:
         session = database.session()
@@ -325,6 +357,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as exc:
             session.rollback()
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            session.close()
+
+    @application.get("/projects/{project_id}/messages", response_model=list[MessageView])
+    def list_messages(project_id: UUID, limit: int = 100) -> list[MessageView]:
+        session = database.session()
+        try:
+            messages = session.scalars(
+                select(Message)
+                .where(Message.project_id == project_id)
+                .order_by(Message.sequence)
+                .limit(max(1, min(limit, 500)))
+            ).all()
+            return [
+                MessageView(
+                    message_id=message.id,
+                    sequence=message.sequence,
+                    channel=message.channel,
+                    role=message.role,
+                    content=message.content,
+                    turn_state=message.turn_state,
+                    created_at=message.created_at,
+                )
+                for message in messages
+            ]
         finally:
             session.close()
 
@@ -666,6 +723,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             session.close()
 
+    web_root = Path(__file__).resolve().parents[2] / "web"
+    if (web_root / "index.html").exists():
+        application.mount("/", StaticFiles(directory=web_root, html=True), name="dashboard")
     return application
 
 

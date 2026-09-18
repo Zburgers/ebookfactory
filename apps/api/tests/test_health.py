@@ -46,6 +46,15 @@ def test_openapi_lists_health_contracts() -> None:
     assert "/ready" in schema["paths"]
 
 
+def test_dashboard_is_served_same_origin() -> None:
+    client = TestClient(create_app(Settings(database_url=None)))
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Ebook Factory" in response.text
+
+
 def test_private_worker_requires_configured_token() -> None:
     client = TestClient(create_app(Settings(database_url=None, worker_token="local-secret")))
 

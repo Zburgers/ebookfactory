@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ebook Factory</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">PRIVATE WORKSPACE</p>
+        <h1>Ebook Factory</h1>
+      </div>
+      <nav aria-label="Primary navigation">
+        <button class="nav-button active" data-view="projects">Projects</button>
+        <button class="nav-button" data-view="studio">Studio</button>
+        <button class="nav-button" data-view="settings">Settings</button>
+      </nav>
+    </header>
+
+    <main class="shell">
+      <section id="projects-view" class="view active" aria-labelledby="projects-heading">
+        <div class="section-heading">
+          <div><p class="eyebrow">WORKSPACE</p><h2 id="projects-heading">Your projects</h2></div>
+          <button id="new-project-button" class="primary">New project</button>
+        </div>
+        <div id="project-list" class="project-grid" aria-live="polite"></div>
+        <form id="project-form" class="panel form-panel hidden">
+          <h3>Start a project</h3>
+          <label>Title <input name="title" required maxlength="240" /></label>
+          <label>Profile
+            <select name="profile"><option value="nonfiction">Nonfiction</option><option value="fiction">Fiction</option></select>
+          </label>
+          <label>Language <input name="language" value="en" required maxlength="32" /></label>
+          <div class="form-actions"><button type="button" class="quiet" data-cancel="project-form">Cancel</button><button class="primary">Create project</button></div>
+          <p id="project-form-error" class="error" role="alert"></p>
+        </form>
+      </section>
+
+      <section id="studio-view" class="view" aria-labelledby="studio-heading">
+        <div class="section-heading"><div><p class="eyebrow">STUDIO</p><h2 id="studio-heading">Conversation and approval</h2></div><span id="studio-project-label" class="status-pill">Select a project</span></div>
+        <div class="studio-grid">
+          <div class="panel chat-panel"><div id="messages" class="messages" aria-live="polite"></div><form id="message-form" class="composer"><label class="sr-only" for="message-input">Message</label><textarea id="message-input" required rows="3" placeholder="Describe the book you want to make..."></textarea><button class="primary">Send message</button></form></div>
+          <aside class="panel approval-panel"><h3>Brief approval</h3><p class="muted">Create a revision from the current idea, then approve its exact hash to enqueue durable work.</p><form id="brief-form"><label>Promise or premise <textarea name="promise" required rows="4"></textarea></label><label>Audience <input name="audience" value="General readers" /></label><button class="primary">Create brief revision</button></form><div id="brief-result" class="brief-result" aria-live="polite"></div></aside>
+        </div>
+        <div class="panel timeline-panel"><div class="section-heading compact"><h3>Event timeline</h3><button id="refresh-events" class="quiet">Refresh</button></div><ol id="events" class="timeline" aria-live="polite"></ol></div>
+      </section>
+
+      <section id="settings-view" class="view" aria-labelledby="settings-heading">
+        <div class="section-heading"><div><p class="eyebrow">SETTINGS</p><h2 id="settings-heading">Provider metadata</h2></div></div>
+        <form id="provider-form" class="panel form-panel"><label>Provider <input name="provider" value="openai-codex" required /></label><label>Endpoint (no credentials in URL) <input name="endpoint" placeholder="https://..." /></label><label>Protocol <input name="protocol" value="pi-native" /></label><label>Orchestration model <input name="orchestration_model" /></label><label>Drafting model <input name="drafting_model" /></label><label>Review model <input name="review_model" /></label><label>Credential reference <input name="credential_ref" placeholder="Stored outside PostgreSQL" /></label><button class="primary">Save metadata</button><p id="provider-result" class="muted" aria-live="polite"></p></form>
+        <div id="provider-list" class="panel"></div>
+      </section>
+    </main>
+    <script type="module" src="/src/app.js"></script>
+  </body>
+</html>
