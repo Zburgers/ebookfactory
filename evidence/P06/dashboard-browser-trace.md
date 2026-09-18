@@ -15,7 +15,7 @@
   `sources.json`, `manifest.json` and `validation.json`. A browser fetch of the
   rendered `book.md` download returned HTTP 200. Persisted export revision
   `d7c5f819-c4dc-4491-94a6-a133491592ba` has immutable artifact records under
-  `var/artifacts/exports/d7c5f819-c4dc-4491-94a6-a133491592ba/`.
+  `apps/api/var/artifacts/exports/d7c5f819-c4dc-4491-94a6-a133491592ba/`.
 - Usage navigation displayed the real Codex quota rows; Settings displayed the
   explicit unconfigured Telegram state. The trace found labeled controls,
   live regions and non-empty button labels suitable for keyboard operation.
