@@ -40,7 +40,17 @@ SQL
 "$pg_bin/pg_dump" --format=custom --no-owner --no-privileges \
   -h "$source_socket" -p "$source_port" -d postgres -f "$archive"
 
-output="$("$project_root/scripts/restore-check.sh" "$archive" 2>&1)"
+output="$(EBOOK_FACTORY_RESTORE_PORT_BASE="$source_port" \
+  "$project_root/scripts/restore-check.sh" "$archive" 2>&1)"
 grep -q 'isolated restore check passed' <<<"$output"
 grep -q 'projects rows: 1' <<<"$output"
+grep -q 'port attempts: 2' <<<"$output"
+
+set +e
+invalid_output="$(EBOOK_FACTORY_RESTORE_PORT_BASE=64517 \
+  "$project_root/scripts/restore-check.sh" "$archive" 2>&1)"
+invalid_status=$?
+set -e
+[[ "$invalid_status" -ne 0 ]]
+grep -q 'invalid temporary port base' <<<"$invalid_output"
 printf 'restore-check real isolated restore test passed\n'
