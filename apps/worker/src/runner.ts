@@ -35,7 +35,9 @@ export function createProductionExecutor({
     if (!result?.text || !result.callId) {
       throw new Error("Pi production returned an incomplete result");
     }
-    if ((result.provider && result.provider !== provider) || (result.model && result.model !== model)) {
+    const configuredModelSuffix = model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model;
+    const modelMatches = !result.model || result.model === model || result.model === configuredModelSuffix;
+    if ((result.provider && result.provider !== provider) || !modelMatches) {
       throw new Error("Pi production provider or model conflicted with saved configuration");
     }
     await requestJson(baseUrl, token, "/private/worker/production-result", {

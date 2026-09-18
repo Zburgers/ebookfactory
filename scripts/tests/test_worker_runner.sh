@@ -93,6 +93,38 @@ await new Promise((resolve) => alreadyAbortedServer.close(resolve));
 assert.equal(abortedRequests, 0);
 console.log("worker runner pre-aborted signal: ok");
 
+let qualifiedResult;
+const qualifiedServer = http.createServer(async (request, response) => {
+  const chunks = [];
+  for await (const chunk of request) chunks.push(chunk);
+  const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : null;
+  if (request.url.includes("/context")) return json(response, context);
+  if (request.url === "/private/worker/providers") {
+    return json(response, [{ provider: "openai-codex", scope: "app", protocol: "pi-native", orchestration_model: "openai-codex/gpt-5.6-luna" }]);
+  }
+  if (request.url === "/private/worker/production-result") {
+    qualifiedResult = body;
+    return json(response, {}, 204);
+  }
+  return json(response, {}, 204);
+});
+await new Promise((resolve) => qualifiedServer.listen(0, "127.0.0.1", resolve));
+const qualifiedExecute = createProductionExecutor({
+  baseUrl: `http://127.0.0.1:${qualifiedServer.address().port}`,
+  token: "token",
+  workerId: lease.worker_id,
+  runProduction: async ({ model }) => ({
+    text: "qualified draft",
+    provider: "openai-codex",
+    model: "gpt-5.6-luna",
+    callId: "qualified-call",
+  }),
+});
+await qualifiedExecute(lease, {});
+await new Promise((resolve) => qualifiedServer.close(resolve));
+assert.equal(qualifiedResult.model, "openai-codex/gpt-5.6-luna");
+console.log("worker runner qualified provider model attribution: ok");
+
 const invalidServer = http.createServer((request, response) => {
   response.writeHead(request.url === "/providers" ? 200 : 200, { "content-type": "application/json" });
   response.end(request.url === "/private/worker/providers" ? JSON.stringify([{ provider: "other", scope: "app", protocol: "pi-native" }]) : "not-json");
