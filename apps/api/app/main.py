@@ -2,12 +2,13 @@
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+import json
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import SQLAlchemyError
@@ -563,6 +564,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ]
         finally:
             session.close()
+
+    @application.get("/projects/{project_id}/events/stream")
+    def events_stream(project_id: UUID, after: int = 0, limit: int = 100) -> StreamingResponse:
+        """Replay a bounded event cursor as SSE, then close for safe reconnect."""
+
+        session = database.session()
+        try:
+            replay = replay_events(session, project_id=project_id, after_id=after, limit=limit)
+            envelopes = [
+                {
+                    "id": event.id,
+                    "version": 1,
+                    "timestamp": event.created_at,
+                    "project_id": event.project_id,
+                    "run_id": event.run_id,
+                    "task_id": event.task_id,
+                    "kind": event.kind,
+                    "payload": event.data,
+                }
+                for event in replay
+            ]
+        finally:
+            session.close()
+
+        def stream():
+            for envelope in envelopes:
+                yield f"id: {envelope['id']}\nevent: {envelope['kind']}\ndata: {json.dumps(envelope, default=str)}\n\n"
+
+        return StreamingResponse(
+            stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @application.post("/private/worker/claim", response_model=WorkerLeaseResponse | None, tags=["private-worker"])
     def worker_claim(

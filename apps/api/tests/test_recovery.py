@@ -138,12 +138,16 @@ def test_api_project_brief_and_approval_boundary(database_session: Session) -> N
                 "X-Generation": str(lease["generation"]),
             },
         )
+        sse_response = client.get(f"/projects/{project_id}/events/stream?after=0")
 
     assert first.status_code == 200
     assert second.status_code == 200
     assert first.json() == second.json()
     assert context_response.status_code == 200
     assert context_response.json()["brief"]["promise_or_premise"] == "A concise durable book"
+    assert sse_response.status_code == 200
+    assert sse_response.headers["content-type"].startswith("text/event-stream")
+    assert "run.approved" in sse_response.text
 
 
 def test_conversation_messages_are_ordered_and_deduplicated(database_session: Session) -> None:
