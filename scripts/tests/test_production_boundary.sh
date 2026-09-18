@@ -28,5 +28,7 @@ assert.equal(quota[0].plan_label, "plus");
 assert(!Object.values(quota[0]).some((value) => String(value).includes("accountId")));
 const unavailable = parseCodexRateLimits({ rateLimits: { rateLimitsByLimitId: { credits: { balance: "0", hasCredits: false } }, planType: "plus" } });
 assert.equal(unavailable[0].capability_state, "unavailable");
+assert.equal(unavailable[0].bucket, "unavailable");
+assert(!unavailable[0].bucket.includes("unknown"));
 console.log("production boundary behavior test passed");
 NODE

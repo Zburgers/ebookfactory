@@ -21,7 +21,9 @@ function limitRows(result) {
     return [{
       provider: "openai-codex",
       account_alias: "subscription",
-      bucket: `${limitId}-${windowSeconds / 60 || "unknown"}m`,
+      bucket: supported && Number.isFinite(windowSeconds) && windowSeconds > 0
+        ? `${limitId}-${windowSeconds / 60}m`
+        : "unavailable",
       source: "codex app-server account/rateLimits/read",
       observed_at: null,
       stale_after: null,
