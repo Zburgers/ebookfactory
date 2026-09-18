@@ -27,18 +27,41 @@ resolve_addresses() {
     printf '%s\n' "$tailscale_address"
   fi
 
+  if [[ "${EBOOK_FACTORY_BIND_TO_LOOPBACK:-false}" == "true" ]]; then
+    printf '%s\n' "127.0.0.1"
+  fi
+
   if [[ "${EBOOK_FACTORY_BIND_TO_PRIVATE:-true}" == "true" ]]; then
     command -v ip >/dev/null 2>&1 || {
       echo "ip is required to discover private LAN addresses" >&2
       return 1
     }
-    ip -4 -o addr show scope global |
-      awk '$2 !~ /^(lo|tailscale0|docker[0-9]*|br-|podman|cni)/ { split($4, parts, "/"); print parts[1] }' |
-      while read -r address; do
-        if is_private_ipv4 "$address"; then
-          printf '%s\n' "$address"
-        fi
+    local interface_list="${EBOOK_FACTORY_PRIVATE_INTERFACES:-}"
+    if [[ -n "$interface_list" ]]; then
+      local interface
+      IFS=',' read -r -a interfaces <<< "$interface_list"
+      for interface in "${interfaces[@]}"; do
+        [[ "$interface" =~ ^[[:alnum:]_.-]+$ ]] || {
+          echo "invalid private interface name" >&2
+          return 1
+        }
+        ip -4 -o addr show dev "$interface" scope global |
+          awk '{ split($4, parts, "/"); print parts[1] }' |
+          while read -r address; do
+            if is_private_ipv4 "$address"; then
+              printf '%s\n' "$address"
+            fi
+          done
       done
+    else
+      ip -4 -o addr show scope global |
+        awk '$2 !~ /^(lo|tailscale0|docker[0-9]*|br-|podman|cni)/ { split($4, parts, "/"); print parts[1] }' |
+        while read -r address; do
+          if is_private_ipv4 "$address"; then
+            printf '%s\n' "$address"
+          fi
+        done
+    fi
   fi
 }
 

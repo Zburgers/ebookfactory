@@ -50,7 +50,7 @@ from app.models import (
     TelegramState,
     utc_now,
 )
-from app.providers import save_provider_setting
+from app.providers import connection_test, save_provider_setting
 from app.production import accept_production_output
 from app.reviews import record_finding
 from app.artifacts import safe_artifact_path, write_artifact
@@ -230,6 +230,17 @@ class ProviderSettingResponse(BaseModel):
     drafting_model: str | None
     review_model: str | None
     credential_configured: bool
+
+
+class ProviderConnectionTestResponse(BaseModel):
+    provider: str
+    protocol: str
+    model: str | None
+    outcome: str
+    http_status: int | None
+    response_id: str | None
+    usage: dict[str, Any] | None
+    error: str | None
 
 
 class UsageCallRequest(BaseModel):
@@ -1025,6 +1036,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return ProviderSettingResponse(**result.__dict__)
         except ValueError as exc:
             session.rollback()
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            session.close()
+
+    @application.post("/providers/{provider}/connection-test", response_model=ProviderConnectionTestResponse)
+    def test_provider_connection(
+        provider: str,
+        request: Request,
+        x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token"),
+    ) -> ProviderConnectionTestResponse:
+        import hmac
+
+        local_client = request.client is not None and request.client.host in {"127.0.0.1", "::1"}
+        worker_client = bool(resolved_settings.worker_token) and hmac.compare_digest(
+            x_ebook_worker_token, resolved_settings.worker_token or ""
+        )
+        if not local_client and not worker_client:
+            raise HTTPException(status_code=403, detail="provider connection tests require local control access")
+        session = database.session()
+        try:
+            result = connection_test(session, provider=provider)
+            return ProviderConnectionTestResponse(**result.__dict__)
+        except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         finally:
             session.close()

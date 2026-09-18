@@ -58,8 +58,8 @@
 
       <section id="settings-view" class="view" aria-labelledby="settings-heading">
         <div class="section-heading"><div><p class="eyebrow">SETTINGS</p><h2 id="settings-heading">Provider metadata</h2></div></div>
-        <form id="provider-form" class="panel form-panel"><label>Provider <input name="provider" value="openai-codex" required /></label><label>Endpoint (no credentials in URL) <input name="endpoint" placeholder="https://..." /></label><label>Protocol <input name="protocol" value="pi-native" /></label><label>Orchestration model <input name="orchestration_model" /></label><label>Drafting model <input name="drafting_model" /></label><label>Review model <input name="review_model" /></label><label>Credential reference <input name="credential_ref" placeholder="Stored outside PostgreSQL" /></label><button class="primary">Save metadata</button><p id="provider-result" class="muted" aria-live="polite"></p></form>
-        <div id="provider-list" class="panel"></div>
+        <form id="provider-form" class="panel form-panel"><label>Provider <input name="provider" value="openai-codex" required /></label><label>Endpoint (no credentials in URL) <input name="endpoint" placeholder="https://..." /></label><label>Protocol <input name="protocol" value="openai-compatible" /></label><label>Orchestration model <input name="orchestration_model" /></label><label>Drafting model <input name="drafting_model" /></label><label>Review model <input name="review_model" /></label><label>Credential reference <input name="credential_ref" placeholder="Stored outside PostgreSQL" /></label><button class="primary">Save metadata</button><p id="provider-result" class="muted" aria-live="polite"></p></form>
+        <div id="provider-list" class="panel" aria-live="polite"></div>
         <div class="panel"><div class="section-heading compact"><h3>Telegram</h3><button id="refresh-telegram" class="quiet">Refresh</button></div><p id="telegram-status" class="muted" aria-live="polite">Checking local configuration…</p></div>
       </section>
     </main>

@@ -170,6 +170,17 @@ export interface ProjectResponse {
   state: string;
 }
 
+export interface ProviderConnectionTestResponse {
+  provider: string;
+  protocol: string;
+  model: string | null;
+  outcome: string;
+  http_status: number | null;
+  response_id: string | null;
+  usage: Record<string, unknown> | null;
+  error: string | null;
+}
+
 export interface ProviderSettingRequest {
   scope?: string;
   endpoint?: string | null;

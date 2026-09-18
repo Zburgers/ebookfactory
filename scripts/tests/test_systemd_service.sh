@@ -17,14 +17,17 @@ grep -Fq 'ExecStart=%h/.config/shipyard/worktrees/ebookfactory/codex-ebook-facto
 grep -Fq 'EBOOK_FACTORY_PORT=6969' "$unit"
 grep -Fq 'EBOOK_FACTORY_BIND_TO_TAILSCALE=true' "$unit"
 grep -Fq 'EBOOK_FACTORY_BIND_TO_PRIVATE=true' "$unit"
+grep -Fq 'EBOOK_FACTORY_PRIVATE_INTERFACES=eno1' "$unit"
+grep -Fq 'EBOOK_FACTORY_BIND_TO_LOOPBACK=true' "$unit"
 grep -Fq 'PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin' "$unit"
 
 bash -n "$installer" "$serve"
-addresses="$(EBOOK_FACTORY_DRY_RUN=true "$serve")"
+addresses="$(EBOOK_FACTORY_DRY_RUN=true EBOOK_FACTORY_BIND_TO_LOOPBACK=true EBOOK_FACTORY_PRIVATE_INTERFACES=eno1 "$serve")"
 grep -Fxq '100.87.104.100' <<<"$addresses"
 grep -Fxq '192.168.29.14' <<<"$addresses"
-if grep -Eq '^(0\.0\.0\.0|127\.0\.0\.1)$' <<<"$addresses"; then
-  echo "service must not bind wildcard or loopback in production mode" >&2
+grep -Fxq '127.0.0.1' <<<"$addresses"
+if grep -Fxq '0.0.0.0' <<<"$addresses"; then
+  echo "service must not bind wildcard in production mode" >&2
   exit 1
 fi
 if command -v systemd-analyze >/dev/null 2>&1; then

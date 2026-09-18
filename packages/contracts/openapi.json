@@ -854,6 +854,90 @@
         "title": "ProjectResponse",
         "type": "object"
       },
+      "ProviderConnectionTestResponse": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "protocol": {
+            "title": "Protocol",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "response_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Id"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage"
+          }
+        },
+        "required": [
+          "provider",
+          "protocol",
+          "model",
+          "outcome",
+          "http_status",
+          "response_id",
+          "usage",
+          "error"
+        ],
+        "title": "ProviderConnectionTestResponse",
+        "type": "object"
+      },
       "ProviderSettingRequest": {
         "properties": {
           "credential_ref": {
@@ -3650,6 +3734,55 @@
           }
         },
         "summary": "Put Provider"
+      }
+    },
+    "/providers/{provider}/connection-test": {
+      "post": {
+        "operationId": "test_provider_connection_providers__provider__connection_test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Ebook-Worker-Token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Ebook-Worker-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderConnectionTestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Provider Connection"
       }
     },
     "/quota": {
