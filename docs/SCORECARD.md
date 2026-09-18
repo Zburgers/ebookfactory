@@ -1,6 +1,6 @@
 # Delivery scorecard
 
-Current score: **76/100 — durable runtime/containment, real production with
+Current score: **78/100 — durable runtime/containment, real production with
 reviewed revision lineage, live usage attribution, dashboard document flow and
 structural publishing packages are evidenced; external hard gates remain.**
 
@@ -15,10 +15,10 @@ structural publishing packages are evidenced; external hard gates remain.**
 | Publishing | 10/12 | Real structurally checked EPUB/PDF/DOCX/Markdown, cover, metadata and manifests are persisted; EPUBCheck and Kindle preview remain pending (`evidence/P08/publishing.md`) |
 | Art | 0/5 | pending |
 | Telegram | 0/5 | Durable adapter and redacted status boundary are implemented and tested; live token/chat/sender loop remains pending (`evidence/P09/telegram.md`) |
-| Operations | 4/6 | Peer-authenticated backup/archive check, runbook and an owned API start/stop/status lifecycle are evidenced; isolated restore remains pending (`evidence/P10/`) |
+| Operations | 6/6 | Peer-authenticated backup, real isolated PostgreSQL restore with collision-safe temporary cluster, runbook and owned API lifecycle are evidenced (`evidence/P10/isolated-restore.md`, `evidence/P10/`) |
 
-Hard gates: H3 PASS from `evidence/P04/reconciliation-correction.md`; H1,
-H2, H4–H9 remain NOT RUN. H4 now has real output and owner-review evidence but
+Hard gates: H3 PASS from `evidence/P04/reconciliation-correction.md`; H9 PASS
+from `evidence/P10/isolated-restore.md`; H1, H2, H4–H8 remain NOT RUN. H4 now has real output and owner-review evidence but
 still needs a restart-through-production proof; the worker lease boundary is
 now directly tested in `evidence/P05/worker-supervisor.md`, but that is not a
 full H2 production restart proof. H8 remains unproven because no
@@ -31,4 +31,4 @@ for the latest packets; earlier lead critiques remain recorded at `evidence/P00/
 `evidence/P05/production-seam-critique.md` and `evidence/P10/backup-critique.md`.
 Final evidence/revision: integrated slice `e15ceb1` (with Telegram at `ba181f7`);
 application delivery remains partial because the listed external hard gates are
-not fabricated as passed. Latest worker revision: `0e691d0`; latest provider/service revision: `ca7d6bc`.
+not fabricated as passed. Latest worker revision: `0e691d0`; latest provider/service revision: `ca7d6bc`; latest restore revision: `5f9c918`.

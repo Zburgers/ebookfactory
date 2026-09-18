@@ -54,7 +54,7 @@ make acceptance
 ```
 
 It runs `make verify` and returns exit code 2 with a redacted PARTIAL report
-until the Telegram, Codex image, and isolated-restore evidence exists. This is
+until the Telegram and Codex image evidence exists. This is
 intentional; a green unit suite is not product acceptance.
 
 Rootless containment evidence is reproduced with:

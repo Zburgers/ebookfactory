@@ -11,9 +11,9 @@ deliberate main-process kill was recovered by systemd. Revision `ca7d6bc` also
 adds a worker-token/local-only provider connection test with pinned-address
 dialing, exact-origin private allowlisting, and no secret-bearing responses;
 see `evidence/P03/provider-connection.md` and `evidence/P10/systemd-service.md`.
-The score remains 76/100 and external
-Telegram, Codex image, Copilot billing, Kindle/EPUBCheck, and isolated-restore
-gates remain pending.
+The score is now 78/100 after H9 isolated restore evidence was added at
+`evidence/P10/isolated-restore.md`. Telegram, Codex image, Copilot billing and
+Kindle/EPUBCheck gates remain pending.
 
 2026-09-19: P05 worker follow-up `0e691d0` hardens the trusted supervisor with
 lease heartbeats, fenced completion/failure callbacks, bounded mutation/claim
@@ -86,6 +86,10 @@ protocol connection checks, strict credential-reference validation, pinned DNS
 resolution, redirect/proxy avoidance, response usage filtering, and dashboard
 controls. The full verification suite and independent Luna-low security review
 pass; H1 still requires a real dashboard-configured Pi answer.
+Operations follow-up `5f9c918` adds a collision-safe isolated PostgreSQL
+restore check and real archive restore evidence. H9 is marked PASS; the
+requested Luna-high critic capability was unavailable, while a separate
+Luna-low critic found no remaining critical/high/medium findings.
 Operations follow-up `a20f00f` adds an owned API/dashboard lifecycle wrapper
 with readiness wait, PID ownership checks and Make start/stop/restart/status
 commands. Worker/container lifecycle remains a separate unclaimed boundary.
