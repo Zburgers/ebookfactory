@@ -1,3 +1,6 @@
-# Contract scaffold
+# Contract package
 
-Implement versioned schemas for briefs, tool inputs/results, events, usage/quota snapshots and package manifests from docs/CONTRACTS.md and INTEGRATIONS.md. Choose one schema authority (API/OpenAPI plus generated TS is preferred); do not maintain divergent Python/TypeScript definitions. Contract changes precede parallel implementation.
+JSON Schema files in this directory are the wire-contract authority for the
+initial API. Python validation and TypeScript client types must be generated
+from these schemas or the API OpenAPI document; hand-maintained divergent
+schemas are not allowed.

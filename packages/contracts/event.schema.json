@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebook-factory.local/contracts/event.schema.json",
+  "title": "EventEnvelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "version", "timestamp", "project_id", "kind", "payload"],
+  "properties": {
+    "id": {"type": "integer", "minimum": 1},
+    "version": {"type": "integer", "minimum": 1},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "project_id": {"type": "string", "format": "uuid"},
+    "run_id": {"type": ["string", "null"], "format": "uuid"},
+    "task_id": {"type": ["string", "null"], "format": "uuid"},
+    "kind": {"type": "string", "minLength": 1},
+    "payload": {"type": "object"}
+  }
+}

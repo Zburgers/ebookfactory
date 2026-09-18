@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebook-factory.local/contracts/brief.schema.json",
+  "title": "ApprovedBrief",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["audience", "promise_or_premise", "profile", "language", "target_length", "output_formats", "art_direction"],
+  "properties": {
+    "audience": {"type": "string", "minLength": 1},
+    "promise_or_premise": {"type": "string", "minLength": 1},
+    "scope": {"type": "string"},
+    "profile": {"enum": ["fiction", "nonfiction", "custom"]},
+    "language": {"type": "string", "minLength": 2},
+    "target_length": {"type": "object", "additionalProperties": false, "required": ["minimum_words", "maximum_words"], "properties": {"minimum_words": {"type": "integer", "minimum": 1}, "maximum_words": {"type": "integer", "minimum": 1}}},
+    "style": {"type": "string"},
+    "sources_policy": {"type": "string"},
+    "forbidden_claims_or_content": {"type": "array", "items": {"type": "string"}},
+    "output_formats": {"type": "array", "minItems": 1, "items": {"enum": ["epub", "pdf", "docx", "markdown"]}},
+    "art_direction": {"type": "string", "minLength": 1},
+    "resource_budget": {"type": "object"}
+  }
+}

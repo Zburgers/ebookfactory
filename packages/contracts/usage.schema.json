@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebook-factory.local/contracts/usage.schema.json",
+  "title": "UsageCall",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["call_id", "provider", "purpose", "model", "outcome", "normalization_version"],
+  "properties": {
+    "call_id": {"type": "string", "format": "uuid"},
+    "provider_request_id": {"type": ["string", "null"]},
+    "provider": {"type": "string", "minLength": 1},
+    "purpose": {"type": "string", "minLength": 1},
+    "model": {"type": "string", "minLength": 1},
+    "outcome": {"enum": ["succeeded", "failed", "cancelled", "unknown"]},
+    "input_tokens": {"type": ["integer", "null"], "minimum": 0},
+    "output_tokens": {"type": ["integer", "null"], "minimum": 0},
+    "estimated_cost": {"type": ["number", "null"], "minimum": 0},
+    "reported_billed_cost": {"type": ["number", "null"], "minimum": 0},
+    "normalization_version": {"type": "string", "minLength": 1}
+  }
+}
