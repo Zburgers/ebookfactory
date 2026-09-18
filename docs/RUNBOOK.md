@@ -39,9 +39,13 @@ scripts/backup.sh
 scripts/restore-check.sh var/backups/ebookfactory-<timestamp>.dump
 ```
 
-The restore check validates archive structure without creating or modifying a
-database. A full isolated restore demonstration remains pending because the
-owner prohibited creating another database during this build.
+The restore check creates a temporary user-owned PostgreSQL cluster under
+`/tmp`, starts it on a temporary Unix socket and port, restores into its
+default `postgres` database, verifies the `projects` row count and migration
+marker table, then removes the cluster with a cleanup trap. It does not create
+or modify a persistent database and does not use sudo. It fails closed when
+the required PostgreSQL binaries are unavailable or restoration/sanity checks
+fail.
 
 Run the rubric-aware acceptance command:
 

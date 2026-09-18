@@ -49,6 +49,7 @@ verify:
 	./scripts/tests/test_sandbox_args.sh
 	./scripts/tests/test_production_boundary.sh
 	./scripts/tests/test_operations_entrypoints.sh
+	./scripts/tests/test_restore_check.sh
 	./scripts/tests/test_service_entrypoint.sh
 	./scripts/tests/test_systemd_service.sh
 	./scripts/tests/test_worker_supervisor.sh
