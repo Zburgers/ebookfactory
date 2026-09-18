@@ -53,6 +53,7 @@ from app.providers import save_provider_setting
 from app.production import accept_production_output
 from app.reviews import record_finding
 from app.artifacts import safe_artifact_path, write_artifact
+from app.budget import enforce_budget
 from app.tools import InvalidCapability, issue_capability, verify_capability
 from app.usage import finalize_usage_call, record_usage_call, usage_totals
 from app.settings import Settings
@@ -1253,6 +1254,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token"),
     ) -> ProductionOutputResponse:
         _require_worker_token(resolved_settings, x_ebook_worker_token)
+        budget_session = database.session()
+        try:
+            budget_allowed, budget_reason = enforce_budget(
+                budget_session,
+                job_id=payload.job_id,
+                worker_id=payload.worker_id,
+                generation=payload.generation,
+                input_tokens=payload.usage.input_tokens if payload.usage else None,
+                output_tokens=payload.usage.output_tokens if payload.usage else None,
+                reasoning_tokens=payload.usage.reasoning_tokens if payload.usage else None,
+            )
+        except (StaleLease, CancellationRejected) as exc:
+            budget_session.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            budget_session.close()
+        if not budget_allowed:
+            raise HTTPException(status_code=409, detail=f"production budget blocked: {budget_reason}")
         session = database.session()
         try:
             output = accept_production_output(

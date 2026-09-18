@@ -1,7 +1,7 @@
 """Transactional approval and durable job enqueue primitives."""
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -241,7 +241,10 @@ def _locked_lease_context(
         or job.lease_owner != worker_id
         or job.fencing_generation != generation
         or job.lease_until is None
-        or job.lease_until < utc_now()
+        or (
+            job.lease_until.replace(tzinfo=timezone.utc) if job.lease_until.tzinfo is None else job.lease_until
+        )
+        < utc_now()
     ):
         raise StaleLease("job lease is no longer current")
     attempt = session.scalar(
