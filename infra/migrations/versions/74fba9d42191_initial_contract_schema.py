@@ -1,7 +1,7 @@
 """initial contract schema.
 
 Revision ID: 74fba9d42191
-Revises: 
+Revises:
 Create Date: 2026-09-18 22:44:40.467021
 """
 from typing import Sequence, Union
