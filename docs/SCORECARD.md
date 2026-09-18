@@ -19,14 +19,16 @@ structural publishing packages are evidenced; external hard gates remain.**
 
 Hard gates: H3 PASS from `evidence/P04/reconciliation-correction.md`; H1,
 H2, H4–H9 remain NOT RUN. H4 now has real output and owner-review evidence but
-still needs a restart-through-production proof; H8 remains unproven because no
-image-generation turn was invoked. Independent critics remain unavailable in this
-runtime; lead critiques are recorded at `evidence/P00/critique.md`,
+still needs a restart-through-production proof; the worker lease boundary is
+now directly tested in `evidence/P05/worker-supervisor.md`, but that is not a
+full H2 production restart proof. H8 remains unproven because no
+image-generation turn was invoked. Independent Luna critics are now available
+for the latest packets; earlier lead critiques remain recorded at `evidence/P00/critique.md`,
 `evidence/P01/critique.md`, `evidence/P02/critique.md`,
 `evidence/P03/critique.md`, `evidence/P04/critique.md`,
 `evidence/P05/critique.md`, `evidence/P06/critique.md` and
 `evidence/P07/critique.md`, `evidence/P08/critique.md` and
 `evidence/P05/production-seam-critique.md` and `evidence/P10/backup-critique.md`.
 Final evidence/revision: integrated slice `e15ceb1` (with Telegram at `ba181f7`);
-application delivery remains
-partial because the listed external hard gates are not fabricated as passed.
+application delivery remains partial because the listed external hard gates are
+not fabricated as passed. Latest worker revision: `0e691d0`.

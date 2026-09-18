@@ -10,6 +10,12 @@ see `evidence/P10/systemd-service.md`. The score remains 76/100 and external
 Telegram, Codex image, Copilot billing, Kindle/EPUBCheck, and isolated-restore
 gates remain pending.
 
+2026-09-19: P05 worker follow-up `0e691d0` hardens the trusted supervisor with
+lease heartbeats, fenced completion/failure callbacks, bounded mutation/claim
+backoff, stale-lease cancellation, abort-aware HTTP requests and schema-shaped
+behavior checks. Full verification passes, but H2 remains unclaimed until a
+real Podman-mediated production worker survives process restart.
+
 2026-09-18: P00 capability discovery, P01 runnable skeleton and P02 durable
 jobs/events are implemented on the isolated branch. P01 revision `89673c6` provides the FastAPI health and
 readiness service, pinned Python dependencies, shared JSON/OpenAPI contracts,
