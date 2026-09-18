@@ -3,7 +3,7 @@
 API_DIR := apps/api
 EVIDENCE_DIR := evidence/P00
 
-.PHONY: doctor dev start stop restart status verify backup restore-check acceptance
+.PHONY: doctor dev install-service start stop restart status verify backup restore-check acceptance
 
 doctor:
 	./scripts/doctor.sh --strict --output $(EVIDENCE_DIR)/capabilities.json
@@ -11,17 +11,20 @@ doctor:
 dev:
 	set -a; [ ! -f .env ] || . ./.env; set +a; cd $(API_DIR) && uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 
+install-service:
+	./scripts/install-user-service.sh
+
 start:
-	./scripts/service.sh start
+	systemctl --user start ebook-factory-api.service
 
 stop:
-	./scripts/service.sh stop
+	systemctl --user stop ebook-factory-api.service
 
 restart:
-	./scripts/service.sh restart
+	systemctl --user restart ebook-factory-api.service
 
 status:
-	./scripts/service.sh status
+	systemctl --user status ebook-factory-api.service --no-pager
 
 backup:
 	@./scripts/backup.sh
@@ -47,4 +50,5 @@ verify:
 	./scripts/tests/test_production_boundary.sh
 	./scripts/tests/test_operations_entrypoints.sh
 	./scripts/tests/test_service_entrypoint.sh
+	./scripts/tests/test_systemd_service.sh
 	./scripts/check-isolation.sh

@@ -1,6 +1,6 @@
 # Evidence-based completion
 
-Completion must be **strictly greater than 80/100**, meaning at least 81, AND all hard gates pass. Score is functional delivery; critic confidence is a separate judgment. Do not average away a failed independent run. Missing evidence scores zero. Full scope is 100 and remains the objective.
+Completion must be **strictly greater than 90/100**, meaning at least 91, AND all hard gates pass. Score is functional delivery; critic confidence is a separate judgment. Do not average away a failed independent run. Missing evidence scores zero. Full scope is 100 and remains the objective.
 
 ## Weighted rubric
 
@@ -48,4 +48,4 @@ Critic report per packet: findings ordered by severity, exact evidence, pass/fai
 
 ## Stop conditions
 
-Continue implement/critique/repair until requested scope is delivered and mandatory gates pass. If a missing credential, unsupported subscription interface or owner choice prevents progress, do all independent work, preserve evidence, report PARTIAL/BLOCKED and request only the exact missing input. Never alter weights, redefine tests, suppress failures, or turn manual fallbacks into automated successes to cross 80.
+Continue implement/critique/repair until requested scope is delivered and mandatory gates pass. If a missing credential, unsupported subscription interface or owner choice prevents progress, do all independent work, preserve evidence, report PARTIAL/BLOCKED and request only the exact missing input. Never alter weights, redefine tests, suppress failures, or turn manual fallbacks into automated successes to cross 90.

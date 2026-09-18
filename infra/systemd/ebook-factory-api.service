@@ -1,0 +1,25 @@
+[Unit]
+Description=Ebook Factory API
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.config/shipyard/worktrees/ebookfactory/codex-ebook-factory-v2
+EnvironmentFile=-%h/.config/shipyard/worktrees/ebookfactory/codex-ebook-factory-v2/.env
+Environment=EBOOK_FACTORY_BIND_TO_TAILSCALE=true
+Environment=EBOOK_FACTORY_BIND_TO_PRIVATE=true
+Environment=EBOOK_FACTORY_PORT=6969
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.config/shipyard/worktrees/ebookfactory/codex-ebook-factory-v2/scripts/serve-api.sh
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

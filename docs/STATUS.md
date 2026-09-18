@@ -1,5 +1,15 @@
 # Build status
 
+2026-09-19: The owner raised the completion gate from `>80/100` to strictly
+`>90/100` (at least 91), with all hard gates unchanged. P10 now installs the
+API as rootless `ebook-factory-api.service` under the `naki` user manager,
+enabled for boot with `Linger=yes`, automatic failure restart, and port 6969
+bound only to the current Tailscale IPv4 and private LAN IPv4 addresses.
+Real health checks passed on `100.87.104.100:6969` and `192.168.29.14:6969`;
+see `evidence/P10/systemd-service.md`. The score remains 76/100 and external
+Telegram, Codex image, Copilot billing, Kindle/EPUBCheck, and isolated-restore
+gates remain pending.
+
 2026-09-18: P00 capability discovery, P01 runnable skeleton and P02 durable
 jobs/events are implemented on the isolated branch. P01 revision `89673c6` provides the FastAPI health and
 readiness service, pinned Python dependencies, shared JSON/OpenAPI contracts,

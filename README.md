@@ -30,7 +30,7 @@ These are planning scaffolds, not claims that their runtime implementations exis
 - PostgreSQL queue is approved. Exact existing server/database/role must be confirmed by the owner before migrations/provisioning. Read-only discovery may proceed.
 - Telegram token plus allowed chat/user IDs must be configured locally; never commit them.
 - Codex subscription image capability is requested. Its unattended callable route must be proven; manual art import is a fallback, not fulfillment of automated art.
-- Delivery requires completion score >80/100 AND every mandatory gate. All target functionality remains in scope even if the score crosses 80.
+- Delivery requires completion score >90/100 (at least 91) AND every mandatory gate. All target functionality remains in scope even if the score crosses 90.
 - No Amazon account upload or publication is authorized by this handoff.
 
-Runnable entry points are `make doctor`, `make dev`, `make verify`, `make acceptance`, `make backup`, and `make restore-check BACKUP=...`. `make acceptance` intentionally exits with PARTIAL until every external hard gate is evidenced; it never weakens the rubric.
+Runnable entry points are `make doctor`, `make dev`, `make install-service`, `make start`, `make verify`, `make acceptance`, `make backup`, and `make restore-check BACKUP=...`. `make acceptance` intentionally exits with PARTIAL until every external hard gate is evidenced; it never weakens the rubric.

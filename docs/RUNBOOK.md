@@ -10,14 +10,27 @@ Start the local API and dashboard in the foreground:
 make dev
 ```
 
-Open `http://127.0.0.1:8000`. Stop with Ctrl-C. The worker callback token is
+Open `http://127.0.0.1:8000` for foreground development. Stop with Ctrl-C. The worker callback token is
 only needed when the trusted supervisor is enabled; keep it in the ignored root
 `.env` as `EBOOK_FACTORY_WORKER_TOKEN`.
 
-For an owned background API lifecycle, use `make start`, `make status`,
-`make restart` and `make stop`. The wrapper stores only its PID and log under
-`var/run` and does not manage the worker or Podman jobs; inspect those through
-the separate supervisor/containment checks.
+For the boot-persistent API service, install it once as the unprivileged `naki`
+user and let the user manager own port 6969:
+
+```sh
+make install-service
+make status
+tailscale ip -4
+```
+
+The service binds separately to the current Tailscale IPv4 and detected private
+LAN IPv4 addresses, restarts on failure, and is enabled under the user manager's
+`default.target`. This host already has user lingering enabled, so it starts
+after reboot without a login session. Open `http://<tailscale-ip>:6969` or
+`http://<private-lan-ip>:6969`. Use `make start`, `make restart` and `make stop`
+for lifecycle operations, and `journalctl --user -u ebook-factory-api.service`
+for logs. The separate `scripts/service.sh` wrapper remains a local test helper;
+it does not supervise worker or Podman jobs.
 
 Create a custom-format peer-authenticated backup:
 
