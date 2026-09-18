@@ -1,16 +1,21 @@
 # Build status
 
-2026-09-18: P00 capability discovery implemented on the isolated branch. The
-redacted report at `evidence/P00/capabilities.json` records Pi 0.85.1,
+2026-09-18: P00 capability discovery and P01 runnable skeleton are implemented
+on the isolated branch. P01 revision `89673c6` provides the FastAPI health and
+readiness service, pinned Python dependencies, shared JSON/OpenAPI contracts,
+SQLAlchemy metadata and Alembic migrations. The owner-authorized PostgreSQL
+target is `ebookfactory` with peer role `naki`; migrations are at head
+`250e73df76d6` and the real readiness check returned `ok`. The P00 report at
+`evidence/P00/capabilities.json` records Pi 0.85.1,
 Codex CLI 0.155.0, rootless Podman 4.9.3 and PostgreSQL client 16.15. A real
 Pi CLI probe returned usage fields from `openai-codex` / `gpt-5.5`; this is not
-yet dashboard evidence. No database target was changed, Telegram credentials
-were supplied, or image-artifact route was proven. P01–P10 remain incomplete.
+yet dashboard evidence. No Telegram credentials were supplied or
+image-artifact route proven. P02–P10 remain incomplete.
 
-Next: P01 runnable skeleton and shared contracts. Pending owner inputs:
-exact PostgreSQL target approval and Telegram token/allowed IDs. Pending
-technical proofs: Pi model gateway inside containment, Codex subscription image
-bridge, provider quota availability, maintained publishing converters.
+Next: P02 durable jobs and events. Pending owner input: Telegram token and
+allowed chat/sender IDs. Pending technical proofs: Pi model gateway inside
+containment, Codex subscription image bridge, provider quota availability,
+maintained publishing converters, and the rest of the integrated product.
 
 Operating instruction: for future probes and delegated work, explicitly select
 the least-cost available route, preferably GPT 5.6 Luna low when the runtime

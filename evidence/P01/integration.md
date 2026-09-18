@@ -1,5 +1,6 @@
 # P01 integration evidence
 
+- Code revision: `89673c6` (includes implementation revision `050be81`)
 - UTC: 2026-09-18T17:19:26Z
 - Target: owner-authorized native PostgreSQL 16.15, database `ebookfactory`, peer role `naki`, Unix socket `/var/run/postgresql`; no password used
 - Migration command: `uv run --directory apps/api alembic -c <repo>/alembic.ini upgrade head`
