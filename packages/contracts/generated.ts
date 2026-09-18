@@ -11,6 +11,18 @@ export interface ApprovalResponse {
   job_id: string;
 }
 
+export interface CapabilityRequest {
+  job_id: string;
+  worker_id: string;
+  generation: number;
+  tool: string;
+}
+
+export interface CapabilityResponse {
+  capability: string;
+  expires_in_seconds: number;
+}
+
 export interface CheckpointRequest {
   job_id: string;
   worker_id: string;
@@ -54,6 +66,56 @@ export interface HeartbeatRequest {
   worker_id: string;
   generation: number;
   lease_seconds?: number;
+}
+
+export interface MessageCreateRequest {
+  conversation_id: string;
+  channel?: string;
+  external_dedupe_id?: string | null;
+  content: string;
+}
+
+export interface MessageResponse {
+  message_id: string;
+  sequence: number;
+  duplicate: boolean;
+}
+
+export interface ProjectCreateRequest {
+  title: string;
+  profile: string;
+  language: string;
+}
+
+export interface ProjectResponse {
+  project_id: string;
+  conversation_id: string;
+  title: string;
+  profile: string;
+  language: string;
+  state: string;
+}
+
+export interface ProviderSettingRequest {
+  scope?: string;
+  endpoint?: string | null;
+  protocol?: string | null;
+  credential_ref?: string | null;
+  orchestration_model?: string | null;
+  drafting_model?: string | null;
+  review_model?: string | null;
+}
+
+export interface ProviderSettingResponse {
+  setting_id: string;
+  provider: string;
+  scope: string;
+  endpoint: string | null;
+  protocol: string | null;
+  orchestration_model: string | null;
+  drafting_model: string | null;
+  review_model: string | null;
+  credential_configured: boolean;
 }
 
 export interface ReadinessResponse {

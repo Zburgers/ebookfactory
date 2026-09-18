@@ -302,6 +302,7 @@ class QuotaSnapshot(CreatedMixin, Base):
 
 class ProviderSetting(CreatedMixin, UpdatedMixin, Base):
     __tablename__ = "provider_settings"
+    __table_args__ = (UniqueConstraint("provider", "scope", name="uq_provider_setting_scope"),)
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     provider: Mapped[str] = mapped_column(String(64), nullable=False)

@@ -49,6 +49,58 @@
         "title": "ApprovalResponse",
         "type": "object"
       },
+      "CapabilityRequest": {
+        "properties": {
+          "generation": {
+            "minimum": 1.0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "tool": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Tool",
+            "type": "string"
+          },
+          "worker_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "worker_id",
+          "generation",
+          "tool"
+        ],
+        "title": "CapabilityRequest",
+        "type": "object"
+      },
+      "CapabilityResponse": {
+        "properties": {
+          "capability": {
+            "title": "Capability",
+            "type": "string"
+          },
+          "expires_in_seconds": {
+            "title": "Expires In Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "capability",
+          "expires_in_seconds"
+        ],
+        "title": "CapabilityResponse",
+        "type": "object"
+      },
       "CheckpointRequest": {
         "properties": {
           "checkpoint": {
@@ -259,6 +311,312 @@
           "generation"
         ],
         "title": "HeartbeatRequest",
+        "type": "object"
+      },
+      "MessageCreateRequest": {
+        "properties": {
+          "channel": {
+            "default": "dashboard",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Channel",
+            "type": "string"
+          },
+          "content": {
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "external_dedupe_id": {
+            "anyOf": [
+              {
+                "maxLength": 240,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Dedupe Id"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "content"
+        ],
+        "title": "MessageCreateRequest",
+        "type": "object"
+      },
+      "MessageResponse": {
+        "properties": {
+          "duplicate": {
+            "title": "Duplicate",
+            "type": "boolean"
+          },
+          "message_id": {
+            "format": "uuid",
+            "title": "Message Id",
+            "type": "string"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "message_id",
+          "sequence",
+          "duplicate"
+        ],
+        "title": "MessageResponse",
+        "type": "object"
+      },
+      "ProjectCreateRequest": {
+        "properties": {
+          "language": {
+            "maxLength": 32,
+            "minLength": 2,
+            "title": "Language",
+            "type": "string"
+          },
+          "profile": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Profile",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "profile",
+          "language"
+        ],
+        "title": "ProjectCreateRequest",
+        "type": "object"
+      },
+      "ProjectResponse": {
+        "properties": {
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "language": {
+            "title": "Language",
+            "type": "string"
+          },
+          "profile": {
+            "title": "Profile",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "conversation_id",
+          "title",
+          "profile",
+          "language",
+          "state"
+        ],
+        "title": "ProjectResponse",
+        "type": "object"
+      },
+      "ProviderSettingRequest": {
+        "properties": {
+          "credential_ref": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Ref"
+          },
+          "drafting_model": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drafting Model"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "orchestration_model": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orchestration Model"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol"
+          },
+          "review_model": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Model"
+          },
+          "scope": {
+            "default": "app",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "title": "ProviderSettingRequest",
+        "type": "object"
+      },
+      "ProviderSettingResponse": {
+        "properties": {
+          "credential_configured": {
+            "title": "Credential Configured",
+            "type": "boolean"
+          },
+          "drafting_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drafting Model"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "orchestration_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orchestration Model"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "review_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Model"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "setting_id": {
+            "format": "uuid",
+            "title": "Setting Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "setting_id",
+          "provider",
+          "scope",
+          "endpoint",
+          "protocol",
+          "orchestration_model",
+          "drafting_model",
+          "review_model",
+          "credential_configured"
+        ],
+        "title": "ProviderSettingResponse",
         "type": "object"
       },
       "ReadinessResponse": {
@@ -505,6 +863,154 @@
           }
         },
         "summary": "Worker Cancel",
+        "tags": [
+          "private-worker"
+        ]
+      }
+    },
+    "/private/tools/{tool}": {
+      "post": {
+        "operationId": "scoped_tool_private_tools__tool__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tool",
+            "required": true,
+            "schema": {
+              "title": "Tool",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Tool-Capability",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Tool-Capability",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Project-ID",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "X-Project-Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Job-ID",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "X-Job-Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Generation",
+            "required": true,
+            "schema": {
+              "title": "X-Generation",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Scoped Tool Private Tools  Tool  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scoped Tool",
+        "tags": [
+          "private-worker"
+        ]
+      }
+    },
+    "/private/worker/capability": {
+      "post": {
+        "operationId": "worker_capability_private_worker_capability_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Ebook-Worker-Token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Ebook-Worker-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CapabilityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Worker Capability",
         "tags": [
           "private-worker"
         ]
@@ -767,6 +1273,84 @@
         ]
       }
     },
+    "/projects": {
+      "post": {
+        "operationId": "create_project_route_projects_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Project Route"
+      }
+    },
+    "/projects/{project_id}": {
+      "get": {
+        "operationId": "get_project_projects__project_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Project"
+      }
+    },
     "/projects/{project_id}/briefs/{brief_id}/approve": {
       "post": {
         "operationId": "approve_projects__project_id__briefs__brief_id__approve_post",
@@ -890,6 +1474,127 @@
           }
         },
         "summary": "Events"
+      }
+    },
+    "/projects/{project_id}/messages": {
+      "post": {
+        "operationId": "post_message_projects__project_id__messages_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Message"
+      }
+    },
+    "/providers": {
+      "get": {
+        "operationId": "list_providers_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderSettingResponse"
+                  },
+                  "title": "Response List Providers Providers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Providers"
+      }
+    },
+    "/providers/{provider}": {
+      "put": {
+        "operationId": "put_provider_providers__provider__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderSettingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderSettingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Provider"
       }
     },
     "/ready": {

@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import create_engine, delete, select, update
 from sqlalchemy.orm import Session
 
+from app.conversations import append_message, create_project
 from app.events import replay_events
 from app.jobs import (
     CancellationRejected,
@@ -45,19 +46,21 @@ def database_session() -> Iterator[Session]:
     session.flush()
     session.add(brief)
     session.commit()
+    session.info["cleanup_project_ids"] = {project.id}
     try:
         yield session
     finally:
-        session.execute(
-            update(Project)
-            .where(Project.id == project.id)
-            .values(active_brief_id=None, conversation_id=None)
-        )
-        session.flush()
-        session.execute(delete(Event).where(Event.project_id == project.id))
-        session.execute(delete(ProductionRun).where(ProductionRun.project_id == project.id))
-        session.execute(delete(BriefRevision).where(BriefRevision.project_id == project.id))
-        session.execute(delete(Project).where(Project.id == project.id))
+        for cleanup_project_id in session.info["cleanup_project_ids"]:
+            session.execute(
+                update(Project)
+                .where(Project.id == cleanup_project_id)
+                .values(active_brief_id=None, conversation_id=None)
+            )
+            session.flush()
+            session.execute(delete(Event).where(Event.project_id == cleanup_project_id))
+            session.execute(delete(ProductionRun).where(ProductionRun.project_id == cleanup_project_id))
+            session.execute(delete(BriefRevision).where(BriefRevision.project_id == cleanup_project_id))
+            session.execute(delete(Project).where(Project.id == cleanup_project_id))
         session.commit()
         session.close()
         engine.dispose()
@@ -90,6 +93,34 @@ def test_duplicate_approval_enqueues_one_run_and_one_job(database_session: Sessi
     assert first.job_id == second.job_id
     assert database_session.scalar(select(ProductionRun.id).where(ProductionRun.project_id == project_id)) == first.run_id
     assert len(database_session.scalars(select(Job).where(Job.task_id == first.task_id)).all()) == 1
+
+
+def test_conversation_messages_are_ordered_and_deduplicated(database_session: Session) -> None:
+    database_session.commit()
+    created = create_project(database_session, title="Conversation test", profile="fiction", language="en")
+    database_session.info["cleanup_project_ids"].add(created.project_id)
+    first = append_message(
+        database_session,
+        project_id=created.project_id,
+        conversation_id=created.conversation_id,
+        channel="dashboard",
+        external_dedupe_id="turn-1",
+        role="user",
+        content="A durable opening idea",
+    )
+    second = append_message(
+        database_session,
+        project_id=created.project_id,
+        conversation_id=created.conversation_id,
+        channel="dashboard",
+        external_dedupe_id="turn-1",
+        role="user",
+        content="replayed delivery",
+    )
+
+    assert first.sequence == 1
+    assert second.message_id == first.message_id
+    assert second.duplicate is True
 
 
 def _approve(database_session: Session) -> tuple[object, object]:

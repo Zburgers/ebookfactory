@@ -9,8 +9,10 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import select
 
 from app.database import Database
+from app.conversations import append_message, create_project
 from app.events import replay_events
 from app.jobs import (
     ApprovalConflict,
@@ -23,9 +25,11 @@ from app.jobs import (
     complete_job,
     fail_job,
     heartbeat_job,
-    pause_job,
-    resume_job,
 )
+from app.models import Project, ProviderSetting
+from app.providers import save_provider_setting
+from app.tools import InvalidCapability, issue_capability, verify_capability
+from app.models import Job, ProductionRun, Task
 from app.settings import Settings
 
 
@@ -110,6 +114,68 @@ class RunCancelRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=512)
 
 
+class ProjectCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=240)
+    profile: str = Field(min_length=1, max_length=32)
+    language: str = Field(min_length=2, max_length=32)
+
+
+class ProjectResponse(BaseModel):
+    project_id: UUID
+    conversation_id: UUID
+    title: str
+    profile: str
+    language: str
+    state: str
+
+
+class MessageCreateRequest(BaseModel):
+    conversation_id: UUID
+    channel: str = Field(default="dashboard", min_length=1, max_length=32)
+    external_dedupe_id: str | None = Field(default=None, max_length=240)
+    content: str = Field(min_length=1)
+
+
+class MessageResponse(BaseModel):
+    message_id: UUID
+    sequence: int
+    duplicate: bool
+
+
+class ProviderSettingRequest(BaseModel):
+    scope: str = Field(default="app", min_length=1, max_length=32)
+    endpoint: str | None = Field(default=None, max_length=2048)
+    protocol: str | None = Field(default=None, max_length=64)
+    credential_ref: str | None = Field(default=None, max_length=255)
+    orchestration_model: str | None = Field(default=None, max_length=128)
+    drafting_model: str | None = Field(default=None, max_length=128)
+    review_model: str | None = Field(default=None, max_length=128)
+
+
+class ProviderSettingResponse(BaseModel):
+    setting_id: UUID
+    provider: str
+    scope: str
+    endpoint: str | None
+    protocol: str | None
+    orchestration_model: str | None
+    drafting_model: str | None
+    review_model: str | None
+    credential_configured: bool
+
+
+class CapabilityRequest(BaseModel):
+    job_id: UUID
+    worker_id: str = Field(min_length=1, max_length=128)
+    generation: int = Field(ge=1)
+    tool: str = Field(min_length=1, max_length=64)
+
+
+class CapabilityResponse(BaseModel):
+    capability: str
+    expires_in_seconds: int
+
+
 def _require_worker_token(settings: Settings, supplied: str) -> None:
     """Reject private callbacks unless a local operator configured the token."""
 
@@ -161,6 +227,116 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             payload["dependencies"]["database"]["reason"] = result.reason
         status_code = 200 if result.status == "ok" else 503
         return JSONResponse(status_code=status_code, content=payload)
+
+    @application.post("/projects", response_model=ProjectResponse, status_code=201)
+    def create_project_route(payload: ProjectCreateRequest) -> ProjectResponse:
+        session = database.session()
+        try:
+            result = create_project(
+                session,
+                title=payload.title,
+                profile=payload.profile,
+                language=payload.language,
+            )
+            project = session.get(Project, result.project_id)
+            if project is None:
+                raise HTTPException(status_code=503, detail="project creation unavailable")
+            return ProjectResponse(
+                project_id=project.id,
+                conversation_id=result.conversation_id,
+                title=project.title,
+                profile=project.profile,
+                language=project.language,
+                state=project.state,
+            )
+        finally:
+            session.close()
+
+    @application.get("/projects/{project_id}", response_model=ProjectResponse)
+    def get_project(project_id: UUID) -> ProjectResponse:
+        session = database.session()
+        try:
+            project = session.get(Project, project_id)
+            if project is None or project.conversation_id is None:
+                raise HTTPException(status_code=404, detail="project not found")
+            return ProjectResponse(
+                project_id=project.id,
+                conversation_id=project.conversation_id,
+                title=project.title,
+                profile=project.profile,
+                language=project.language,
+                state=project.state,
+            )
+        finally:
+            session.close()
+
+    @application.post("/projects/{project_id}/messages", response_model=MessageResponse, status_code=201)
+    def post_message(project_id: UUID, payload: MessageCreateRequest) -> MessageResponse:
+        session = database.session()
+        try:
+            result = append_message(
+                session,
+                project_id=project_id,
+                conversation_id=payload.conversation_id,
+                channel=payload.channel,
+                external_dedupe_id=payload.external_dedupe_id,
+                role="user",
+                content=payload.content,
+            )
+            return MessageResponse(
+                message_id=result.message_id,
+                sequence=result.sequence,
+                duplicate=result.duplicate,
+            )
+        except ValueError as exc:
+            session.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            session.close()
+
+    @application.get("/providers", response_model=list[ProviderSettingResponse])
+    def list_providers() -> list[ProviderSettingResponse]:
+        session = database.session()
+        try:
+            settings = session.scalars(select(ProviderSetting).order_by(ProviderSetting.provider)).all()
+            return [
+                ProviderSettingResponse(
+                    setting_id=setting.id,
+                    provider=setting.provider,
+                    scope=setting.scope,
+                    endpoint=setting.config.get("endpoint"),
+                    protocol=setting.config.get("protocol"),
+                    orchestration_model=setting.orchestration_model,
+                    drafting_model=setting.drafting_model,
+                    review_model=setting.review_model,
+                    credential_configured=bool(setting.credential_ref),
+                )
+                for setting in settings
+            ]
+        finally:
+            session.close()
+
+    @application.put("/providers/{provider}", response_model=ProviderSettingResponse)
+    def put_provider(provider: str, payload: ProviderSettingRequest) -> ProviderSettingResponse:
+        session = database.session()
+        try:
+            result = save_provider_setting(
+                session,
+                provider=provider,
+                scope=payload.scope,
+                endpoint=payload.endpoint,
+                protocol=payload.protocol,
+                credential_ref=payload.credential_ref,
+                orchestration_model=payload.orchestration_model,
+                drafting_model=payload.drafting_model,
+                review_model=payload.review_model,
+            )
+            return ProviderSettingResponse(**result.__dict__)
+        except ValueError as exc:
+            session.rollback()
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            session.close()
 
     @application.post("/projects/{project_id}/briefs/{brief_id}/approve", response_model=ApprovalResponse)
     def approve(project_id: UUID, brief_id: UUID, payload: ApprovalRequest) -> ApprovalResponse:
@@ -313,6 +489,86 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except (StaleLease, CancellationRejected) as exc:
             session.rollback()
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            session.close()
+
+    @application.post("/private/worker/capability", response_model=CapabilityResponse, tags=["private-worker"])
+    def worker_capability(
+        payload: CapabilityRequest,
+        x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token"),
+    ) -> CapabilityResponse:
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
+        session = database.session()
+        try:
+            row = session.execute(
+                select(Job, Task, ProductionRun)
+                .join(Task, Task.id == Job.task_id)
+                .join(ProductionRun, ProductionRun.id == Task.run_id)
+                .where(
+                    Job.id == payload.job_id,
+                    Job.lease_owner == payload.worker_id,
+                    Job.fencing_generation == payload.generation,
+                    Job.state == "running",
+                )
+            ).first()
+            if row is None:
+                raise HTTPException(status_code=409, detail="worker lease is not current")
+            _, _, run = row
+            if run.state == "cancelled":
+                raise HTTPException(status_code=409, detail="run is cancelled")
+            capability = issue_capability(
+                resolved_settings.worker_token or "",
+                project_id=run.project_id,
+                job_id=payload.job_id,
+                generation=payload.generation,
+                tool=payload.tool,
+            )
+            return CapabilityResponse(capability=capability, expires_in_seconds=300)
+        finally:
+            session.close()
+
+    @application.post("/private/tools/{tool}", tags=["private-worker"])
+    def scoped_tool(
+        tool: str,
+        payload: dict[str, Any],
+        x_tool_capability: str = Header(default="", alias="X-Tool-Capability"),
+        x_project_id: UUID = Header(alias="X-Project-ID"),
+        x_job_id: UUID = Header(alias="X-Job-ID"),
+        x_generation: int = Header(alias="X-Generation"),
+    ) -> dict[str, Any]:
+        try:
+            verify_capability(
+                x_tool_capability,
+                resolved_settings.worker_token or "",
+                project_id=x_project_id,
+                job_id=x_job_id,
+                generation=x_generation,
+                tool=tool,
+            )
+        except InvalidCapability as exc:
+            raise HTTPException(status_code=403, detail="invalid tool capability") from exc
+        if tool != "get_job_status":
+            raise HTTPException(status_code=404, detail="tool is not enabled")
+        session = database.session()
+        try:
+            row = session.execute(
+                select(Job, Task, ProductionRun)
+                .join(Task, Task.id == Job.task_id)
+                .join(ProductionRun, ProductionRun.id == Task.run_id)
+                .where(Job.id == x_job_id, ProductionRun.project_id == x_project_id)
+            ).first()
+            if row is None:
+                raise HTTPException(status_code=404, detail="job not found")
+            job, task, run = row
+            return {
+                "job_id": job.id,
+                "task_id": task.id,
+                "run_id": run.id,
+                "job_state": job.state,
+                "task_status": task.status,
+                "run_state": run.state,
+                "cancellation_epoch": run.cancellation_epoch,
+            }
         finally:
             session.close()
 
