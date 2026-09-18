@@ -3,13 +3,16 @@
 API_DIR := apps/api
 EVIDENCE_DIR := evidence/P00
 
-.PHONY: doctor dev verify
+.PHONY: doctor dev verify backup
 
 doctor:
 	./scripts/doctor.sh --strict --output $(EVIDENCE_DIR)/capabilities.json
 
 dev:
 	set -a; [ ! -f .env ] || . ./.env; set +a; cd $(API_DIR) && uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+backup:
+	./scripts/backup.sh
 
 verify:
 	uv sync --directory $(API_DIR)
