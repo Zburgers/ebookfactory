@@ -938,6 +938,77 @@
         "title": "ProviderConnectionTestResponse",
         "type": "object"
       },
+      "ProviderMetadataResponse": {
+        "properties": {
+          "credential_configured": {
+            "title": "Credential Configured",
+            "type": "boolean"
+          },
+          "drafting_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drafting Model"
+          },
+          "orchestration_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orchestration Model"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "review_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Model"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "scope",
+          "protocol",
+          "orchestration_model",
+          "drafting_model",
+          "review_model",
+          "credential_configured"
+        ],
+        "title": "ProviderMetadataResponse",
+        "type": "object"
+      },
       "ProviderSettingRequest": {
         "properties": {
           "credential_ref": {
@@ -2762,6 +2833,53 @@
         ]
       }
     },
+    "/private/worker/providers": {
+      "get": {
+        "operationId": "list_worker_providers_private_worker_providers_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Ebook-Worker-Token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Ebook-Worker-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderMetadataResponse"
+                  },
+                  "title": "Response List Worker Providers Private Worker Providers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Worker Providers",
+        "tags": [
+          "private-worker"
+        ]
+      }
+    },
     "/projects": {
       "get": {
         "operationId": "list_projects_projects_get",
@@ -3674,7 +3792,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/ProviderSettingResponse"
+                    "$ref": "#/components/schemas/ProviderMetadataResponse"
                   },
                   "title": "Response List Providers Providers Get",
                   "type": "array"

@@ -25,8 +25,9 @@ from app.jobs import (
     pause_job,
     resume_job,
 )
-from app.models import Artifact, Attempt, BriefRevision, Event, Job, Project, ProductionRun, Task, UsageCall
+from app.models import Artifact, Attempt, BriefRevision, Event, Job, Project, ProductionRun, Section, SectionRevision, Task, UsageCall
 from app.main import create_app
+import app.main as main_module
 from app.settings import Settings
 
 
@@ -181,6 +182,83 @@ def test_api_project_brief_and_approval_boundary(database_session: Session) -> N
     assert sse_response.status_code == 200
     assert sse_response.headers["content-type"].startswith("text/event-stream")
     assert "run.approved" in sse_response.text
+
+
+def test_production_result_rolls_back_when_final_fence_rejects(database_session: Session, monkeypatch, tmp_path) -> None:
+    assert DATABASE_URL is not None
+    artifact_root = tmp_path / "artifacts"
+    with TestClient(create_app(Settings(database_url=DATABASE_URL, worker_token="test-worker-token", artifact_root=artifact_root))) as client:
+        project_response = client.post("/projects", json={"title": "Rollback", "profile": "nonfiction", "language": "en"})
+        project_id = UUID(project_response.json()["project_id"])
+        database_session.info["cleanup_project_ids"].add(project_id)
+        brief_response = client.post(f"/projects/{project_id}/briefs", json={"structured_brief": {"promise_or_premise": "rollback"}})
+        brief = brief_response.json()
+        assert client.post(
+            f"/projects/{project_id}/briefs/{brief['brief_id']}/approve",
+            json={"expected_content_hash": brief["content_hash"], "budget": {"max_turns": 4}},
+        ).status_code == 200
+        lease = client.post(
+            "/private/worker/claim",
+            json={"worker_id": "rollback-worker", "lease_seconds": 60},
+            headers={"X-Ebook-Worker-Token": "test-worker-token"},
+        ).json()
+
+        def reject_completion(*_args, **_kwargs):
+            raise main_module.StaleLease("simulated final fence rejection")
+
+        original_complete_job = main_module.complete_job
+        monkeypatch.setattr(main_module, "complete_job", reject_completion)
+        response = client.post(
+            "/private/worker/production-result",
+            headers={"X-Ebook-Worker-Token": "test-worker-token"},
+            json={
+                "job_id": lease["job_id"], "worker_id": "rollback-worker", "generation": lease["generation"],
+                "content": "# rollback draft", "provider": "test-provider", "model": "test-model", "call_id": str(uuid4()),
+                "usage": {"input_tokens": 2, "output_tokens": 3},
+            },
+        )
+        artifact_path = artifact_root / str(lease["run_id"]) / "book.md"
+        assert not artifact_path.exists()
+        database_session.expire_all()
+        assert database_session.scalar(select(SectionRevision).join(Section).where(Section.project_id == project_id)) is None
+        assert database_session.scalar(select(Artifact).where(Artifact.run_id.in_(select(ProductionRun.id).where(ProductionRun.project_id == project_id)))) is None
+        assert database_session.scalar(select(UsageCall).where(UsageCall.project_id == project_id)) is None
+        assert database_session.scalar(select(Job.state).join(Task).join(ProductionRun).where(ProductionRun.project_id == project_id)) == "running"
+        monkeypatch.setattr(main_module, "complete_job", original_complete_job)
+        retry_response = client.post(
+            "/private/worker/production-result",
+            headers={"X-Ebook-Worker-Token": "test-worker-token"},
+            json={
+                "job_id": lease["job_id"], "worker_id": "rollback-worker", "generation": lease["generation"],
+                "content": "# rollback draft", "provider": "test-provider", "model": "test-model", "call_id": str(uuid4()),
+                "usage": {"input_tokens": 2, "output_tokens": 3},
+            },
+        )
+    assert response.status_code == 409
+    assert retry_response.status_code == 200
+    database_session.expire_all()
+    assert len(database_session.scalars(select(SectionRevision).join(Section).where(Section.project_id == project_id)).all()) == 1
+    assert len(database_session.scalars(select(Artifact).where(Artifact.run_id.in_(select(ProductionRun.id).where(ProductionRun.project_id == project_id)))).all()) == 1
+    assert len(database_session.scalars(select(UsageCall).where(UsageCall.project_id == project_id)).all()) == 1
+    assert database_session.scalar(select(Job.state).join(Task).join(ProductionRun).where(ProductionRun.project_id == project_id)) == "succeeded"
+
+
+def test_production_result_rejects_whitespace_content(database_session: Session) -> None:
+    assert DATABASE_URL is not None
+    with TestClient(create_app(Settings(database_url=DATABASE_URL, worker_token="test-worker-token")), raise_server_exceptions=False) as client:
+        project_response = client.post("/projects", json={"title": "Whitespace", "profile": "nonfiction", "language": "en"})
+        project_id = UUID(project_response.json()["project_id"])
+        database_session.info["cleanup_project_ids"].add(project_id)
+        brief_response = client.post(f"/projects/{project_id}/briefs", json={"structured_brief": {"promise_or_premise": "whitespace"}})
+        brief = brief_response.json()
+        client.post(f"/projects/{project_id}/briefs/{brief['brief_id']}/approve", json={"expected_content_hash": brief["content_hash"], "budget": {"max_turns": 4}})
+        lease = client.post("/private/worker/claim", json={"worker_id": "whitespace-worker", "lease_seconds": 60}, headers={"X-Ebook-Worker-Token": "test-worker-token"}).json()
+        response = client.post(
+            "/private/worker/production-result",
+            headers={"X-Ebook-Worker-Token": "test-worker-token"},
+            json={"job_id": lease["job_id"], "worker_id": "whitespace-worker", "generation": lease["generation"], "content": "   ", "provider": "test", "model": "test"},
+        )
+    assert response.status_code == 409
 
 
 def test_conversation_messages_are_ordered_and_deduplicated(database_session: Session) -> None:

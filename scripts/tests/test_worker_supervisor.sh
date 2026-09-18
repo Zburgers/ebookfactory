@@ -11,6 +11,8 @@ import { runSupervisor } from "./apps/worker/src/supervisor.ts";
 const calls = [];
 let claimCount = 0;
 let failFirstClaim = true;
+let failureReportedResolve;
+const failureReported = new Promise((resolve) => { failureReportedResolve = resolve; });
 const leaseFixture = (jobId, workerId, generation) => ({
   job_id: jobId,
   task_id: "00000000-0000-4000-8000-000000000010",
@@ -43,6 +45,12 @@ const server = http.createServer(async (request, response) => {
     ) : null));
     return;
   }
+  if (request.url === "/private/worker/fail") {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end("{}");
+    failureReportedResolve();
+    return;
+  }
   response.writeHead(200, { "content-type": "application/json" });
   response.end("{}");
 });
@@ -51,8 +59,7 @@ await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const { port } = server.address();
 const controller = new AbortController();
 let executions = 0;
-setTimeout(() => controller.abort(), 150);
-await runSupervisor({
+const supervisorRun = runSupervisor({
   baseUrl: `http://127.0.0.1:${port}`,
   token: "test-token",
   workerId: "worker-1",
@@ -68,6 +75,9 @@ await runSupervisor({
     return { artifact: "artifact-1" };
   },
 });
+await failureReported;
+controller.abort();
+await supervisorRun;
 await new Promise((resolve) => server.close(resolve));
 
 assert.equal(executions, 2);
@@ -303,4 +313,35 @@ await runSupervisor({
 await new Promise((resolve) => shutdownServer.close(resolve));
 assert.equal(shutdownFailCalls, 0);
 console.log("worker supervisor shutdown behavior: ok");
+
+const preAbortedController = new AbortController();
+let preAbortedExecutions = 0;
+const preAbortedServer = http.createServer((request, response) => {
+  if (request.url === "/private/worker/claim") {
+    preAbortedController.abort();
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify(leaseFixture(
+      "00000000-0000-4000-8000-000000000006",
+      "worker-pre-aborted",
+      1,
+    )), () => setTimeout(() => preAbortedController.abort(), 0));
+    return;
+  }
+  response.writeHead(204);
+  response.end();
+});
+await new Promise((resolve) => preAbortedServer.listen(0, "127.0.0.1", resolve));
+await runSupervisor({
+  baseUrl: `http://127.0.0.1:${preAbortedServer.address().port}`,
+  token: "test-token",
+  workerId: "worker-pre-aborted",
+  signal: preAbortedController.signal,
+  execute: async () => {
+    preAbortedExecutions += 1;
+    return {};
+  },
+});
+await new Promise((resolve) => preAbortedServer.close(resolve));
+assert.equal(preAbortedExecutions, 0);
+console.log("worker supervisor pre-aborted execution guard: ok");
 NODE

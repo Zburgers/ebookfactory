@@ -3,9 +3,11 @@
 import hashlib
 import os
 import tempfile
+from contextlib import nullcontext
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import UUID, UUID as UUIDType, uuid4
 
+from sqlalchemy import event
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,6 +16,30 @@ from app.models import Artifact, Section, SectionRevision
 
 class InvalidArtifactPath(ValueError):
     """Raised when an output path escapes the private artifact root."""
+
+
+def _pending_path(root: Path, artifact_id: UUID) -> Path:
+    return root.resolve() / f".pending-{artifact_id}"
+
+
+def _remove_pending(session: Session) -> None:
+    for pending, _target in session.info.pop("pending_artifacts", []):
+        Path(pending).unlink(missing_ok=True)
+
+
+def _finalize_pending(session: Session) -> None:
+    for pending, target in session.info.pop("pending_artifacts", []):
+        _finalize_one(Path(pending), Path(target))
+
+
+@event.listens_for(Session, "after_commit")
+def _finalize_committed_artifacts(session: Session) -> None:
+    _finalize_pending(session)
+
+
+@event.listens_for(Session, "after_rollback")
+def _remove_rolled_back_artifacts(session: Session) -> None:
+    _remove_pending(session)
 
 
 def safe_artifact_path(root: Path, relative_path: str) -> Path:
@@ -45,6 +71,7 @@ def write_artifact(
     attempt_id: UUID | None = None,
     revision_id: UUID | None = None,
     max_bytes: int = 50 * 1024 * 1024,
+    manage_transaction: bool = True,
 ) -> Artifact:
     """Stage, hash and atomically register one immutable artifact."""
 
@@ -56,31 +83,80 @@ def write_artifact(
     if target.exists() or target.is_symlink():
         raise FileExistsError("artifact path is immutable")
     digest = hashlib.sha256(content).hexdigest()
-    fd, temp_name = tempfile.mkstemp(prefix=".pending-", dir=root.resolve())
+    artifact_id = uuid4()
+    pending = _pending_path(root, artifact_id)
+    fd, temp_name = tempfile.mkstemp(prefix=".stage-", dir=root.resolve())
     try:
         with os.fdopen(fd, "wb") as staged:
             staged.write(content)
             staged.flush()
             os.fsync(staged.fileno())
-        os.replace(temp_name, target)
+        os.link(temp_name, pending)
+        Path(temp_name).unlink(missing_ok=True)
     except Exception:
         Path(temp_name).unlink(missing_ok=True)
+        pending.unlink(missing_ok=True)
         raise
-    with session.begin():
-        artifact = Artifact(
-            run_id=run_id,
-            attempt_id=attempt_id,
-            revision_id=revision_id,
-            relative_path=relative_path,
-            mime_type=mime_type,
-            byte_count=len(content),
-            sha256=digest,
-            validation_state="generated",
-        )
-        session.add(artifact)
-        session.flush()
-        session.expunge(artifact)
-        return artifact
+    try:
+        with (session.begin() if manage_transaction else nullcontext()):
+            artifact = Artifact(
+                id=artifact_id,
+                run_id=run_id,
+                attempt_id=attempt_id,
+                revision_id=revision_id,
+                relative_path=relative_path,
+                mime_type=mime_type,
+                byte_count=len(content),
+                sha256=digest,
+                validation_state="generated",
+            )
+            session.add(artifact)
+            session.flush()
+            session.info.setdefault("pending_artifacts", []).append((str(pending), str(target)))
+            session.expunge(artifact)
+            result = artifact
+        return result
+    except Exception:
+        pending.unlink(missing_ok=True)
+        raise
+
+
+def _finalize_one(pending: Path, target: Path) -> None:
+    if not pending.exists():
+        return
+    if target.exists() or target.is_symlink():
+        if target.is_file() and hashlib.sha256(target.read_bytes()).hexdigest() == hashlib.sha256(pending.read_bytes()).hexdigest():
+            pending.unlink(missing_ok=True)
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.link(pending, target)
+    except FileExistsError:
+        return
+    pending.unlink(missing_ok=True)
+
+
+def reconcile_pending_artifacts(session: Session, root: Path) -> None:
+    """Finalize committed pending artifacts and remove unregistered leftovers."""
+
+    root_path = root.resolve()
+    if not root_path.exists():
+        return
+    committed = {artifact.id: artifact for artifact in session.scalars(select(Artifact)).all()}
+    for pending in root_path.glob(".pending-*"):
+        try:
+            artifact_id = UUIDType(pending.name.removeprefix(".pending-"))
+        except ValueError:
+            pending.unlink(missing_ok=True)
+            continue
+        artifact = committed.get(artifact_id)
+        if artifact is None:
+            pending.unlink(missing_ok=True)
+            continue
+        target = safe_artifact_path(root_path, artifact.relative_path)
+        if pending.stat().st_size != artifact.byte_count or hashlib.sha256(pending.read_bytes()).hexdigest() != artifact.sha256:
+            continue
+        _finalize_one(pending, target)
 
 
 def render_markdown(session: Session, *, project_id: UUID) -> str:

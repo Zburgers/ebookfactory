@@ -167,3 +167,50 @@ def test_health_json_connection_test_uses_get_and_redacts_response_body(tmp_path
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_private_worker_provider_metadata_requires_token_and_excludes_secrets(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'worker-providers.db'}"
+    Base.metadata.create_all(create_engine(database_url))
+    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test")))
+    assert client.put(
+        "/providers/local",
+        json={"endpoint": "https://secret.example/v1", "protocol": "pi-native", "credential_ref": "LOCAL_SECRET", "orchestration_model": "gpt-test"},
+    ).status_code == 200
+    assert client.get("/private/worker/providers").status_code == 401
+    response = client.get("/private/worker/providers", headers={"X-Ebook-Worker-Token": "worker-test"})
+    assert response.status_code == 200
+    assert response.json() == [{
+        "provider": "local",
+        "scope": "app",
+        "protocol": "pi-native",
+        "orchestration_model": "gpt-test",
+        "drafting_model": None,
+        "review_model": None,
+        "credential_configured": True,
+    }]
+    assert "endpoint" not in response.text
+    assert "credential_ref" not in response.text
+
+
+def test_public_provider_metadata_excludes_endpoint_and_credential_ref(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'public-providers.db'}"
+    Base.metadata.create_all(create_engine(database_url))
+    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test")))
+    assert client.put(
+        "/providers/local",
+        json={"endpoint": "https://secret.example/v1", "protocol": "pi-native", "credential_ref": "LOCAL_SECRET", "orchestration_model": "gpt-test"},
+    ).status_code == 200
+    response = client.get("/providers")
+    assert response.status_code == 200
+    assert response.json() == [{
+        "provider": "local",
+        "scope": "app",
+        "protocol": "pi-native",
+        "orchestration_model": "gpt-test",
+        "drafting_model": None,
+        "review_model": None,
+        "credential_configured": True,
+    }]
+    assert "https://secret.example" not in response.text
+    assert "credential_ref" not in response.text

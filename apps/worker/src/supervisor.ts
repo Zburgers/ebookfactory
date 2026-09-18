@@ -13,26 +13,60 @@ const DEFAULT_RETRY_DELAY_MS = 1000;
 const MAX_BACKOFF_MS = 30_000;
 const MAX_MUTATION_ATTEMPTS = 3;
 const MAX_HEARTBEAT_FAILURES = 3;
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+const MAX_RESPONSE_BYTES = 64 * 1024;
 const EXECUTION_ERROR_CLASS = "worker_execution_failure";
 
-async function apiRequest(baseUrl, token, path, body, signal) {
-  const response = await fetch(`${baseUrl}${path}`, {
+async function apiRequest(baseUrl, token, path, body, signal, requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
+  const requestController = new AbortController();
+  const abortRequest = () => requestController.abort();
+  const timeout = setTimeout(() => requestController.abort(), requestTimeoutMs);
+  signal?.addEventListener("abort", abortRequest, { once: true });
+  if (signal?.aborted) abortRequest();
+  try {
+    const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "x-ebook-worker-token": token,
     },
     body: JSON.stringify(body),
-    signal,
-  });
-  if (!response.ok) {
-    const detail = await response.text();
-    const error = new Error(`worker API ${response.status}: ${detail.slice(0, 240)}`);
-    error.status = response.status;
-    throw error;
+      signal: requestController.signal,
+    });
+    const detail = await readBoundedResponse(response);
+    if (!response.ok) {
+      const error = new Error(`worker API ${response.status}: ${detail.slice(0, 240)}`);
+      error.status = response.status;
+      throw error;
+    }
+    if (response.status === 204 || !detail) return null;
+    try { return JSON.parse(detail); } catch { throw new Error("worker API returned malformed JSON"); }
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", abortRequest);
   }
-  if (response.status === 204) return null;
-  return response.json();
+}
+
+async function readBoundedResponse(response) {
+  const reader = response.body?.getReader();
+  if (!reader) return "";
+  const chunks = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_RESPONSE_BYTES) {
+        await reader.cancel();
+        throw new Error("worker API response exceeded limit");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))));
 }
 
 /** Claim one job, returning null when the durable queue is empty. */
@@ -53,6 +87,7 @@ export async function runSupervisor({
   leaseSeconds = DEFAULT_LEASE_SECONDS,
   heartbeatMs = Math.max(1000, Math.floor((leaseSeconds * 1000) / 3)),
   retryDelayMs = DEFAULT_RETRY_DELAY_MS,
+  requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
   signal,
 }) {
   if (!baseUrl || !token || !workerId) throw new Error("baseUrl, token, and workerId are required");
@@ -82,6 +117,7 @@ export async function runSupervisor({
         execute,
         heartbeatMs,
         retryDelayMs,
+        requestTimeoutMs,
         signal,
       });
     } catch {
@@ -113,11 +149,13 @@ async function runLease({
   execute,
   heartbeatMs,
   retryDelayMs,
+  requestTimeoutMs,
   signal,
 }) {
   const executionController = new AbortController();
   const abortExecution = () => executionController.abort();
   signal?.addEventListener("abort", abortExecution, { once: true });
+  if (signal?.aborted) abortExecution();
   const identity = {
     job_id: lease.job_id,
     worker_id: workerId,
@@ -131,7 +169,7 @@ async function runLease({
     if (executionController.signal.aborted || heartbeatInFlight || leaseLost) return;
     heartbeatInFlight = true;
     try {
-      await apiRequest(baseUrl, token, "/private/worker/heartbeat", identity, executionController.signal);
+      await apiRequest(baseUrl, token, "/private/worker/heartbeat", identity, executionController.signal, requestTimeoutMs);
       heartbeatFailures = 0;
     } catch (error) {
       if (executionController.signal.aborted) return;
@@ -153,10 +191,15 @@ async function runLease({
   try {
     let resultRefs;
     try {
-      const result = await execute(lease, { baseUrl, token, workerId, signal: executionController.signal });
+      if (executionController.signal.aborted) return;
+      const result = await executeWithAbort(
+        execute(lease, { baseUrl, token, workerId, signal: executionController.signal }),
+        executionController.signal,
+      );
+      if (result?.terminal === true) return;
       resultRefs = normalizeResultRefs(result);
     } catch {
-      if (!leaseLost && !signal?.aborted) await failLease(baseUrl, token, identity, retryDelayMs, signal);
+      if (!leaseLost && !signal?.aborted) await failLease(baseUrl, token, identity, retryDelayMs, signal, requestTimeoutMs);
       return;
     }
     if (leaseLost) return;
@@ -167,7 +210,7 @@ async function runLease({
         worker_id: identity.worker_id,
         generation: identity.generation,
         result_refs: resultRefs,
-      }, retryDelayMs, executionController.signal);
+      }, retryDelayMs, executionController.signal, requestTimeoutMs);
     } catch {
       return;
     }
@@ -175,6 +218,17 @@ async function runLease({
     clearInterval(heartbeatTimer);
     signal?.removeEventListener("abort", abortExecution);
   }
+}
+
+function executeWithAbort(promise, signal) {
+  if (signal?.aborted) return Promise.reject(new Error("worker execution aborted"));
+  if (!signal) return promise;
+  let abortExecution;
+  const aborted = new Promise((_, reject) => {
+    abortExecution = () => reject(new Error("worker execution aborted"));
+    signal.addEventListener("abort", abortExecution, { once: true });
+  });
+  return Promise.race([promise, aborted]).finally(() => signal.removeEventListener("abort", abortExecution));
 }
 
 function normalizeResultRefs(result) {
@@ -185,7 +239,7 @@ function normalizeResultRefs(result) {
   return result;
 }
 
-async function failLease(baseUrl, token, identity, retryDelayMs, signal) {
+async function failLease(baseUrl, token, identity, retryDelayMs, signal, requestTimeoutMs) {
   try {
     await mutationWithRetry(baseUrl, token, "/private/worker/fail", {
       job_id: identity.job_id,
@@ -194,18 +248,18 @@ async function failLease(baseUrl, token, identity, retryDelayMs, signal) {
       error_class: EXECUTION_ERROR_CLASS,
       retryable: true,
       retry_after_seconds: Math.max(0, retryDelayMs / 1000),
-    }, retryDelayMs, signal);
+    }, retryDelayMs, signal, requestTimeoutMs);
   } catch {
     // A failed report leaves the lease for durable expiry/reclaim; never stop
     // the polling supervisor because the callback transport is unavailable.
   }
 }
 
-async function mutationWithRetry(baseUrl, token, path, body, retryDelayMs, signal) {
+async function mutationWithRetry(baseUrl, token, path, body, retryDelayMs, signal, requestTimeoutMs) {
   for (let attempt = 1; attempt <= MAX_MUTATION_ATTEMPTS; attempt += 1) {
     if (signal?.aborted) return false;
     try {
-      await apiRequest(baseUrl, token, path, body);
+      await apiRequest(baseUrl, token, path, body, signal, requestTimeoutMs);
       return true;
     } catch (error) {
       if (error.status === 409) return false;

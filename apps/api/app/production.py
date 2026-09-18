@@ -1,6 +1,7 @@
 """Fenced acceptance of bounded production text into document state."""
 
 import hashlib
+from contextlib import nullcontext
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -31,13 +32,14 @@ def accept_production_output(
     content: str,
     provider: str | None = None,
     model: str | None = None,
+    manage_transaction: bool = True,
 ) -> ProductionOutput:
     """Persist one fenced output as the latest revision of the opening section."""
 
     if not content.strip():
         raise ValueError("production output is empty")
     content_hash = hashlib.sha256(content.encode()).hexdigest()
-    with session.begin():
+    with (session.begin() if manage_transaction else nullcontext()):
         row = session.execute(
             select(Job, Task, ProductionRun, Project)
             .join(Task, Task.id == Job.task_id)

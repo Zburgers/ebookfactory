@@ -53,4 +53,5 @@ verify:
 	./scripts/tests/test_service_entrypoint.sh
 	./scripts/tests/test_systemd_service.sh
 	./scripts/tests/test_worker_supervisor.sh
+	./scripts/tests/test_worker_runner.sh
 	./scripts/check-isolation.sh

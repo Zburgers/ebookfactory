@@ -1,6 +1,7 @@
 """Transactional approval and durable job enqueue primitives."""
 
 from dataclasses import dataclass
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
@@ -314,10 +315,11 @@ def complete_job(
     worker_id: str,
     generation: int,
     result_refs: dict[str, Any],
+    manage_transaction: bool = True,
 ) -> None:
     """Commit a successful result only under the current lease and epoch."""
 
-    with session.begin():
+    with (session.begin() if manage_transaction else nullcontext()):
         job, task, run, attempt = _locked_lease_context(
             session, job_id=job_id, worker_id=worker_id, generation=generation
         )

@@ -181,6 +181,16 @@ export interface ProviderConnectionTestResponse {
   error: string | null;
 }
 
+export interface ProviderMetadataResponse {
+  provider: string;
+  scope: string;
+  protocol: string | null;
+  orchestration_model: string | null;
+  drafting_model: string | null;
+  review_model: string | null;
+  credential_configured: boolean;
+}
+
 export interface ProviderSettingRequest {
   scope?: string;
   endpoint?: string | null;

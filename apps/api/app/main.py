@@ -53,7 +53,7 @@ from app.models import (
 from app.providers import connection_test, save_provider_setting
 from app.production import accept_production_output
 from app.reviews import record_finding
-from app.artifacts import safe_artifact_path, write_artifact
+from app.artifacts import reconcile_pending_artifacts, safe_artifact_path, write_artifact
 from app.budget import enforce_budget
 from app.tools import InvalidCapability, issue_capability, verify_capability
 from app.usage import finalize_usage_call, list_usage_calls, record_usage_call, usage_totals
@@ -225,6 +225,16 @@ class ProviderSettingResponse(BaseModel):
     provider: str
     scope: str
     endpoint: str | None
+    protocol: str | None
+    orchestration_model: str | None
+    drafting_model: str | None
+    review_model: str | None
+    credential_configured: bool
+
+
+class ProviderMetadataResponse(BaseModel):
+    provider: str
+    scope: str
     protocol: str | None
     orchestration_model: str | None
     drafting_model: str | None
@@ -430,6 +440,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         application.state.database = database
+        if resolved_settings.database_url and resolved_settings.artifact_root:
+            reconciliation_session = database.session()
+            try:
+                reconcile_pending_artifacts(reconciliation_session, resolved_settings.artifact_root)
+            finally:
+                reconciliation_session.close()
         yield
         database.close()
 
@@ -642,17 +658,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             session.close()
 
-    @application.get("/providers", response_model=list[ProviderSettingResponse])
-    def list_providers() -> list[ProviderSettingResponse]:
+    @application.get("/providers", response_model=list[ProviderMetadataResponse])
+    def list_providers() -> list[ProviderMetadataResponse]:
         session = database.session()
         try:
             settings = session.scalars(select(ProviderSetting).order_by(ProviderSetting.provider)).all()
             return [
-                ProviderSettingResponse(
-                    setting_id=setting.id,
+                ProviderMetadataResponse(
                     provider=setting.provider,
                     scope=setting.scope,
-                    endpoint=setting.config.get("endpoint"),
+                    protocol=setting.config.get("protocol"),
+                    orchestration_model=setting.orchestration_model,
+                    drafting_model=setting.drafting_model,
+                    review_model=setting.review_model,
+                    credential_configured=bool(setting.credential_ref),
+                )
+                for setting in settings
+            ]
+        finally:
+            session.close()
+
+    @application.get("/private/worker/providers", response_model=list[ProviderMetadataResponse], tags=["private-worker"])
+    def list_worker_providers(
+        x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token"),
+    ) -> list[ProviderMetadataResponse]:
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
+        session = database.session()
+        try:
+            settings = session.scalars(
+                select(ProviderSetting)
+                .where(ProviderSetting.scope == "app")
+                .order_by(ProviderSetting.provider)
+            ).all()
+            return [
+                ProviderMetadataResponse(
+                    provider=setting.provider,
+                    scope=setting.scope,
                     protocol=setting.config.get("protocol"),
                     orchestration_model=setting.orchestration_model,
                     drafting_model=setting.drafting_model,
@@ -1346,120 +1387,111 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token"),
     ) -> ProductionOutputResponse:
         _require_worker_token(resolved_settings, x_ebook_worker_token)
-        budget_session = database.session()
-        try:
-            budget_allowed, budget_reason = enforce_budget(
-                budget_session,
-                job_id=payload.job_id,
-                worker_id=payload.worker_id,
-                generation=payload.generation,
-                input_tokens=payload.usage.input_tokens if payload.usage else None,
-                output_tokens=payload.usage.output_tokens if payload.usage else None,
-                reasoning_tokens=payload.usage.reasoning_tokens if payload.usage else None,
-            )
-        except (StaleLease, CancellationRejected) as exc:
-            budget_session.rollback()
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        finally:
-            budget_session.close()
-        if not budget_allowed:
-            raise HTTPException(status_code=409, detail=f"production budget blocked: {budget_reason}")
         session = database.session()
+        created_artifact_path: Path | None = None
         try:
-            output = accept_production_output(
-                session,
-                job_id=payload.job_id,
-                worker_id=payload.worker_id,
-                generation=payload.generation,
-                content=payload.content,
-                provider=payload.provider,
-                model=payload.model,
-            )
+            with session.begin():
+                budget_allowed, budget_reason = enforce_budget(
+                    session,
+                    job_id=payload.job_id,
+                    worker_id=payload.worker_id,
+                    generation=payload.generation,
+                    input_tokens=payload.usage.input_tokens if payload.usage else None,
+                    output_tokens=payload.usage.output_tokens if payload.usage else None,
+                    reasoning_tokens=payload.usage.reasoning_tokens if payload.usage else None,
+                    manage_transaction=False,
+                )
+                if budget_allowed:
+                    output = accept_production_output(
+                        session,
+                        job_id=payload.job_id,
+                        worker_id=payload.worker_id,
+                        generation=payload.generation,
+                        content=payload.content,
+                        provider=payload.provider,
+                        model=payload.model,
+                        manage_transaction=False,
+                    )
+                    try:
+                        relative_artifact_path = f"{output.run_id}/book.md"
+                        artifact_candidate_path = safe_artifact_path(resolved_settings.artifact_root, relative_artifact_path)
+                        artifact = write_artifact(
+                            session,
+                            root=resolved_settings.artifact_root,
+                            relative_path=relative_artifact_path,
+                            content=payload.content.encode(),
+                            mime_type="text/markdown",
+                            run_id=output.run_id,
+                            revision_id=output.revision_id,
+                            manage_transaction=False,
+                        )
+                        created_artifact_path = artifact_candidate_path
+                    except FileExistsError:
+                        artifact = session.scalar(select(Artifact).where(Artifact.relative_path == f"{output.run_id}/book.md"))
+                        if artifact is None:
+                            raise HTTPException(status_code=503, detail="artifact registration unavailable")
+
+                    usage_call_id = None
+                    if payload.provider and payload.model:
+                        attempt = session.scalar(
+                            select(Attempt).where(
+                                Attempt.task_id == output.task_id,
+                                Attempt.fencing_generation == payload.generation,
+                            )
+                        )
+                        usage = payload.usage
+                        usage_result = record_usage_call(
+                            session,
+                            call_id=payload.call_id or uuid4(),
+                            provider=payload.provider,
+                            model=payload.model,
+                            purpose="production",
+                            outcome="succeeded",
+                            started_at=utc_now(),
+                            ended_at=utc_now(),
+                            provider_request_id=payload.provider_request_id,
+                            project_id=output.project_id,
+                            run_id=output.run_id,
+                            task_id=output.task_id,
+                            attempt_id=attempt.id if attempt else None,
+                            input_tokens=usage.input_tokens if usage else None,
+                            output_tokens=usage.output_tokens if usage else None,
+                            cache_read_tokens=usage.cache_read_tokens if usage else None,
+                            cache_write_tokens=usage.cache_write_tokens if usage else None,
+                            reasoning_tokens=usage.reasoning_tokens if usage else None,
+                            source_metadata={"source": "pi-final-message", "reported_usage": usage.model_dump() if usage else None},
+                            manage_transaction=False,
+                        )
+                        usage_call_id = usage_result.call_id
+                    complete_job(
+                        session,
+                        job_id=payload.job_id,
+                        worker_id=payload.worker_id,
+                        generation=payload.generation,
+                        result_refs={
+                            "revision_id": str(output.revision_id),
+                            "artifact_id": str(artifact.id),
+                            **({"usage_call_id": str(usage_call_id)} if usage_call_id else {}),
+                        },
+                        manage_transaction=False,
+                    )
+                else:
+                    output = artifact = None
+                    usage_call_id = None
+            if not budget_allowed:
+                raise HTTPException(status_code=409, detail=f"production budget blocked: {budget_reason}")
         except (StaleLease, CancellationRejected, ValueError) as exc:
             session.rollback()
+            if created_artifact_path is not None:
+                created_artifact_path.unlink(missing_ok=True)
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception:
+            session.rollback()
+            if created_artifact_path is not None:
+                created_artifact_path.unlink(missing_ok=True)
+            raise
         finally:
             session.close()
-
-        artifact_session = database.session()
-        try:
-            artifact = write_artifact(
-                artifact_session,
-                root=resolved_settings.artifact_root,
-                relative_path=f"{output.run_id}/book.md",
-                content=payload.content.encode(),
-                mime_type="text/markdown",
-                run_id=output.run_id,
-                revision_id=output.revision_id,
-            )
-        except FileExistsError:
-            artifact = artifact_session.scalar(
-                select(Artifact).where(Artifact.relative_path == f"{output.run_id}/book.md")
-            )
-            if artifact is None:
-                raise HTTPException(status_code=503, detail="artifact registration unavailable")
-        finally:
-            artifact_session.close()
-
-        usage_call_id = None
-        if payload.provider and payload.model:
-            attempt_session = database.session()
-            try:
-                attempt = attempt_session.scalar(
-                    select(Attempt).where(
-                        Attempt.task_id == output.task_id,
-                        Attempt.fencing_generation == payload.generation,
-                    )
-                )
-            finally:
-                attempt_session.close()
-            usage_session = database.session()
-            try:
-                usage = payload.usage
-                usage_started_at = utc_now()
-                usage_result = record_usage_call(
-                    usage_session,
-                    call_id=payload.call_id or uuid4(),
-                    provider=payload.provider,
-                    model=payload.model,
-                    purpose="production",
-                    outcome="succeeded",
-                    started_at=usage_started_at,
-                    ended_at=utc_now(),
-                    provider_request_id=payload.provider_request_id,
-                    project_id=output.project_id,
-                    run_id=output.run_id,
-                    task_id=output.task_id,
-                    attempt_id=attempt.id if attempt else None,
-                    input_tokens=usage.input_tokens if usage else None,
-                    output_tokens=usage.output_tokens if usage else None,
-                    cache_read_tokens=usage.cache_read_tokens if usage else None,
-                    cache_write_tokens=usage.cache_write_tokens if usage else None,
-                    reasoning_tokens=usage.reasoning_tokens if usage else None,
-                    source_metadata={"source": "pi-final-message", "reported_usage": usage.model_dump() if usage else None},
-                )
-                usage_call_id = usage_result.call_id
-            finally:
-                usage_session.close()
-
-        completion_session = database.session()
-        try:
-            complete_job(
-                completion_session,
-                job_id=payload.job_id,
-                worker_id=payload.worker_id,
-                generation=payload.generation,
-                result_refs={
-                    "revision_id": str(output.revision_id),
-                    "artifact_id": str(artifact.id),
-                    **({"usage_call_id": str(usage_call_id)} if usage_call_id else {}),
-                },
-            )
-        except (StaleLease, CancellationRejected) as exc:
-            completion_session.rollback()
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        finally:
-            completion_session.close()
         return ProductionOutputResponse(
             run_id=output.run_id,
             task_id=output.task_id,

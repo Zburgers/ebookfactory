@@ -1,10 +1,12 @@
 from pathlib import Path
+import hashlib
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.artifacts import InvalidArtifactPath, safe_artifact_path, write_artifact
+from app.artifacts import InvalidArtifactPath, reconcile_pending_artifacts, safe_artifact_path, write_artifact
 from app.models import Artifact
 
 
@@ -41,3 +43,63 @@ def test_artifact_write_is_hashed_and_immutable(tmp_path: Path) -> None:
             content=b"changed",
             mime_type="text/markdown",
         )
+
+
+def test_pending_artifact_commits_and_reconciles_after_crash(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'pending.db'}")
+    Artifact.__table__.create(engine)
+    root = tmp_path / "artifacts"
+    session = Session(engine)
+    artifact = write_artifact(
+        session,
+        root=root,
+        relative_path="run-1/book.md",
+        content=b"pending content",
+        mime_type="text/markdown",
+        manage_transaction=False,
+    )
+    assert list(root.rglob(".pending-*"))
+    session.commit()
+    assert (root / "run-1/book.md").read_bytes() == b"pending content"
+    assert not list(root.rglob(".pending-*"))
+    assert artifact.id is not None
+
+    crash_id = uuid4()
+    crash_content = b"crash recovery"
+    session.add(Artifact(
+        id=crash_id,
+        relative_path="run-crash/book.md",
+        mime_type="text/markdown",
+        byte_count=len(crash_content),
+        sha256=hashlib.sha256(crash_content).hexdigest(),
+        validation_state="generated",
+    ))
+    session.commit()
+    crash_pending = root / f".pending-{crash_id}"
+    crash_pending.write_bytes(crash_content)
+    reconcile_pending_artifacts(session, root)
+    assert (root / "run-crash/book.md").read_bytes() == crash_content
+    assert not crash_pending.exists()
+
+    orphan = root / ".pending-orphan"
+    orphan.write_bytes(b"orphan")
+    reconcile_pending_artifacts(session, root)
+    assert not orphan.exists()
+
+
+def test_pending_artifact_rolls_back_without_final_file(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'pending-rollback.db'}")
+    Artifact.__table__.create(engine)
+    root = tmp_path / "artifacts"
+    session = Session(engine)
+    write_artifact(
+        session,
+        root=root,
+        relative_path="run-2/book.md",
+        content=b"rolled back",
+        mime_type="text/markdown",
+        manage_transaction=False,
+    )
+    session.rollback()
+    assert not (root / "run-2/book.md").exists()
+    assert not list(root.rglob(".pending-*"))

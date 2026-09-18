@@ -1,6 +1,7 @@
 """Replay-safe normalized provider usage accounting."""
 
 from dataclasses import dataclass
+from contextlib import nullcontext
 from datetime import datetime
 from uuid import UUID
 
@@ -38,10 +39,11 @@ def record_usage_call(
     cache_write_tokens: int | None = None,
     reasoning_tokens: int | None = None,
     source_metadata: dict | None = None,
+    manage_transaction: bool = True,
 ) -> UsageResult:
     """Insert one call or return its existing aggregate on stream replay."""
 
-    with session.begin():
+    with (session.begin() if manage_transaction else nullcontext()):
         usage = session.scalar(select(UsageCall).where(UsageCall.id == call_id).with_for_update())
         if usage is not None:
             return UsageResult(call_id=usage.id, outcome=usage.outcome, finalized=usage.ended_at is not None)

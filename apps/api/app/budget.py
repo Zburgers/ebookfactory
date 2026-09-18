@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timezone
+from contextlib import nullcontext
 from typing import Any
 from uuid import UUID
 
@@ -32,10 +33,11 @@ def enforce_budget(
     input_tokens: int | None,
     output_tokens: int | None,
     reasoning_tokens: int | None = None,
+    manage_transaction: bool = True,
 ) -> tuple[bool, str | None]:
     """Allow a fenced attempt or persist a visible blocked transition."""
 
-    with session.begin():
+    with (session.begin() if manage_transaction else nullcontext()):
         job, task, run, attempt = _locked_lease_context(
             session, job_id=job_id, worker_id=worker_id, generation=generation
         )
