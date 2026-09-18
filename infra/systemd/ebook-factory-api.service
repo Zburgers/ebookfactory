@@ -12,7 +12,7 @@ Environment=EBOOK_FACTORY_BIND_TO_PRIVATE=true
 Environment=EBOOK_FACTORY_PRIVATE_INTERFACES=eno1
 Environment=EBOOK_FACTORY_BIND_TO_LOOPBACK=true
 Environment=EBOOK_FACTORY_PORT=6969
-Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=%h/.npm-global/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=%h/.config/shipyard/worktrees/ebookfactory/codex-ebook-factory-v2/scripts/serve-api.sh
 Restart=on-failure
 RestartSec=5s
