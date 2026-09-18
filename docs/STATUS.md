@@ -14,9 +14,12 @@ image-artifact route proven. P02 revision `a0ca026` adds hash-bound approval,
 durable jobs, lease/fencing recovery, cancellation epochs, ordered event/outbox
 replay, private worker callbacks and a minimal supervisor loop. Six focused
 PostgreSQL recovery tests pass, including concurrent claim ownership; P03–P10
-remain incomplete.
+remain incomplete. P03 revision `8de7198` adds durable project conversations,
+message dedupe/order, non-secret provider metadata, capability-token scope
+checks, and explicit Pi CLI resource flags. It does not claim a live dashboard
+provider response.
 
-Next: P03 Pi sessions, provider settings and scoped tools. Pending owner input: Telegram token and
+Next: P04 execution sandbox. Pending owner input: Telegram token and
 allowed chat/sender IDs. Pending technical proofs: Pi model gateway inside
 containment, Codex subscription image bridge, provider quota availability,
 maintained publishing converters, and the rest of the integrated product.

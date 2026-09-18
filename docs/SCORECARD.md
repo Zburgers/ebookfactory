@@ -5,7 +5,7 @@ integrated product and hard gates are not complete.**
 
 | Area | Earned / available | Evidence |
 |---|---:|---|
-| Pi/providers | 0/10 | P00 CLI spike is not a dashboard-configured provider integration; custom URL/key test pending |
+| Pi/providers | 0/10 | P00 CLI spike plus P03 non-secret provider/capability boundaries; no dashboard-configured live response or usage persistence yet (`evidence/P03/`) |
 | Durable runtime | 14/14 | `evidence/P02/integration.md`; real PostgreSQL recovery suite covers atomic enqueue/dedupe, restart/checkpoint recovery, fencing, cancellation and concurrent claims |
 | Containment | 0/10 | pending |
 | Production | 0/16 | pending |
@@ -18,6 +18,6 @@ integrated product and hard gates are not complete.**
 
 Hard gates H1–H9: NOT RUN. Independent critics remain unavailable in this
 runtime; lead critiques are recorded at `evidence/P00/critique.md`,
-`evidence/P01/critique.md` and `evidence/P02/critique.md`. Final
-evidence/revision: P02 `a0ca026`; integrated application delivery remains
-unimplemented.
+`evidence/P01/critique.md`, `evidence/P02/critique.md` and
+`evidence/P03/critique.md`. Final evidence/revision: P03 `8de7198` is the
+latest implementation; integrated application delivery remains unimplemented.
