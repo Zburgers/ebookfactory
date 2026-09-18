@@ -20,9 +20,11 @@ checks, and explicit Pi CLI resource flags. It does not claim a live dashboard
 provider response. P04 revision `58e1161` adds a pinned non-root rootless
 Podman image, private workspace arguments and a real host-sentinel/network
 containment check. Artifact validation and crash reconciliation are still
-pending.
+pending. P05 revision `c3cbf4c` adds the revisioned brief/section/review
+document core and API journey checks, but not a generated book or production
+runner.
 
-Next: P05 autonomous book production. Pending owner input: Telegram token and
+Next: finish P05 autonomous book production. Pending owner input: Telegram token and
 allowed chat/sender IDs. Pending technical proofs: Pi model gateway inside
 containment, Codex subscription image bridge, provider quota availability,
 maintained publishing converters, and the rest of the integrated product.
