@@ -27,5 +27,5 @@ runtime; lead critiques are recorded at `evidence/P00/critique.md`,
 `evidence/P05/critique.md`, `evidence/P06/critique.md` and
 `evidence/P07/critique.md`, `evidence/P08/critique.md` and
 `evidence/P05/production-seam-critique.md` and `evidence/P10/backup-critique.md`.
-Final evidence/revision: P05 real production evidence is the latest
-implementation slice; integrated application delivery remains partial.
+Final evidence/revision: integrated slice `d2f3cf7`; application delivery remains
+partial because the listed external hard gates are not fabricated as passed.

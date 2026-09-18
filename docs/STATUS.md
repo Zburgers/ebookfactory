@@ -46,7 +46,11 @@ label-scoped container reconciliation and unrelated-container preservation.
 Next: finish review-aware production and integrate the validated publishing
 package into the dashboard. P07 now has one real finalized usage call and P08
 has real fiction/nonfiction packages; P08 art capability is proven but no
-image-generation turn has been invoked. Pending owner
+image-generation turn has been invoked. Integrated revision `d2f3cf7` adds the
+review-aware section editor, owner revision/export flow, real finalized usage
+attribution, deterministic EPUB/PDF/DOCX/Markdown packages, project-scoped
+review ownership checks, and the Codex app-server art adapter. The Python
+dependency audit is clean after upgrading Pillow to 12.3.0. Pending owner
 input: Telegram token and allowed chat/sender IDs. Pending technical proofs: Pi
 model gateway inside containment, Codex subscription image bridge, provider
 quota availability, EPUBCheck/Kindle preview, a real Codex image artifact,
