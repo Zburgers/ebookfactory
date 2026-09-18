@@ -714,7 +714,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             with session.begin():
                 turn = locked_turn(session, turn_id=turn_id, worker_id=x_worker_id, generation=x_generation)
-                messages = session.scalars(select(Message).where(Message.conversation_id == turn.conversation_id).order_by(Message.sequence.desc()).limit(40)).all()[::-1]
+                user_message = session.scalar(select(Message).where(Message.id == turn.user_message_id))
+                if user_message is None:
+                    raise ValueError("orchestrator user message not found")
+                messages = session.scalars(
+                    select(Message)
+                    .where(Message.conversation_id == turn.conversation_id, Message.sequence <= user_message.sequence)
+                    .order_by(Message.sequence.desc()).limit(40)
+                ).all()[::-1]
                 bounded = []
                 total = 0
                 for message in messages:

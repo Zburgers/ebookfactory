@@ -90,6 +90,28 @@ def test_trusted_orchestrator_worker_claims_and_persists_assistant_lineage(tmp_p
         assert replay.json()["duplicate"] is True
 
 
+def test_orchestrator_context_is_cut_off_at_claimed_user_message(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'orchestrator-context.db'}"
+    engine = create_engine(database_url); Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        project = Project(id=uuid4(), title="Context", profile="fiction", language="en")
+        conversation = Conversation(id=uuid4(), project_id=project.id, channel="dashboard"); project.conversation_id = conversation.id
+        session.add_all([project, conversation]); session.commit()
+        project_id, conversation_id = project.id, conversation.id
+
+    with TestClient(create_app(Settings(database_url=database_url, worker_token="worker"))) as client:
+        first = client.post(f"/projects/{project_id}/messages", json={"conversation_id": str(conversation_id), "external_dedupe_id": "first", "content": "first question"}).json()
+        second = client.post(f"/projects/{project_id}/messages", json={"conversation_id": str(conversation_id), "external_dedupe_id": "second", "content": "newer question"}).json()
+        headers = {"X-Ebook-Worker-Token": "worker"}
+        lease = client.post("/private/orchestrator/claim", json={"worker_id": "pi-1"}, headers=headers).json()
+        context = client.get(f"/private/orchestrator/{lease['turn_id']}/context", headers={**headers, "X-Worker-ID": "pi-1", "X-Generation": str(lease["generation"])})
+
+    assert first["turn_id"] == lease["turn_id"]
+    assert second["turn_id"] != lease["turn_id"]
+    contents = [message["content"] for message in context.json()["messages"]]
+    assert contents == ["first question"]
+
+
 def test_dashboard_message_rejects_oversized_content(tmp_path) -> None:
     database_url = f"sqlite:///{tmp_path / 'message-limit.db'}"
     engine = create_engine(database_url); Base.metadata.create_all(engine)

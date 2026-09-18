@@ -1,5 +1,18 @@
 # Build status
 
+2026-09-19: Revision `2ad955e` adds a durable dashboard-to-Pi orchestrator
+worker and an on-demand Codex quota adapter. `GET /quota/live` invokes the
+local `codexctl status` command per request, parses only verified 5-hour and
+7-day windows, and returns explicit 503/unavailable behavior without writing
+quota rows. The Usage panel now shows readable live windows, source and fetch
+time, and no `unknown%` placeholders. The rootless worker service is enabled
+for boot under `naki`; a real dashboard turn completed through
+`openai-codex/gpt-5.6-luna` and persisted the assistant response. Evidence is
+at `evidence/P07/quota-on-demand.md` and `evidence/P06/orchestrator-live.md`.
+The independent Luna-high critique remains NO-GO for the full product gate:
+token streaming, bounded failure state, turn-scoped context, Telegram routing,
+owner authentication, and stable browser dedupe remain open.
+
 2026-09-19: The owner raised the completion gate from `>80/100` to strictly
 `>90/100` (at least 91), with all hard gates unchanged. P10 now installs the
 API as rootless `ebook-factory-api.service` under the `naki` user manager,

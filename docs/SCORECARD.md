@@ -4,6 +4,11 @@ Current score: **78/100 — durable runtime/containment, real production with
 reviewed revision lineage, live usage attribution, dashboard document flow and
 structural publishing packages are evidenced; external hard gates remain.**
 
+The score is intentionally unchanged pending a full re-score. Revision
+`2ad955e` proves a real durable dashboard-to-Luna completion and live
+non-persistent quota reads, but it does not close the independent critique's
+streaming, failure-recovery, Telegram, authentication, or concurrency findings.
+
 | Area | Earned / available | Evidence |
 |---|---:|---|
 | Pi/providers | 4/10 | Real Luna-low subscription call with provider/model/usage attribution and a custom local URL/key connection-test boundary are evidenced; a real dashboard-configured Pi answer and browser acceptance remain pending (`evidence/P07/live-usage.md`, `evidence/P03/provider-connection.md`) |
