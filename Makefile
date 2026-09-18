@@ -3,13 +3,25 @@
 API_DIR := apps/api
 EVIDENCE_DIR := evidence/P00
 
-.PHONY: doctor dev verify backup restore-check acceptance
+.PHONY: doctor dev start stop restart status verify backup restore-check acceptance
 
 doctor:
 	./scripts/doctor.sh --strict --output $(EVIDENCE_DIR)/capabilities.json
 
 dev:
 	set -a; [ ! -f .env ] || . ./.env; set +a; cd $(API_DIR) && uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+start:
+	./scripts/service.sh start
+
+stop:
+	./scripts/service.sh stop
+
+restart:
+	./scripts/service.sh restart
+
+status:
+	./scripts/service.sh status
 
 backup:
 	@./scripts/backup.sh
@@ -34,4 +46,5 @@ verify:
 	./scripts/tests/test_sandbox_args.sh
 	./scripts/tests/test_production_boundary.sh
 	./scripts/tests/test_operations_entrypoints.sh
+	./scripts/tests/test_service_entrypoint.sh
 	./scripts/check-isolation.sh

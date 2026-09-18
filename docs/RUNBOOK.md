@@ -4,7 +4,7 @@ The API uses native PostgreSQL through the owner-confirmed peer role `naki` and
 database `ebookfactory` on `/var/run/postgresql`. Normal operation does not use
 sudo, database passwords, or a second database.
 
-Start the local API and dashboard:
+Start the local API and dashboard in the foreground:
 
 ```sh
 make dev
@@ -13,6 +13,11 @@ make dev
 Open `http://127.0.0.1:8000`. Stop with Ctrl-C. The worker callback token is
 only needed when the trusted supervisor is enabled; keep it in the ignored root
 `.env` as `EBOOK_FACTORY_WORKER_TOKEN`.
+
+For an owned background API lifecycle, use `make start`, `make status`,
+`make restart` and `make stop`. The wrapper stores only its PID and log under
+`var/run` and does not manage the worker or Podman jobs; inspect those through
+the separate supervisor/containment checks.
 
 Create a custom-format peer-authenticated backup:
 
