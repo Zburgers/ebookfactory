@@ -1,6 +1,6 @@
 # Delivery scorecard
 
-Current score: **74/100 — durable runtime/containment, real production with
+Current score: **76/100 — durable runtime/containment, real production with
 reviewed revision lineage, live usage attribution, dashboard document flow and
 structural publishing packages are evidenced; external hard gates remain.**
 
@@ -15,7 +15,7 @@ structural publishing packages are evidenced; external hard gates remain.**
 | Publishing | 10/12 | Real structurally checked EPUB/PDF/DOCX/Markdown, cover, metadata and manifests are persisted; EPUBCheck and Kindle preview remain pending (`evidence/P08/publishing.md`) |
 | Art | 0/5 | pending |
 | Telegram | 0/5 | Durable adapter and redacted status boundary are implemented and tested; live token/chat/sender loop remains pending (`evidence/P09/telegram.md`) |
-| Operations | 2/6 | Peer-authenticated backup/archive check and runbook are evidenced; isolated restore and owned service lifecycle remain pending (`evidence/P10/`) |
+| Operations | 4/6 | Peer-authenticated backup/archive check, runbook and an owned API start/stop/status lifecycle are evidenced; isolated restore remains pending (`evidence/P10/`) |
 
 Hard gates: H3 PASS from `evidence/P04/reconciliation-correction.md`; H1,
 H2, H4–H9 remain NOT RUN. H4 now has real output and owner-review evidence but

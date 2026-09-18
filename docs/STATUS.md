@@ -60,6 +60,9 @@ Telegram loop, isolated restore, and the rest of the integrated product. P10
 revision `e15ceb1` adds runnable `make acceptance` and `make restore-check`
 entrypoints; target composition was corrected in `1a7c100`, and acceptance
 deliberately exits PARTIAL while those gates remain unproven.
+Operations follow-up `a20f00f` adds an owned API/dashboard lifecycle wrapper
+with readiness wait, PID ownership checks and Make start/stop/restart/status
+commands. Worker/container lifecycle remains a separate unclaimed boundary.
 Production revision `f04fd56` adds durable measured budget blocking for turn,
 token and elapsed-time caps; the focused transition test and the later live
 API boundary rejection pass. Provider-side rejection remains intentionally
