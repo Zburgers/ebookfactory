@@ -26,6 +26,8 @@ runner. P06 revision `89640b4` adds a same-origin dashboard shell with project,
 chat, approval, event-cursor and provider metadata flows; full review/download
 dashboard acceptance remains pending. Generated dashboard API artifacts were
 committed in follow-up revision `c0b0bfb`.
+P07 revision `b2e1d5a` adds replay-safe usage-call recording/finalization and
+explicit null cost fields, but no live Pi call or quota adapter is wired yet.
 
 Next: finish P05 autonomous book production. Pending owner input: Telegram token and
 allowed chat/sender IDs. Pending technical proofs: Pi model gateway inside
