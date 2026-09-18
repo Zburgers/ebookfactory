@@ -41,3 +41,20 @@ export function buildPodmanArgs({ image = JOB_IMAGE, name, installId, jobId, gen
     ...command,
   ];
 }
+
+export function buildInspectArgs({ installId, jobId, generation }) {
+  if (!installId || !jobId || !Number.isInteger(generation)) throw new Error("job identity is required");
+  return [
+    "ps",
+    "--all",
+    "--filter", `label=io.ebook-factory.install=${installId}`,
+    "--filter", `label=io.ebook-factory.job=${jobId}`,
+    "--filter", `label=io.ebook-factory.generation=${generation}`,
+    "--format", "{{.ID}} {{.Names}} {{.Status}}",
+  ];
+}
+
+export function buildStopArgs(name) {
+  if (!name) throw new Error("container name is required");
+  return ["stop", "--time", "5", name];
+}
