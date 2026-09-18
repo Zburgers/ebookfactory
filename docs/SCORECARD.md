@@ -1,13 +1,14 @@
 # Delivery scorecard
 
-Current score: **14/100 — P02 durable-runtime subcriteria are evidenced; the
-integrated product and hard gates are not complete.**
+Current score: **21/100 — P02 durable-runtime and the tested P04 containment
+subcriteria are evidenced; the integrated product and hard gates are not
+complete.**
 
 | Area | Earned / available | Evidence |
 |---|---:|---|
 | Pi/providers | 0/10 | P00 CLI spike plus P03 non-secret provider/capability boundaries; no dashboard-configured live response or usage persistence yet (`evidence/P03/`) |
 | Durable runtime | 14/14 | `evidence/P02/integration.md`; real PostgreSQL recovery suite covers atomic enqueue/dedupe, restart/checkpoint recovery, fencing, cancellation and concurrent claims |
-| Containment | 0/10 | pending |
+| Containment | 7/10 | Filesystem/secret isolation and enforced network/resource limits pass `evidence/P04/integration.md`; reconciliation/cleanup subcriterion remains pending |
 | Production | 0/16 | pending |
 | Dashboard | 0/10 | pending |
 | Usage | 0/12 | pending |
@@ -18,6 +19,7 @@ integrated product and hard gates are not complete.**
 
 Hard gates H1–H9: NOT RUN. Independent critics remain unavailable in this
 runtime; lead critiques are recorded at `evidence/P00/critique.md`,
-`evidence/P01/critique.md`, `evidence/P02/critique.md` and
-`evidence/P03/critique.md`. Final evidence/revision: P03 `8de7198` is the
+`evidence/P01/critique.md`, `evidence/P02/critique.md`,
+`evidence/P03/critique.md` and `evidence/P04/critique.md`. Final
+evidence/revision: P04 `58e1161` is the
 latest implementation; integrated application delivery remains unimplemented.
