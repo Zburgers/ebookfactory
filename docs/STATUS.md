@@ -69,6 +69,11 @@ A read-only real subscription probe persisted primary 30% used, secondary 26%
 used and an unavailable credits record without retaining provider account IDs.
 Usage quota evidence earns the Codex quota subcriterion; Copilot quota and
 monetary billing remain unknown.
+Dashboard follow-up `e37c2ae` records a real Chromium owner journey over
+PostgreSQL: synthetic chat/brief/approval, section revision, review display,
+ten export links/download, event replay, quota/settings visibility and
+accessibility checks. The synthetic queued run was cancelled after the trace;
+no model call was made.
 
 Operating instruction: for future probes and delegated work, explicitly select
 the least-cost available route, preferably GPT 5.6 Luna low when the runtime
