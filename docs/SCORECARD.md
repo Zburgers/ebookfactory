@@ -14,7 +14,7 @@ structural publishing packages are evidenced; external hard gates remain.**
 | Usage | 4/12 | Real finalized call attribution and idempotent totals are evidenced; estimates, corrections, Codex/Copilot quota snapshots and drill-down remain pending (`evidence/P07/live-usage.md`) |
 | Publishing | 10/12 | Real structurally checked EPUB/PDF/DOCX/Markdown, cover, metadata and manifests are persisted; EPUBCheck and Kindle preview remain pending (`evidence/P08/publishing.md`) |
 | Art | 0/5 | pending |
-| Telegram | 0/5 | pending |
+| Telegram | 0/5 | Durable adapter and redacted status boundary are implemented and tested; live token/chat/sender loop remains pending (`evidence/P09/telegram.md`) |
 | Operations | 2/6 | Peer-authenticated backup/archive check and runbook are evidenced; isolated restore and owned service lifecycle remain pending (`evidence/P10/`) |
 
 Hard gates: H3 PASS from `evidence/P04/reconciliation-correction.md`; H1,
