@@ -4,6 +4,6 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "verify": "node -e \"JSON.parse(require('fs').readFileSync('package.json', 'utf8'))\" && for f in src/*.ts; do node --check \"$f\"; done"
+    "verify": "node -e \"JSON.parse(require('fs').readFileSync('package.json', 'utf8'))\" && for f in src/*.ts; do node \"$f\"; done"
   }
 }

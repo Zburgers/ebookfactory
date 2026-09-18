@@ -1,0 +1,9 @@
+FROM docker.io/library/alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+
+RUN addgroup -S -g 1000 ebook && adduser -S -u 1000 -G ebook ebook \
+    && mkdir -p /workspace /tmp \
+    && chown -R ebook:ebook /workspace /tmp
+
+USER ebook
+WORKDIR /workspace
+ENTRYPOINT ["/bin/sh"]
