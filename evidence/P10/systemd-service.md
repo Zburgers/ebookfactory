@@ -1,6 +1,6 @@
 # P10 systemd user service evidence
 
-- UTC: 2026-09-18T20:11:07Z
+- UTC: 2026-09-18T20:48:58Z
 - Host: Razor Crest, Linux user `naki`
 - Service: `ebook-factory-api.service`
 - Unit: `infra/systemd/ebook-factory-api.service`
@@ -20,11 +20,13 @@ The service is a rootless systemd user unit enabled under `default.target`, with
 and `UMask=0077`. Credentials remain in the ignored local `.env` via the unit's
 optional `EnvironmentFile`; no credential values are logged or committed.
 
-The launcher discovers the current Tailscale IPv4 and private LAN IPv4
-addresses, starts one Uvicorn listener per address on port 6969, and excludes
-loopback, wildcard, Docker, Podman, and bridge addresses. Observed listeners:
+The launcher discovers the current Tailscale IPv4 and the explicit `eno1`
+private LAN IPv4, starts one Uvicorn listener per address on port 6969, and
+also binds loopback. It excludes wildcard, Docker, Podman, and bridge
+addresses. Observed listeners:
 
 ```text
+127.0.0.1:6969
 100.87.104.100:6969
 192.168.29.14:6969
 ```
@@ -34,6 +36,11 @@ Both real health checks returned:
 ```json
 {"service":"ebook-factory-api","status":"ok","version":"0.1.0"}
 ```
+
+After revision `ca7d6bc`, the unit was daemon-reloaded and restarted. Health
+checks passed on all three listeners. A deliberate `SIGKILL` of the systemd
+main process produced `restart-after-kill: passed`, followed by a successful
+Tailscale health check. `systemctl --user` reports the unit enabled and active.
 
 The first service start exposed a missing systemd PATH for `/home/naki/.local/bin/uv`
 and exited 127. The unit was corrected to carry the explicit user-local PATH;

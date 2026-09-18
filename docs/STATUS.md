@@ -4,9 +4,14 @@
 `>90/100` (at least 91), with all hard gates unchanged. P10 now installs the
 API as rootless `ebook-factory-api.service` under the `naki` user manager,
 enabled for boot with `Linger=yes`, automatic failure restart, and port 6969
-bound only to the current Tailscale IPv4 and private LAN IPv4 addresses.
-Real health checks passed on `100.87.104.100:6969` and `192.168.29.14:6969`;
-see `evidence/P10/systemd-service.md`. The score remains 76/100 and external
+bound only to loopback, the current Tailscale IPv4, and the explicit `eno1`
+private-LAN IPv4. Real health checks passed on
+`127.0.0.1:6969`, `100.87.104.100:6969`, and `192.168.29.14:6969`; a
+deliberate main-process kill was recovered by systemd. Revision `ca7d6bc` also
+adds a worker-token/local-only provider connection test with pinned-address
+dialing, exact-origin private allowlisting, and no secret-bearing responses;
+see `evidence/P03/provider-connection.md` and `evidence/P10/systemd-service.md`.
+The score remains 76/100 and external
 Telegram, Codex image, Copilot billing, Kindle/EPUBCheck, and isolated-restore
 gates remain pending.
 
@@ -76,6 +81,11 @@ Telegram loop, isolated restore, and the rest of the integrated product. P10
 revision `e15ceb1` adds runnable `make acceptance` and `make restore-check`
 entrypoints; target composition was corrected in `1a7c100`, and acceptance
 deliberately exits PARTIAL while those gates remain unproven.
+Provider follow-up `ca7d6bc` adds real local-HTTP OpenAI-compatible and health
+protocol connection checks, strict credential-reference validation, pinned DNS
+resolution, redirect/proxy avoidance, response usage filtering, and dashboard
+controls. The full verification suite and independent Luna-low security review
+pass; H1 still requires a real dashboard-configured Pi answer.
 Operations follow-up `a20f00f` adds an owned API/dashboard lifecycle wrapper
 with readiness wait, PID ownership checks and Make start/stop/restart/status
 commands. Worker/container lifecycle remains a separate unclaimed boundary.

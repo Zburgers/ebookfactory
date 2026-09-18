@@ -6,7 +6,7 @@ structural publishing packages are evidenced; external hard gates remain.**
 
 | Area | Earned / available | Evidence |
 |---|---:|---|
-| Pi/providers | 4/10 | Real Luna-low subscription call with provider/model/usage attribution; custom URL/key protocol integration and a browser-driven provider connection check remain pending (`evidence/P07/live-usage.md`) |
+| Pi/providers | 4/10 | Real Luna-low subscription call with provider/model/usage attribution and a custom local URL/key connection-test boundary are evidenced; a real dashboard-configured Pi answer and browser acceptance remain pending (`evidence/P07/live-usage.md`, `evidence/P03/provider-connection.md`) |
 | Durable runtime | 14/14 | `evidence/P02/integration.md`; real PostgreSQL recovery suite covers atomic enqueue/dedupe, restart/checkpoint recovery, fencing, cancellation and concurrent claims |
 | Containment | 10/10 | Filesystem/secret isolation, enforced network/resource limits and label-scoped reconciliation all pass P04 evidence, including unrelated-container preservation |
 | Production | 16/16 | Real fiction/nonfiction output, fenced context/task lineage, owner revision, resolved review finding and a live pre-publication budget rejection are evidenced (`evidence/P05/real-production.md`, `evidence/P05/budget-blocking.md`, `evidence/P05/budget-live.md`, `evidence/P06/dashboard-correction.md`) |
@@ -31,4 +31,4 @@ for the latest packets; earlier lead critiques remain recorded at `evidence/P00/
 `evidence/P05/production-seam-critique.md` and `evidence/P10/backup-critique.md`.
 Final evidence/revision: integrated slice `e15ceb1` (with Telegram at `ba181f7`);
 application delivery remains partial because the listed external hard gates are
-not fabricated as passed. Latest worker revision: `0e691d0`.
+not fabricated as passed. Latest worker revision: `0e691d0`; latest provider/service revision: `ca7d6bc`.
