@@ -1,6 +1,7 @@
 """Durable project conversations and idempotent inbound messages."""
 
 from dataclasses import dataclass
+from contextlib import nullcontext
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -52,10 +53,11 @@ def append_message(
     external_dedupe_id: str | None,
     role: str,
     content: str,
+    manage_transaction: bool = True,
 ) -> MessageResult:
     """Append one ordered message, returning the existing row on replay."""
 
-    with session.begin():
+    with (session.begin() if manage_transaction else nullcontext()):
         conversation = session.scalar(
             select(Conversation)
             .where(Conversation.id == conversation_id, Conversation.project_id == project_id)

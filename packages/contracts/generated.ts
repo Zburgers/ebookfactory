@@ -102,6 +102,19 @@ export interface HeartbeatRequest {
   lease_seconds?: number;
 }
 
+export interface LiveQuotaResponse {
+  fetched_at: string;
+  source: string;
+  windows: Array<LiveQuotaWindow>;
+}
+
+export interface LiveQuotaWindow {
+  window_seconds: number;
+  used: number;
+  remaining: number;
+  reset: string;
+}
+
 export interface MessageCreateRequest {
   conversation_id: string;
   channel?: string;
@@ -113,6 +126,8 @@ export interface MessageResponse {
   message_id: string;
   sequence: number;
   duplicate: boolean;
+  turn_id?: string | null;
+  queued?: boolean;
 }
 
 export interface MessageView {
@@ -133,6 +148,36 @@ export interface ModelCatalogEntry {
   max_output: string;
   thinking: boolean;
   images: boolean;
+}
+
+export interface OrchestratorClaimRequest {
+  worker_id: string;
+  lease_seconds?: number;
+}
+
+export interface OrchestratorHeartbeatRequest {
+  turn_id: string;
+  worker_id: string;
+  generation: number;
+  lease_seconds?: number;
+}
+
+export interface OrchestratorLeaseResponse {
+  turn_id: string;
+  worker_id: string;
+  generation: number;
+  lease_until: string;
+}
+
+export interface OrchestratorResultRequest {
+  turn_id: string;
+  worker_id: string;
+  generation: number;
+  content: string;
+  provider: string;
+  model: string;
+  call_id: string;
+  usage?: Record<string, number | null> | null;
 }
 
 export interface ProductionOutputRequest {

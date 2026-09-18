@@ -19,7 +19,7 @@ grep -Fq 'EBOOK_FACTORY_BIND_TO_TAILSCALE=true' "$unit"
 grep -Fq 'EBOOK_FACTORY_BIND_TO_PRIVATE=true' "$unit"
 grep -Fq 'EBOOK_FACTORY_PRIVATE_INTERFACES=eno1' "$unit"
 grep -Fq 'EBOOK_FACTORY_BIND_TO_LOOPBACK=true' "$unit"
-grep -Fq 'PATH=%h/.npm-global/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin' "$unit"
+grep -Fq 'PATH=%h/.cargo/bin:%h/.npm-global/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin' "$unit"
 
 bash -n "$installer" "$serve"
 addresses="$(EBOOK_FACTORY_DRY_RUN=true EBOOK_FACTORY_BIND_TO_LOOPBACK=true EBOOK_FACTORY_PRIVATE_INTERFACES=eno1 "$serve")"

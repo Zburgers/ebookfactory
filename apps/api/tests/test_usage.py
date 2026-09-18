@@ -81,7 +81,7 @@ def test_usage_call_drilldown_route_is_project_scoped(tmp_path) -> None:
     database_url = f"sqlite:///{tmp_path / 'usage-api.db'}"
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)
-    client = TestClient(create_app(Settings(database_url=database_url)))
+    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-secret")))
     project_id = uuid4()
     call_id = uuid4()
 
@@ -97,6 +97,21 @@ def test_usage_call_drilldown_route_is_project_scoped(tmp_path) -> None:
             "input_tokens": 4,
             "output_tokens": 3,
         },
+    )
+    assert recorded.status_code == 401
+    recorded = client.post(
+        "/usage/calls",
+        json={
+            "call_id": str(call_id),
+            "provider": "openai-codex",
+            "model": "openai-codex/gpt-5.6-luna",
+            "purpose": "production",
+            "outcome": "succeeded",
+            "project_id": str(project_id),
+            "input_tokens": 4,
+            "output_tokens": 3,
+        },
+        headers={"X-Ebook-Worker-Token": "worker-secret"},
     )
     assert recorded.status_code == 201
     calls = client.get(f"/usage/calls?project_id={project_id}").json()

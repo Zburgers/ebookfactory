@@ -82,6 +82,27 @@ class Message(CreatedMixin, Base):
     turn_state: Mapped[str] = mapped_column(String(32), nullable=False, default="received")
 
 
+class OrchestratorTurn(CreatedMixin, UpdatedMixin, Base):
+    """Durable dashboard turn lease and completion record."""
+
+    __tablename__ = "orchestrator_turns"
+    __table_args__ = (UniqueConstraint("dedupe_key", name="uq_orchestrator_turn_dedupe"),)
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    conversation_id: Mapped[UUID] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    user_message_id: Mapped[UUID] = mapped_column(ForeignKey("messages.id", ondelete="CASCADE"), nullable=False)
+    assistant_message_id: Mapped[UUID | None] = mapped_column(ForeignKey("messages.id"))
+    dedupe_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
+    lease_owner: Mapped[str | None] = mapped_column(String(128))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    provider: Mapped[str | None] = mapped_column(String(64))
+    model: Mapped[str | None] = mapped_column(String(128))
+
+
 class ProductionRun(CreatedMixin, UpdatedMixin, Base):
     __tablename__ = "production_runs"
 

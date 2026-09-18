@@ -10,6 +10,7 @@ import { EventEmitter } from "node:events";
 import { createProductionExecutor } from "./apps/worker/src/runner.ts";
 import { runPiProduction } from "./apps/worker/src/production.ts";
 import { runSupervisor } from "./apps/worker/src/supervisor.ts";
+import { createOrchestratorExecutor } from "./apps/worker/src/orchestrator.ts";
 
 const lease = {
   job_id: "00000000-0000-4000-8000-000000000101",
@@ -73,6 +74,26 @@ assert.equal(calls.some(({ path }) => path === "/private/worker/complete"), fals
 assert.equal(calls.find(({ path }) => path.includes("/context")).headers["x-worker-id"], lease.worker_id);
 assert.equal(calls.find(({ path }) => path.includes("/context")).headers["x-generation"], String(lease.generation));
 console.log("worker runner production-result boundary: ok");
+
+let orchestratorResult;
+const orchestratorServer = http.createServer(async (request, response) => {
+  const chunks = [];
+  for await (const chunk of request) chunks.push(chunk);
+  const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : null;
+  if (request.url.includes("/context")) return json(response, { project_id: "p", messages: [{ role: "user", content: "hello" }] });
+  if (request.url === "/private/worker/providers") return json(response, [{ provider: "openai-codex", scope: "app", protocol: "pi-native", orchestration_model: "openai-codex/gpt-5.6-luna" }]);
+  if (request.url === "/private/orchestrator/result") { orchestratorResult = body; return json(response, {}, 204); }
+  return json(response, {}, 404);
+});
+await new Promise((resolve) => orchestratorServer.listen(0, "127.0.0.1", resolve));
+const orchestratorExecute = createOrchestratorExecutor({
+  baseUrl: `http://127.0.0.1:${orchestratorServer.address().port}`, token: "worker-token", workerId: "pi-1",
+  runProduction: async ({ context: receivedContext, model }) => ({ text: `answer:${receivedContext.messages[0].content}`, provider: "openai-codex", model: "gpt-5.6-luna", callId: "turn-call", usage: { input_tokens: 2, output_tokens: 3 } }),
+});
+await orchestratorExecute({ turn_id: "turn-1", generation: 2 }, {});
+await new Promise((resolve) => orchestratorServer.close(resolve));
+assert.deepEqual(orchestratorResult, { turn_id: "turn-1", worker_id: "pi-1", generation: 2, content: "answer:hello", provider: "openai-codex", model: "openai-codex/gpt-5.6-luna", call_id: "turn-call", usage: { input_tokens: 2, output_tokens: 3 } });
+console.log("orchestrator Pi adapter/result boundary: ok");
 
 let abortedRequests = 0;
 const alreadyAbortedServer = http.createServer((_request, response) => {

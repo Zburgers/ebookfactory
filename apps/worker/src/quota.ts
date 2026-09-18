@@ -17,7 +17,9 @@ function limitRows(result) {
     const remaining = Number(value.remainingPercent ?? value.remaining_percent ?? window.remainingPercent ?? window.remaining_percent);
     const resetsAt = asDate(value.resetsAt ?? value.resets_at ?? window.resetsAt ?? window.resets_at);
     const windowSeconds = Number(value.windowDurationMins ?? value.window_duration_mins ?? window.windowDurationMins ?? window.window_duration_mins) * 60;
-    const supported = Number.isFinite(used) || Number.isFinite(remaining);
+    const validUsed = !Number.isFinite(used) || (used >= 0 && used <= 100);
+    const validRemaining = !Number.isFinite(remaining) || (remaining >= 0 && remaining <= 100);
+    const supported = (Number.isFinite(used) || Number.isFinite(remaining)) && validUsed && validRemaining;
     return [{
       provider: "openai-codex",
       account_alias: "subscription",
@@ -27,8 +29,8 @@ function limitRows(result) {
       source: "codex app-server account/rateLimits/read",
       observed_at: null,
       stale_after: null,
-      used: Number.isFinite(used) ? used : null,
-      remaining: Number.isFinite(remaining) ? remaining : (Number.isFinite(used) ? 100 - used : null),
+      used: supported && Number.isFinite(used) ? used : null,
+      remaining: supported && Number.isFinite(remaining) ? remaining : (supported && Number.isFinite(used) ? 100 - used : null),
       units: "percent",
       window_seconds: Number.isFinite(windowSeconds) && windowSeconds > 0 ? windowSeconds : null,
       resets_at: resetsAt,

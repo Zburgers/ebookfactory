@@ -18,6 +18,7 @@ from sqlalchemy.orm import aliased
 
 from app.database import Database
 from app.conversations import append_message, create_project
+from app.orchestrator import claim_turn, complete_turn, enqueue_turn, heartbeat_turn, locked_turn
 from app.documents import create_brief_revision, create_section, save_section_revision
 from app.exports import MIME_TYPES, PACKAGE_FILES, export_book
 from app.events import replay_events
@@ -39,6 +40,7 @@ from app.models import (
     BriefRevision,
     Job,
     Message,
+    OrchestratorTurn,
     ProductionRun,
     Project,
     ProviderSetting,
@@ -52,6 +54,7 @@ from app.models import (
 )
 from app.providers import connection_test, save_provider_setting
 from app import model_catalog
+from app import codex_quota
 from app.production import accept_production_output
 from app.reviews import record_finding
 from app.artifacts import reconcile_pending_artifacts, safe_artifact_path, write_artifact
@@ -84,6 +87,19 @@ class ReadinessResponse(BaseModel):
     service: str
     status: str
     dependencies: dict[str, DependencyStatus]
+
+
+class LiveQuotaWindow(BaseModel):
+    window_seconds: int
+    used: int
+    remaining: int
+    reset: str
+
+
+class LiveQuotaResponse(BaseModel):
+    fetched_at: datetime
+    source: str
+    windows: list[LiveQuotaWindow]
 
 
 class TelegramStatusResponse(BaseModel):
@@ -192,13 +208,15 @@ class MessageCreateRequest(BaseModel):
     conversation_id: UUID
     channel: str = Field(default="dashboard", min_length=1, max_length=32)
     external_dedupe_id: str | None = Field(default=None, max_length=240)
-    content: str = Field(min_length=1)
+    content: str = Field(min_length=1, max_length=200_000)
 
 
 class MessageResponse(BaseModel):
     message_id: UUID
     sequence: int
     duplicate: bool
+    turn_id: UUID | None = None
+    queued: bool = False
 
 
 class MessageView(BaseModel):
@@ -209,6 +227,36 @@ class MessageView(BaseModel):
     content: str
     turn_state: str
     created_at: datetime
+
+
+class OrchestratorClaimRequest(BaseModel):
+    worker_id: str = Field(min_length=1, max_length=128)
+    lease_seconds: int = Field(default=60, ge=1, le=3600)
+
+
+class OrchestratorLeaseResponse(BaseModel):
+    turn_id: UUID
+    worker_id: str
+    generation: int
+    lease_until: datetime
+
+
+class OrchestratorResultRequest(BaseModel):
+    turn_id: UUID
+    worker_id: str = Field(min_length=1, max_length=128)
+    generation: int = Field(ge=1)
+    content: str = Field(min_length=1, max_length=1_000_000)
+    provider: str = Field(min_length=1, max_length=64)
+    model: str = Field(min_length=1, max_length=128)
+    call_id: UUID
+    usage: dict[str, int | None] | None = None
+
+
+class OrchestratorHeartbeatRequest(BaseModel):
+    turn_id: UUID
+    worker_id: str = Field(min_length=1, max_length=128)
+    generation: int = Field(ge=1)
+    lease_seconds: int = Field(default=60, ge=1, le=3600)
 
 
 class ProviderSettingRequest(BaseModel):
@@ -630,20 +678,76 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def post_message(project_id: UUID, payload: MessageCreateRequest) -> MessageResponse:
         session = database.session()
         try:
-            result = append_message(
-                session,
-                project_id=project_id,
-                conversation_id=payload.conversation_id,
-                channel=payload.channel,
-                external_dedupe_id=payload.external_dedupe_id,
-                role="user",
-                content=payload.content,
-            )
+            with session.begin():
+                result = append_message(session, project_id=project_id, conversation_id=payload.conversation_id, channel=payload.channel, external_dedupe_id=payload.external_dedupe_id, role="user", content=payload.content, manage_transaction=False)
+                dedupe_key = f"dashboard:{payload.channel}:{payload.external_dedupe_id or result.message_id}"
+                turn = enqueue_turn(session, project_id=project_id, conversation_id=payload.conversation_id, message_id=result.message_id, dedupe_key=dedupe_key)
             return MessageResponse(
                 message_id=result.message_id,
                 sequence=result.sequence,
                 duplicate=result.duplicate,
+                turn_id=turn.id,
+                queued=turn.state in {"queued", "running"},
             )
+        except ValueError as exc:
+            session.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            session.close()
+
+    @application.post("/private/orchestrator/claim", response_model=OrchestratorLeaseResponse | None, tags=["private-worker"])
+    def orchestrator_claim(payload: OrchestratorClaimRequest, x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token")) -> OrchestratorLeaseResponse | None:
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
+        session = database.session()
+        try:
+            turn = claim_turn(session, worker_id=payload.worker_id, lease_seconds=payload.lease_seconds)
+            if turn is None:
+                return None
+            return OrchestratorLeaseResponse(turn_id=turn.id, worker_id=payload.worker_id, generation=turn.generation, lease_until=turn.lease_until)
+        finally:
+            session.close()
+
+    @application.get("/private/orchestrator/{turn_id}/context", tags=["private-worker"])
+    def orchestrator_context(turn_id: UUID, x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token"), x_worker_id: str = Header(alias="X-Worker-ID"), x_generation: int = Header(alias="X-Generation")) -> dict[str, Any]:
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
+        session = database.session()
+        try:
+            with session.begin():
+                turn = locked_turn(session, turn_id=turn_id, worker_id=x_worker_id, generation=x_generation)
+                messages = session.scalars(select(Message).where(Message.conversation_id == turn.conversation_id).order_by(Message.sequence.desc()).limit(40)).all()[::-1]
+                bounded = []
+                total = 0
+                for message in messages:
+                    content = message.content[:20_000]
+                    if total + len(content.encode()) > 100_000:
+                        break
+                    bounded.append({"role": message.role, "content": content}); total += len(content.encode())
+                return {"turn_id": turn.id, "project_id": turn.project_id, "messages": bounded}
+        except ValueError as exc:
+            session.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            session.close()
+
+    @application.post("/private/orchestrator/heartbeat", tags=["private-worker"])
+    def orchestrator_heartbeat(payload: OrchestratorHeartbeatRequest, x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token")) -> dict[str, datetime]:
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
+        session = database.session()
+        try:
+            turn = heartbeat_turn(session, turn_id=payload.turn_id, worker_id=payload.worker_id, generation=payload.generation, lease_seconds=payload.lease_seconds)
+            return {"lease_until": turn.lease_until}
+        except ValueError as exc:
+            session.rollback(); raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            session.close()
+
+    @application.post("/private/orchestrator/result", tags=["private-worker"])
+    def orchestrator_result(payload: OrchestratorResultRequest, x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token")) -> dict[str, UUID | bool]:
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
+        session = database.session()
+        try:
+            message, duplicate = complete_turn(session, turn_id=payload.turn_id, worker_id=payload.worker_id, generation=payload.generation, content=payload.content, provider=payload.provider, model=payload.model, call_id=payload.call_id, usage=payload.usage)
+            return {"message_id": message.id, "duplicate": duplicate}
         except ValueError as exc:
             session.rollback()
             raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -730,7 +834,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             session.close()
 
     @application.post("/usage/calls", response_model=dict[str, Any], status_code=201)
-    def record_usage(payload: UsageCallRequest) -> dict[str, Any]:
+    def record_usage(payload: UsageCallRequest, x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token")) -> dict[str, Any]:
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
         session = database.session()
         try:
             result = record_usage_call(session, **payload.model_dump())
@@ -739,7 +844,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             session.close()
 
     @application.post("/usage/calls/{call_id}/finalize", response_model=dict[str, Any])
-    def finalize_usage(call_id: UUID, payload: UsageFinalizeRequest) -> dict[str, Any]:
+    def finalize_usage(call_id: UUID, payload: UsageFinalizeRequest, x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token")) -> dict[str, Any]:
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
         session = database.session()
         try:
             result = finalize_usage_call(session, call_id=call_id, **payload.model_dump())
@@ -792,6 +898,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return list_quota_snapshots(session, provider=provider)
         finally:
             session.close()
+
+    @application.get("/quota/live", response_model=LiveQuotaResponse, tags=["operations"])
+    def get_live_quota() -> LiveQuotaResponse:
+        try:
+            return LiveQuotaResponse.model_validate(codex_quota.fetch_live_quota())
+        except codex_quota.CodexQuotaError as exc:
+            raise HTTPException(status_code=503, detail="Codex live quota unavailable") from exc
 
     @application.post("/projects/{project_id}/sections", response_model=SectionResponse, status_code=201)
     def create_section_route(project_id: UUID, payload: SectionCreateRequest) -> SectionResponse:

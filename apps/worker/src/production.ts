@@ -10,7 +10,14 @@ const SYSTEM_PROMPT =
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 
 export function buildProductionPrompt(context) {
-  if (!context?.project_id || !context?.run_id || !context?.brief) throw new Error("incomplete production context");
+  if (!context?.project_id || ( !Array.isArray(context.messages) && (!context?.run_id || !context?.brief))) throw new Error("incomplete production context");
+  if (Array.isArray(context.messages)) {
+    return [
+      "You are the Ebook Factory dashboard orchestrator. Answer the user's latest message directly.",
+      "Use the conversation context, do not invoke tools, and do not claim work was performed unless it was.",
+      JSON.stringify({ project_id: context.project_id, messages: context.messages }),
+    ].join("\n\n");
+  }
   return [
     "Create the next bounded manuscript draft from this approved brief.",
     "Preserve the requested profile, audience, language, length range and output formats.",

@@ -15,16 +15,16 @@ install-service:
 	./scripts/install-user-service.sh
 
 start:
-	systemctl --user start ebook-factory-api.service
+	systemctl --user start ebook-factory-api.service ebook-factory-worker.service
 
 stop:
-	systemctl --user stop ebook-factory-api.service
+	systemctl --user stop ebook-factory-worker.service ebook-factory-api.service
 
 restart:
-	systemctl --user restart ebook-factory-api.service
+	systemctl --user restart ebook-factory-api.service ebook-factory-worker.service
 
 status:
-	systemctl --user status ebook-factory-api.service --no-pager
+	systemctl --user status ebook-factory-api.service ebook-factory-worker.service --no-pager
 
 backup:
 	@./scripts/backup.sh
@@ -54,4 +54,5 @@ verify:
 	./scripts/tests/test_systemd_service.sh
 	./scripts/tests/test_worker_supervisor.sh
 	./scripts/tests/test_worker_runner.sh
+	./scripts/tests/test_worker_service.sh
 	./scripts/check-isolation.sh

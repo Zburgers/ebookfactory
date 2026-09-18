@@ -2,11 +2,9 @@
 set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-unit_name="ebook-factory-api.service"
-unit_source="$project_root/infra/systemd/$unit_name"
+unit_names=(ebook-factory-api.service ebook-factory-worker.service)
 config_root="${XDG_CONFIG_HOME:-$HOME/.config}"
 unit_dir="$config_root/systemd/user"
-unit_link="$unit_dir/$unit_name"
 start_service=true
 
 if [[ "${1:-}" == "--no-start" ]]; then
@@ -16,20 +14,20 @@ elif [[ $# -ne 0 ]]; then
   exit 2
 fi
 
-[[ -f "$unit_source" ]] || { echo "missing unit: $unit_source" >&2; exit 1; }
+for unit_name in "${unit_names[@]}"; do [[ -f "$project_root/infra/systemd/$unit_name" ]] || { echo "missing unit: $project_root/infra/systemd/$unit_name" >&2; exit 1; }; done
 mkdir -p "$unit_dir"
 chmod 700 "$unit_dir"
-ln -sfn "$unit_source" "$unit_link"
+for unit_name in "${unit_names[@]}"; do ln -sfn "$project_root/infra/systemd/$unit_name" "$unit_dir/$unit_name"; done
 
 systemctl --user daemon-reload
-systemctl --user enable "$unit_name" >/dev/null
+systemctl --user enable "${unit_names[@]}" >/dev/null
 if [[ "$start_service" == true ]]; then
-  systemctl --user start "$unit_name"
+  systemctl --user start "${unit_names[@]}"
 fi
 
-echo "installed $unit_name for user $(id -un)"
+echo "installed ${unit_names[*]} for user $(id -un)"
 if [[ "$start_service" == true ]]; then
-  echo "service started; inspect with: systemctl --user status $unit_name"
+  echo "services started; inspect with: systemctl --user status ${unit_names[*]}"
 else
-  echo "service enabled but not started; start with: systemctl --user start $unit_name"
+  echo "services enabled but not started; start with: systemctl --user start ${unit_names[*]}"
 fi

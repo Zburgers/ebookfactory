@@ -60,7 +60,7 @@ export function createProductionExecutor({
   };
 }
 
-async function requestJson(baseUrl, token, path, options) {
+export async function requestJson(baseUrl, token, path, options) {
   const { requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, signal, ...fetchOptions } = options;
   const requestController = new AbortController();
   const abortRequest = () => requestController.abort();
