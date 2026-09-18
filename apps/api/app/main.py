@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from app.database import Database
 from app.conversations import append_message, create_project
+from app.documents import create_brief_revision, create_section, save_section_revision
 from app.events import replay_events
 from app.jobs import (
     ApprovalConflict,
@@ -129,6 +130,15 @@ class ProjectResponse(BaseModel):
     state: str
 
 
+class BriefCreateRequest(BaseModel):
+    structured_brief: dict[str, Any]
+
+
+class BriefResponse(BaseModel):
+    brief_id: UUID
+    content_hash: str
+
+
 class MessageCreateRequest(BaseModel):
     conversation_id: UUID
     channel: str = Field(default="dashboard", min_length=1, max_length=32)
@@ -162,6 +172,30 @@ class ProviderSettingResponse(BaseModel):
     drafting_model: str | None
     review_model: str | None
     credential_configured: bool
+
+
+class SectionCreateRequest(BaseModel):
+    order_no: int = Field(ge=1)
+    heading: str = Field(min_length=1, max_length=512)
+
+
+class SectionResponse(BaseModel):
+    section_id: UUID
+
+
+class SectionRevisionRequest(BaseModel):
+    content: str = Field(min_length=1)
+    summary: str = ""
+    expected_parent_revision_id: UUID | None = None
+    source_refs: list[str] = Field(default_factory=list)
+    knowledge_refs: list[str] = Field(default_factory=list)
+
+
+class SectionRevisionResponse(BaseModel):
+    section_id: UUID
+    revision_id: UUID
+    revision: int
+    content_hash: str
 
 
 class CapabilityRequest(BaseModel):
@@ -316,6 +350,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             session.close()
 
+    @application.post("/projects/{project_id}/sections", response_model=SectionResponse, status_code=201)
+    def create_section_route(project_id: UUID, payload: SectionCreateRequest) -> SectionResponse:
+        session = database.session()
+        try:
+            section_id = create_section(
+                session,
+                project_id=project_id,
+                order_no=payload.order_no,
+                heading=payload.heading,
+            )
+            return SectionResponse(section_id=section_id)
+        finally:
+            session.close()
+
+    @application.post("/sections/{section_id}/revisions", response_model=SectionRevisionResponse, status_code=201)
+    def save_section_route(section_id: UUID, payload: SectionRevisionRequest) -> SectionRevisionResponse:
+        session = database.session()
+        try:
+            result = save_section_revision(
+                session,
+                section_id=section_id,
+                content=payload.content,
+                summary=payload.summary,
+                expected_parent_revision_id=payload.expected_parent_revision_id,
+                source_refs=payload.source_refs,
+                knowledge_refs=payload.knowledge_refs,
+            )
+            return SectionRevisionResponse(**result.__dict__)
+        except ValueError as exc:
+            session.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            session.close()
+
     @application.put("/providers/{provider}", response_model=ProviderSettingResponse)
     def put_provider(provider: str, payload: ProviderSettingRequest) -> ProviderSettingResponse:
         session = database.session()
@@ -355,6 +423,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if isinstance(exc, ApprovalConflict):
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
             raise HTTPException(status_code=503, detail="database operation unavailable") from exc
+        finally:
+            session.close()
+
+    @application.post("/projects/{project_id}/briefs", response_model=BriefResponse, status_code=201)
+    def create_brief_route(project_id: UUID, payload: BriefCreateRequest) -> BriefResponse:
+        session = database.session()
+        try:
+            result = create_brief_revision(
+                session,
+                project_id=project_id,
+                structured_brief=payload.structured_brief,
+            )
+            return BriefResponse(brief_id=result.brief_id, content_hash=result.content_hash)
         finally:
             session.close()
 

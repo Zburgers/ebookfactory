@@ -49,6 +49,39 @@
         "title": "ApprovalResponse",
         "type": "object"
       },
+      "BriefCreateRequest": {
+        "properties": {
+          "structured_brief": {
+            "additionalProperties": true,
+            "title": "Structured Brief",
+            "type": "object"
+          }
+        },
+        "required": [
+          "structured_brief"
+        ],
+        "title": "BriefCreateRequest",
+        "type": "object"
+      },
+      "BriefResponse": {
+        "properties": {
+          "brief_id": {
+            "format": "uuid",
+            "title": "Brief Id",
+            "type": "string"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "brief_id",
+          "content_hash"
+        ],
+        "title": "BriefResponse",
+        "type": "object"
+      },
       "CapabilityRequest": {
         "properties": {
           "generation": {
@@ -659,6 +692,116 @@
           "reason"
         ],
         "title": "RunCancelRequest",
+        "type": "object"
+      },
+      "SectionCreateRequest": {
+        "properties": {
+          "heading": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Heading",
+            "type": "string"
+          },
+          "order_no": {
+            "minimum": 1.0,
+            "title": "Order No",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "order_no",
+          "heading"
+        ],
+        "title": "SectionCreateRequest",
+        "type": "object"
+      },
+      "SectionResponse": {
+        "properties": {
+          "section_id": {
+            "format": "uuid",
+            "title": "Section Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "section_id"
+        ],
+        "title": "SectionResponse",
+        "type": "object"
+      },
+      "SectionRevisionRequest": {
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "expected_parent_revision_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Parent Revision Id"
+          },
+          "knowledge_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Knowledge Refs",
+            "type": "array"
+          },
+          "source_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Refs",
+            "type": "array"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "SectionRevisionRequest",
+        "type": "object"
+      },
+      "SectionRevisionResponse": {
+        "properties": {
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "revision_id": {
+            "format": "uuid",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "section_id": {
+            "format": "uuid",
+            "title": "Section Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "section_id",
+          "revision_id",
+          "revision",
+          "content_hash"
+        ],
+        "title": "SectionRevisionResponse",
         "type": "object"
       },
       "ValidationError": {
@@ -1351,6 +1494,56 @@
         "summary": "Get Project"
       }
     },
+    "/projects/{project_id}/briefs": {
+      "post": {
+        "operationId": "create_brief_route_projects__project_id__briefs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BriefCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Brief Route"
+      }
+    },
     "/projects/{project_id}/briefs/{brief_id}/approve": {
       "post": {
         "operationId": "approve_projects__project_id__briefs__brief_id__approve_post",
@@ -1526,6 +1719,56 @@
         "summary": "Post Message"
       }
     },
+    "/projects/{project_id}/sections": {
+      "post": {
+        "operationId": "create_section_route_projects__project_id__sections_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SectionCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Section Route"
+      }
+    },
     "/providers": {
       "get": {
         "operationId": "list_providers_providers_get",
@@ -1617,6 +1860,56 @@
         "tags": [
           "operations"
         ]
+      }
+    },
+    "/sections/{section_id}/revisions": {
+      "post": {
+        "operationId": "save_section_route_sections__section_id__revisions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "section_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Section Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SectionRevisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SectionRevisionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Section Route"
       }
     }
   }

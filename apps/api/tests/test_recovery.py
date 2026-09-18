@@ -2,13 +2,15 @@ import os
 from collections.abc import Iterator
 from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import create_engine, delete, select, update
 from sqlalchemy.orm import Session
+from fastapi.testclient import TestClient
 
 from app.conversations import append_message, create_project
+from app.documents import create_section, save_section_revision
 from app.events import replay_events
 from app.jobs import (
     CancellationRejected,
@@ -24,6 +26,8 @@ from app.jobs import (
     resume_job,
 )
 from app.models import Attempt, BriefRevision, Event, Job, Project, ProductionRun, Task
+from app.main import create_app
+from app.settings import Settings
 
 
 DATABASE_URL = os.environ.get("EBOOK_FACTORY_TEST_DATABASE_URL") or os.environ.get("EBOOK_FACTORY_DATABASE_URL")
@@ -95,6 +99,36 @@ def test_duplicate_approval_enqueues_one_run_and_one_job(database_session: Sessi
     assert len(database_session.scalars(select(Job).where(Job.task_id == first.task_id)).all()) == 1
 
 
+def test_api_project_brief_and_approval_boundary(database_session: Session) -> None:
+    assert DATABASE_URL is not None
+    with TestClient(create_app(Settings(database_url=DATABASE_URL, worker_token="test-worker-token"))) as client:
+        project_response = client.post(
+            "/projects",
+            json={"title": "API journey", "profile": "nonfiction", "language": "en"},
+        )
+        assert project_response.status_code == 201
+        project_id = project_response.json()["project_id"]
+        database_session.info["cleanup_project_ids"].add(UUID(project_id))
+        brief_response = client.post(
+            f"/projects/{project_id}/briefs",
+            json={"structured_brief": {"promise_or_premise": "A concise durable book"}},
+        )
+        assert brief_response.status_code == 201
+        brief = brief_response.json()
+        first = client.post(
+            f"/projects/{project_id}/briefs/{brief['brief_id']}/approve",
+            json={"expected_content_hash": brief["content_hash"], "budget": {"max_turns": 4}},
+        )
+        second = client.post(
+            f"/projects/{project_id}/briefs/{brief['brief_id']}/approve",
+            json={"expected_content_hash": brief["content_hash"], "budget": {"max_turns": 4}},
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json() == second.json()
+
+
 def test_conversation_messages_are_ordered_and_deduplicated(database_session: Session) -> None:
     database_session.commit()
     created = create_project(database_session, title="Conversation test", profile="fiction", language="en")
@@ -121,6 +155,39 @@ def test_conversation_messages_are_ordered_and_deduplicated(database_session: Se
     assert first.sequence == 1
     assert second.message_id == first.message_id
     assert second.duplicate is True
+
+
+def test_section_revisions_are_immutable_and_stale_writes_are_rejected(database_session: Session) -> None:
+    database_session.commit()
+    project = database_session.scalar(select(Project))
+    assert project is not None
+    project_id = project.id
+    database_session.commit()
+    section_id = create_section(database_session, project_id=project_id, order_no=1, heading="Opening")
+    first = save_section_revision(
+        database_session,
+        section_id=section_id,
+        content="First accepted draft.",
+        summary="Opening draft",
+    )
+    second = save_section_revision(
+        database_session,
+        section_id=section_id,
+        content="Second accepted draft.",
+        summary="Owner revision",
+        expected_parent_revision_id=first.revision_id,
+    )
+
+    assert second.revision == 2
+    with pytest.raises(ValueError, match="stale"):
+        save_section_revision(
+            database_session,
+            section_id=section_id,
+            content="Conflicting draft.",
+            summary="Stale editor",
+            expected_parent_revision_id=first.revision_id,
+        )
+    database_session.rollback()
 
 
 def _approve(database_session: Session) -> tuple[object, object]:

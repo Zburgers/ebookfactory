@@ -11,6 +11,15 @@ export interface ApprovalResponse {
   job_id: string;
 }
 
+export interface BriefCreateRequest {
+  structured_brief: Record<string, unknown>;
+}
+
+export interface BriefResponse {
+  brief_id: string;
+  content_hash: string;
+}
+
 export interface CapabilityRequest {
   job_id: string;
   worker_id: string;
@@ -126,6 +135,30 @@ export interface ReadinessResponse {
 
 export interface RunCancelRequest {
   reason: string;
+}
+
+export interface SectionCreateRequest {
+  order_no: number;
+  heading: string;
+}
+
+export interface SectionResponse {
+  section_id: string;
+}
+
+export interface SectionRevisionRequest {
+  content: string;
+  summary?: string;
+  expected_parent_revision_id?: string | null;
+  source_refs?: Array<string>;
+  knowledge_refs?: Array<string>;
+}
+
+export interface SectionRevisionResponse {
+  section_id: string;
+  revision_id: string;
+  revision: number;
+  content_hash: string;
 }
 
 export interface ValidationError {
