@@ -7,6 +7,7 @@ After=network-online.target
 Type=simple
 WorkingDirectory=%h/.config/shipyard/worktrees/ebookfactory/codex-ebook-factory-v2
 EnvironmentFile=-%h/.config/shipyard/worktrees/ebookfactory/codex-ebook-factory-v2/.env
+EnvironmentFile=-%h/ebookfactory/.env
 Environment=EBOOK_FACTORY_BIND_TO_TAILSCALE=true
 Environment=EBOOK_FACTORY_BIND_TO_PRIVATE=true
 Environment=EBOOK_FACTORY_PRIVATE_INTERFACES=eno1
