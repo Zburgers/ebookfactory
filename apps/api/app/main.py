@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import aliased
 
 from app.database import Database
@@ -32,7 +32,23 @@ from app.jobs import (
     fail_job,
     heartbeat_job,
 )
-from app.models import Artifact, Attempt, BriefRevision, Job, Message, ProductionRun, Project, ProviderSetting, ReviewFinding, Section, SectionRevision, Task, utc_now
+from app.models import (
+    Artifact,
+    Attempt,
+    BriefRevision,
+    Job,
+    Message,
+    ProductionRun,
+    Project,
+    ProviderSetting,
+    ReviewFinding,
+    Section,
+    SectionRevision,
+    Task,
+    TelegramLink,
+    TelegramState,
+    utc_now,
+)
 from app.providers import save_provider_setting
 from app.production import accept_production_output
 from app.reviews import record_finding
@@ -40,6 +56,7 @@ from app.artifacts import safe_artifact_path, write_artifact
 from app.tools import InvalidCapability, issue_capability, verify_capability
 from app.usage import finalize_usage_call, record_usage_call, usage_totals
 from app.settings import Settings
+from app.telegram import config_from_values, link_chat, process_update
 
 
 class HealthResponse(BaseModel):
@@ -63,6 +80,26 @@ class ReadinessResponse(BaseModel):
     service: str
     status: str
     dependencies: dict[str, DependencyStatus]
+
+
+class TelegramStatusResponse(BaseModel):
+    configured: bool
+    token_configured: bool
+    allowed_chat_count: int
+    allowed_sender_count: int
+    linked_chat_count: int
+    next_update_id: int
+
+
+class TelegramLinkRequest(BaseModel):
+    chat_id: int
+
+
+class TelegramUpdateResponse(BaseModel):
+    accepted: bool
+    duplicate: bool
+    reason: str | None = None
+    message_id: UUID | None = None
 
 
 class ApprovalRequest(BaseModel):
@@ -389,6 +426,75 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             payload["dependencies"]["database"]["reason"] = result.reason
         status_code = 200 if result.status == "ok" else 503
         return JSONResponse(status_code=status_code, content=payload)
+
+    @application.get("/telegram/status", response_model=TelegramStatusResponse, tags=["telegram"])
+    def telegram_status() -> TelegramStatusResponse:
+        config = config_from_values(
+            token=resolved_settings.telegram_bot_token,
+            allowed_chat_ids=resolved_settings.telegram_allowed_chat_ids,
+            allowed_sender_ids=resolved_settings.telegram_allowed_sender_ids,
+        )
+        session = database.session()
+        try:
+            state = session.get(TelegramState, 1)
+            linked_chat_count = session.scalar(select(func.count(TelegramLink.id))) or 0
+            return TelegramStatusResponse(
+                configured=config.configured,
+                token_configured=config.token_configured,
+                allowed_chat_count=len(config.allowed_chat_ids),
+                allowed_sender_count=len(config.allowed_sender_ids),
+                linked_chat_count=linked_chat_count,
+                next_update_id=state.next_update_id if state else 0,
+            )
+        finally:
+            session.close()
+
+    @application.post("/projects/{project_id}/telegram/link", response_model=TelegramStatusResponse, tags=["telegram"])
+    def telegram_link(project_id: UUID, payload: TelegramLinkRequest) -> TelegramStatusResponse:
+        config = config_from_values(
+            token=resolved_settings.telegram_bot_token,
+            allowed_chat_ids=resolved_settings.telegram_allowed_chat_ids,
+            allowed_sender_ids=resolved_settings.telegram_allowed_sender_ids,
+        )
+        if not config.configured:
+            raise HTTPException(status_code=503, detail="Telegram is not configured")
+        if payload.chat_id not in config.allowed_chat_ids:
+            raise HTTPException(status_code=403, detail="Telegram chat is not allowed")
+        session = database.session()
+        try:
+            link_chat(session, chat_id=payload.chat_id, project_id=project_id)
+        except ValueError as exc:
+            session.rollback()
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        finally:
+            session.close()
+        return telegram_status()
+
+    @application.post("/private/telegram/updates", response_model=TelegramUpdateResponse, tags=["private-worker"])
+    def telegram_update(
+        payload: dict[str, Any],
+        x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token"),
+    ) -> TelegramUpdateResponse:
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
+        config = config_from_values(
+            token=resolved_settings.telegram_bot_token,
+            allowed_chat_ids=resolved_settings.telegram_allowed_chat_ids,
+            allowed_sender_ids=resolved_settings.telegram_allowed_sender_ids,
+        )
+        session = database.session()
+        try:
+            result = process_update(session, config=config, update=payload)
+            return TelegramUpdateResponse(
+                accepted=result.accepted,
+                duplicate=result.duplicate,
+                reason=result.reason,
+                message_id=result.message_id,
+            )
+        except ValueError as exc:
+            session.rollback()
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            session.close()
 
     @application.post("/projects", response_model=ProjectResponse, status_code=201)
     def create_project_route(payload: ProjectCreateRequest) -> ProjectResponse:

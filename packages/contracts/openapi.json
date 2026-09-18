@@ -1401,6 +1401,98 @@
         "title": "SectionView",
         "type": "object"
       },
+      "TelegramLinkRequest": {
+        "properties": {
+          "chat_id": {
+            "title": "Chat Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chat_id"
+        ],
+        "title": "TelegramLinkRequest",
+        "type": "object"
+      },
+      "TelegramStatusResponse": {
+        "properties": {
+          "allowed_chat_count": {
+            "title": "Allowed Chat Count",
+            "type": "integer"
+          },
+          "allowed_sender_count": {
+            "title": "Allowed Sender Count",
+            "type": "integer"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "linked_chat_count": {
+            "title": "Linked Chat Count",
+            "type": "integer"
+          },
+          "next_update_id": {
+            "title": "Next Update Id",
+            "type": "integer"
+          },
+          "token_configured": {
+            "title": "Token Configured",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configured",
+          "token_configured",
+          "allowed_chat_count",
+          "allowed_sender_count",
+          "linked_chat_count",
+          "next_update_id"
+        ],
+        "title": "TelegramStatusResponse",
+        "type": "object"
+      },
+      "TelegramUpdateResponse": {
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "duplicate": {
+            "title": "Duplicate",
+            "type": "boolean"
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "accepted",
+          "duplicate"
+        ],
+        "title": "TelegramUpdateResponse",
+        "type": "object"
+      },
       "UsageCallRequest": {
         "properties": {
           "call_id": {
@@ -1747,6 +1839,61 @@
           }
         },
         "summary": "Worker Cancel",
+        "tags": [
+          "private-worker"
+        ]
+      }
+    },
+    "/private/telegram/updates": {
+      "post": {
+        "operationId": "telegram_update_private_telegram_updates_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Ebook-Worker-Token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Ebook-Worker-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramUpdateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Telegram Update",
         "tags": [
           "private-worker"
         ]
@@ -3133,6 +3280,59 @@
         "summary": "Create Section Route"
       }
     },
+    "/projects/{project_id}/telegram/link": {
+      "post": {
+        "operationId": "telegram_link_projects__project_id__telegram_link_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelegramLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Telegram Link",
+        "tags": [
+          "telegram"
+        ]
+      }
+    },
     "/providers": {
       "get": {
         "operationId": "list_providers_providers_get",
@@ -3274,6 +3474,27 @@
           }
         },
         "summary": "Save Section Route"
+      }
+    },
+    "/telegram/status": {
+      "get": {
+        "operationId": "telegram_status_telegram_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Telegram Status",
+        "tags": [
+          "telegram"
+        ]
       }
     },
     "/usage": {

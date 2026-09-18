@@ -262,6 +262,26 @@ export interface SectionView {
   content_hash: string | null;
 }
 
+export interface TelegramLinkRequest {
+  chat_id: number;
+}
+
+export interface TelegramStatusResponse {
+  configured: boolean;
+  token_configured: boolean;
+  allowed_chat_count: number;
+  allowed_sender_count: number;
+  linked_chat_count: number;
+  next_update_id: number;
+}
+
+export interface TelegramUpdateResponse {
+  accepted: boolean;
+  duplicate: boolean;
+  reason?: string | null;
+  message_id?: string | null;
+}
+
 export interface UsageCallRequest {
   call_id: string;
   provider: string;

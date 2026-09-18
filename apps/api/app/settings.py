@@ -26,6 +26,18 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("EBOOK_FACTORY_WORKER_TOKEN", "WORKER_TOKEN"),
     )
+    telegram_bot_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("EBOOK_FACTORY_TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_TOKEN"),
+    )
+    telegram_allowed_chat_ids: str = Field(
+        default="",
+        validation_alias=AliasChoices("EBOOK_FACTORY_TELEGRAM_ALLOWED_CHAT_IDS", "TELEGRAM_ALLOWED_CHAT_IDS"),
+    )
+    telegram_allowed_sender_ids: str = Field(
+        default="",
+        validation_alias=AliasChoices("EBOOK_FACTORY_TELEGRAM_ALLOWED_SENDER_IDS", "TELEGRAM_ALLOWED_SENDER_IDS"),
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
