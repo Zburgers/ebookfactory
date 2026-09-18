@@ -22,5 +22,5 @@ runtime; lead critiques are recorded at `evidence/P00/critique.md`,
 `evidence/P01/critique.md`, `evidence/P02/critique.md`,
 `evidence/P03/critique.md`, `evidence/P04/critique.md`,
 `evidence/P05/critique.md` and `evidence/P06/critique.md`. Final
-evidence/revision: P06 dashboard shell `89640b4` is the
+evidence/revision: P06 dashboard shell plus generated contracts `c0b0bfb` is the
 latest implementation; integrated application delivery remains unimplemented.

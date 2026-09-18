@@ -24,7 +24,8 @@ pending. P05 revision `c3cbf4c` adds the revisioned brief/section/review
 document core and API journey checks, but not a generated book or production
 runner. P06 revision `89640b4` adds a same-origin dashboard shell with project,
 chat, approval, event-cursor and provider metadata flows; full review/download
-dashboard acceptance remains pending.
+dashboard acceptance remains pending. Generated dashboard API artifacts were
+committed in follow-up revision `c0b0bfb`.
 
 Next: finish P05 autonomous book production. Pending owner input: Telegram token and
 allowed chat/sender IDs. Pending technical proofs: Pi model gateway inside
