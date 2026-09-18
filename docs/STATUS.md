@@ -33,6 +33,8 @@ deterministic Markdown rendering; installed converter/EPUBCheck gaps keep the
 publishing package incomplete. P05 follow-up revision `60af606` adds the
 fenced worker context endpoint and low-thinking, no-tools Pi runner seam, but
 does not claim a live production run.
+P06 follow-up `54635c5` adds a tested bounded replay SSE endpoint; the shell
+still polls JSON until live relay work is complete.
 
 Next: finish P05 autonomous book production. Pending owner input: Telegram token and
 allowed chat/sender IDs. Pending technical proofs: Pi model gateway inside
