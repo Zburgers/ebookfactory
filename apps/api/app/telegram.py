@@ -128,7 +128,17 @@ def _ack_update(session: Session, update_id: int, *, error: str | None = None) -
         stored.processed_at = utc_now()
         stored.last_error = error
         state = _ensure_state(session)
-        state.next_update_id = max(state.next_update_id, update_id + 1)
+        pending = session.scalar(
+            select(TelegramUpdate.update_id)
+            .where(
+                TelegramUpdate.update_id >= state.next_update_id,
+                TelegramUpdate.update_id <= update_id,
+                TelegramUpdate.processed_at.is_(None),
+            )
+            .order_by(TelegramUpdate.update_id)
+            .limit(1)
+        )
+        state.next_update_id = update_id + 1 if pending is None else pending
 
 
 def _queue_message(session: Session, *, chat_id: int, text: str, dedupe_key: str) -> TelegramOutbox:

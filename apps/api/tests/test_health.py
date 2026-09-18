@@ -1,9 +1,12 @@
 from pathlib import Path
+import pytest
 
 from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.settings import Settings
+from app.main import WorkerClaimRequest
+from pydantic import ValidationError
 
 
 def test_health_is_available_without_database_configuration() -> None:
@@ -66,3 +69,9 @@ def test_private_worker_requires_configured_token() -> None:
 
     assert response.status_code == 401
     assert "local-secret" not in response.text
+
+
+@pytest.mark.parametrize("lease_seconds", [0, -1])
+def test_worker_claim_rejects_non_positive_lease(lease_seconds: int) -> None:
+    with pytest.raises(ValidationError):
+        WorkerClaimRequest(worker_id="worker-a", lease_seconds=lease_seconds)

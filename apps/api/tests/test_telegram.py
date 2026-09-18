@@ -1,10 +1,12 @@
 from pathlib import Path
+import pytest
 from uuid import uuid4
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.models import Base, Conversation, Message, OrchestratorTurn, Project, TelegramOutbox, TelegramState, TelegramUpdate
+import app.telegram as telegram_module
 from app.telegram import TelegramConfig, process_update, record_outbox_failure, record_outbox_sent
 
 
@@ -62,3 +64,16 @@ def test_linked_message_and_outbox_are_replay_safe(tmp_path: Path) -> None:
         record_outbox_failure(session, outbox_id, "temporary network error")
         record_outbox_sent(session, outbox_id, "telegram-message-1")
         assert session.get(TelegramOutbox, outbox_id).state == "sent"
+
+
+def test_later_update_does_not_advance_offset_past_failed_update(tmp_path: Path, monkeypatch) -> None:
+    with _session(tmp_path) as session:
+        config = TelegramConfig(token_configured=True, allowed_chat_ids=frozenset({10}), allowed_sender_ids=frozenset({20}))
+        monkeypatch.setattr(telegram_module, "_response_for_command", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("temporary")))
+        with pytest.raises(RuntimeError):
+            process_update(session, config=config, update={"update_id": 7, "message": {"chat": {"id": 10}, "from": {"id": 20}, "text": "first"}})
+        monkeypatch.setattr(telegram_module, "_response_for_command", lambda *args, **kwargs: None)
+        result = process_update(session, config=config, update={"update_id": 8, "message": {"chat": {"id": 10}, "from": {"id": 20}, "text": "second"}})
+
+        assert result.accepted is True
+        assert session.get(TelegramState, 1).next_update_id == 7

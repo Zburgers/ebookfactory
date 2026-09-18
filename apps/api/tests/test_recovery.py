@@ -469,7 +469,10 @@ def test_cancel_persists_epoch_and_rejects_late_worker_output(database_session: 
     database_session.rollback()
     job = database_session.get(Job, approval.job_id)
     run = database_session.get(ProductionRun, approval.run_id)
+    attempt = database_session.scalar(select(Attempt).where(Attempt.id == lease.attempt_id))
     assert job is not None and job.state == "cancelled"
+    assert job.lease_owner is None and job.lease_until is None
+    assert attempt is not None and attempt.status == "cancelled" and attempt.lease_owner is None and attempt.lease_until is None
     assert run is not None and run.cancellation_epoch == 1 and run.state == "cancelled"
 
 

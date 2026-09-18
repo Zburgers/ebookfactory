@@ -472,6 +472,11 @@ def cancel_run(session: Session, *, run_id: UUID, reason: str) -> int:
             .where(Task.run_id == run.id, Task.status.not_in(["succeeded", "failed"]))
             .values(status="cancelled")
         )
+        session.execute(
+            update(Attempt)
+            .where(Attempt.task_id.in_(task_ids), Attempt.status == "running")
+            .values(status="cancelled", lease_owner=None, lease_until=None, finished_at=utc_now())
+        )
         append_event(
             session,
             project_id=run.project_id,

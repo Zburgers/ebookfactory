@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from decimal import Decimal
 import json
+import hashlib
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -139,7 +140,7 @@ class ApprovalResponse(BaseModel):
 
 class WorkerClaimRequest(BaseModel):
     worker_id: str = Field(min_length=1, max_length=128)
-    lease_seconds: int = Field(default=60, ge=-3600, le=3600)
+    lease_seconds: int = Field(default=60, ge=1, le=3600)
 
 
 class WorkerLeaseResponse(BaseModel):
@@ -468,6 +469,16 @@ class ProductionOutputResponse(BaseModel):
     content_hash: str
     duplicate: bool
     usage_call_id: UUID | None = None
+
+
+def _verify_existing_production_artifact(*, artifact: Artifact, path: Path, run_id: UUID, revision_id: UUID, content: bytes) -> None:
+    """Allow immutable artifact reuse only when disk and registration agree."""
+    if (not path.is_file() or hashlib.sha256(content).hexdigest() != artifact.sha256
+        or path.stat().st_size != artifact.byte_count
+        or hashlib.sha256(path.read_bytes()).hexdigest() != artifact.sha256
+        or artifact.mime_type != "text/markdown" or artifact.run_id != run_id
+        or artifact.revision_id != revision_id):
+        raise ValueError("existing artifact does not match production result")
 
 
 class ExportArtifactResponse(BaseModel):
@@ -1574,6 +1585,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         artifact = session.scalar(select(Artifact).where(Artifact.relative_path == f"{output.run_id}/book.md"))
                         if artifact is None:
                             raise HTTPException(status_code=503, detail="artifact registration unavailable")
+                        existing_path = safe_artifact_path(resolved_settings.artifact_root, artifact.relative_path)
+                        content = payload.content.encode()
+                        _verify_existing_production_artifact(
+                            artifact=artifact, path=existing_path, run_id=output.run_id,
+                            revision_id=output.revision_id, content=content,
+                        )
 
                     usage_call_id = None
                     if payload.provider and payload.model:

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.artifacts import InvalidArtifactPath, reconcile_pending_artifacts, safe_artifact_path, write_artifact
 from app.models import Artifact
+from app.main import _verify_existing_production_artifact
 
 
 def test_artifact_paths_reject_traversal_and_symlink(tmp_path: Path) -> None:
@@ -43,6 +44,16 @@ def test_artifact_write_is_hashed_and_immutable(tmp_path: Path) -> None:
             content=b"changed",
             mime_type="text/markdown",
         )
+
+
+def test_existing_production_artifact_tampering_is_rejected(tmp_path: Path) -> None:
+    content = b"# A book\n"
+    run_id, revision_id = uuid4(), uuid4()
+    artifact = Artifact(run_id=run_id, revision_id=revision_id, relative_path="book.md", mime_type="text/markdown", byte_count=len(content), sha256=hashlib.sha256(content).hexdigest(), validation_state="generated")
+    path = tmp_path / "book.md"
+    path.write_bytes(b"tampered\n")
+    with pytest.raises(ValueError, match="does not match"):
+        _verify_existing_production_artifact(artifact=artifact, path=path, run_id=run_id, revision_id=revision_id, content=content)
 
 
 def test_pending_artifact_commits_and_reconciles_after_crash(tmp_path: Path) -> None:
