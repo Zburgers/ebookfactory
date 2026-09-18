@@ -49,6 +49,13 @@ _PROBE_MAX_BYTES = 64 * 1024
 _USAGE_FIELDS = ("prompt_tokens", "completion_tokens", "total_tokens", "input_tokens", "output_tokens", "reasoning_tokens")
 
 
+def _validate_pi_model(provider: str, model: str | None, protocol: str | None) -> None:
+    if protocol == "pi-native" and model:
+        prefix, separator, suffix = model.partition("/")
+        if not separator or not prefix or not suffix or prefix != provider:
+            raise ValueError("Pi-native models must use the selected provider/model format")
+
+
 class _PinnedHTTPConnection(HTTPConnection):
     def __init__(self, *args: Any, resolved_address: str, **kwargs: Any) -> None:
         self._resolved_address = resolved_address
@@ -188,6 +195,8 @@ def save_provider_setting(
     if endpoint is not None:
         _validate_endpoint_syntax(endpoint)
     _validate_credential_ref(credential_ref)
+    for model in (orchestration_model, drafting_model, review_model):
+        _validate_pi_model(provider, model, protocol)
     with session.begin():
         setting = session.scalar(
             select(ProviderSetting)

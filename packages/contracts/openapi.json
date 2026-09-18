@@ -572,6 +572,49 @@
         "title": "MessageView",
         "type": "object"
       },
+      "ModelCatalogEntry": {
+        "properties": {
+          "context": {
+            "title": "Context",
+            "type": "string"
+          },
+          "images": {
+            "title": "Images",
+            "type": "boolean"
+          },
+          "max_output": {
+            "title": "Max Output",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "qualified_model": {
+            "title": "Qualified Model",
+            "type": "string"
+          },
+          "thinking": {
+            "title": "Thinking",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "qualified_model",
+          "context",
+          "max_output",
+          "thinking",
+          "images"
+        ],
+        "title": "ModelCatalogEntry",
+        "type": "object"
+      },
       "ProductionOutputRequest": {
         "properties": {
           "call_id": {
@@ -852,6 +895,33 @@
           "state"
         ],
         "title": "ProjectResponse",
+        "type": "object"
+      },
+      "ProviderCatalogResponse": {
+        "properties": {
+          "fetched_at": {
+            "format": "date-time",
+            "title": "Fetched At",
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelCatalogEntry"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fetched_at",
+          "source",
+          "models"
+        ],
+        "title": "ProviderCatalogResponse",
         "type": "object"
       },
       "ProviderConnectionTestResponse": {
@@ -3803,6 +3873,24 @@
           }
         },
         "summary": "List Providers"
+      }
+    },
+    "/providers/catalog": {
+      "get": {
+        "operationId": "provider_catalog_providers_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderCatalogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Provider Catalog"
       }
     },
     "/providers/{provider}": {

@@ -125,6 +125,16 @@ export interface MessageView {
   created_at: string;
 }
 
+export interface ModelCatalogEntry {
+  provider: string;
+  model: string;
+  qualified_model: string;
+  context: string;
+  max_output: string;
+  thinking: boolean;
+  images: boolean;
+}
+
 export interface ProductionOutputRequest {
   job_id: string;
   worker_id: string;
@@ -168,6 +178,12 @@ export interface ProjectResponse {
   profile: string;
   language: string;
   state: string;
+}
+
+export interface ProviderCatalogResponse {
+  fetched_at: string;
+  source: string;
+  models: Array<ModelCatalogEntry>;
 }
 
 export interface ProviderConnectionTestResponse {

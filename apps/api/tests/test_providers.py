@@ -175,7 +175,7 @@ def test_private_worker_provider_metadata_requires_token_and_excludes_secrets(tm
     client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test")))
     assert client.put(
         "/providers/local",
-        json={"endpoint": "https://secret.example/v1", "protocol": "pi-native", "credential_ref": "LOCAL_SECRET", "orchestration_model": "gpt-test"},
+        json={"endpoint": "https://secret.example/v1", "protocol": "openai-compatible", "credential_ref": "LOCAL_SECRET", "orchestration_model": "gpt-test"},
     ).status_code == 200
     assert client.get("/private/worker/providers").status_code == 401
     response = client.get("/private/worker/providers", headers={"X-Ebook-Worker-Token": "worker-test"})
@@ -183,7 +183,7 @@ def test_private_worker_provider_metadata_requires_token_and_excludes_secrets(tm
     assert response.json() == [{
         "provider": "local",
         "scope": "app",
-        "protocol": "pi-native",
+        "protocol": "openai-compatible",
         "orchestration_model": "gpt-test",
         "drafting_model": None,
         "review_model": None,
@@ -199,14 +199,14 @@ def test_public_provider_metadata_excludes_endpoint_and_credential_ref(tmp_path)
     client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test")))
     assert client.put(
         "/providers/local",
-        json={"endpoint": "https://secret.example/v1", "protocol": "pi-native", "credential_ref": "LOCAL_SECRET", "orchestration_model": "gpt-test"},
+        json={"endpoint": "https://secret.example/v1", "protocol": "openai-compatible", "credential_ref": "LOCAL_SECRET", "orchestration_model": "gpt-test"},
     ).status_code == 200
     response = client.get("/providers")
     assert response.status_code == 200
     assert response.json() == [{
         "provider": "local",
         "scope": "app",
-        "protocol": "pi-native",
+        "protocol": "openai-compatible",
         "orchestration_model": "gpt-test",
         "drafting_model": None,
         "review_model": None,
@@ -214,3 +214,31 @@ def test_public_provider_metadata_excludes_endpoint_and_credential_ref(tmp_path)
     }]
     assert "https://secret.example" not in response.text
     assert "credential_ref" not in response.text
+
+
+def test_pi_native_provider_rejects_qualified_model_from_other_provider(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'qualified-models.db'}"
+    Base.metadata.create_all(create_engine(database_url))
+    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test")))
+    response = client.put(
+        "/providers/openai-codex",
+        json={
+            "protocol": "pi-native",
+            "orchestration_model": "github-copilot/gpt-5.6-luna",
+            "drafting_model": "openai-codex/gpt-5.6-luna",
+        },
+    )
+    assert response.status_code == 422
+    assert "provider/model" in response.json()["detail"]
+
+
+def test_pi_native_provider_rejects_bare_model(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'bare-model.db'}"
+    Base.metadata.create_all(create_engine(database_url))
+    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test")))
+    response = client.put(
+        "/providers/openai-codex",
+        json={"protocol": "pi-native", "orchestration_model": "gpt-5.6-luna"},
+    )
+    assert response.status_code == 422
+    assert "provider/model" in response.json()["detail"]

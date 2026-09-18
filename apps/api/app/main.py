@@ -51,6 +51,7 @@ from app.models import (
     utc_now,
 )
 from app.providers import connection_test, save_provider_setting
+from app import model_catalog
 from app.production import accept_production_output
 from app.reviews import record_finding
 from app.artifacts import reconcile_pending_artifacts, safe_artifact_path, write_artifact
@@ -251,6 +252,22 @@ class ProviderConnectionTestResponse(BaseModel):
     response_id: str | None
     usage: dict[str, Any] | None
     error: str | None
+
+
+class ModelCatalogEntry(BaseModel):
+    provider: str
+    model: str
+    qualified_model: str
+    context: str
+    max_output: str
+    thinking: bool
+    images: bool
+
+
+class ProviderCatalogResponse(BaseModel):
+    fetched_at: datetime
+    source: str
+    models: list[ModelCatalogEntry]
 
 
 class UsageCallRequest(BaseModel):
@@ -677,6 +694,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ]
         finally:
             session.close()
+
+    @application.get("/providers/catalog", response_model=ProviderCatalogResponse)
+    def provider_catalog() -> ProviderCatalogResponse:
+        try:
+            return ProviderCatalogResponse(**model_catalog.fetch_model_catalog())
+        except model_catalog.ModelCatalogError as exc:
+            raise HTTPException(status_code=503, detail="Pi model catalog unavailable") from exc
 
     @application.get("/private/worker/providers", response_model=list[ProviderMetadataResponse], tags=["private-worker"])
     def list_worker_providers(
