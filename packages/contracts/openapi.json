@@ -454,6 +454,107 @@
         "title": "MessageView",
         "type": "object"
       },
+      "ProductionOutputRequest": {
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "generation": {
+            "minimum": 1.0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "worker_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "worker_id",
+          "generation",
+          "content"
+        ],
+        "title": "ProductionOutputRequest",
+        "type": "object"
+      },
+      "ProductionOutputResponse": {
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "duplicate": {
+            "title": "Duplicate",
+            "type": "boolean"
+          },
+          "revision_id": {
+            "format": "uuid",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "task_id",
+          "revision_id",
+          "artifact_id",
+          "content_hash",
+          "duplicate"
+        ],
+        "title": "ProductionOutputResponse",
+        "type": "object"
+      },
       "ProjectCreateRequest": {
         "properties": {
           "language": {
@@ -1673,6 +1774,59 @@
           }
         },
         "summary": "Worker Job Context",
+        "tags": [
+          "private-worker"
+        ]
+      }
+    },
+    "/private/worker/production-result": {
+      "post": {
+        "operationId": "worker_production_result_private_worker_production_result_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Ebook-Worker-Token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Ebook-Worker-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductionOutputRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionOutputResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Worker Production Result",
         "tags": [
           "private-worker"
         ]

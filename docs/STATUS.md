@@ -31,8 +31,11 @@ explicit null cost fields, but no live Pi call or quota adapter is wired yet.
 P08 revision `bd9e6c8` adds immutable artifact path/hash/size validation and
 deterministic Markdown rendering; installed converter/EPUBCheck gaps keep the
 publishing package incomplete. P05 follow-up revision `60af606` adds the
-fenced worker context endpoint and low-thinking, no-tools Pi runner seam, but
-does not claim a live production run.
+fenced worker context endpoint and low-thinking, no-tools Pi runner seam. The
+current follow-up adds fenced production-result/artifact acceptance,
+provider/model lineage and authoritative Pi JSON `message_end` parsing; two
+real low-thinking Luna runs (fiction and nonfiction) are recorded in
+`evidence/P05/real-production.md`.
 P06 follow-up `54635c5` adds a tested bounded replay SSE endpoint; the shell
 still polls JSON until live relay work is complete.
 P10 revision `ba9a18a` adds a peer-authenticated custom-format backup,
@@ -40,10 +43,12 @@ non-destructive archive check and local runbook; isolated restore and owned
 service lifecycle remain pending. P04 follow-up `9f87d3e` adds real
 label-scoped container reconciliation and unrelated-container preservation.
 
-Next: finish P05 autonomous book production. Pending owner input: Telegram token and
-allowed chat/sender IDs. Pending technical proofs: Pi model gateway inside
-containment, Codex subscription image bridge, provider quota availability,
-maintained publishing converters, and the rest of the integrated product.
+Next: add owner revision/review and usage-call finalization around the real
+production path, then continue publishing, art and Telegram. Pending owner
+input: Telegram token and allowed chat/sender IDs. Pending technical proofs: Pi
+model gateway inside containment, Codex subscription image bridge, provider
+quota availability, maintained publishing converters, isolated restore, and
+the rest of the integrated product.
 
 Operating instruction: for future probes and delegated work, explicitly select
 the least-cost available route, preferably GPT 5.6 Luna low when the runtime

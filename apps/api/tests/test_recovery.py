@@ -25,7 +25,7 @@ from app.jobs import (
     pause_job,
     resume_job,
 )
-from app.models import Attempt, BriefRevision, Event, Job, Project, ProductionRun, Task
+from app.models import Artifact, Attempt, BriefRevision, Event, Job, Project, ProductionRun, Task
 from app.main import create_app
 from app.settings import Settings
 
@@ -51,6 +51,7 @@ def database_session() -> Iterator[Session]:
     session.add(brief)
     session.commit()
     session.info["cleanup_project_ids"] = {project.id}
+    session.info["fixture_project_id"] = project.id
     try:
         yield session
     finally:
@@ -62,6 +63,11 @@ def database_session() -> Iterator[Session]:
             )
             session.flush()
             session.execute(delete(Event).where(Event.project_id == cleanup_project_id))
+            session.execute(
+                delete(Artifact).where(
+                    Artifact.run_id.in_(select(ProductionRun.id).where(ProductionRun.project_id == cleanup_project_id))
+                )
+            )
             session.execute(delete(ProductionRun).where(ProductionRun.project_id == cleanup_project_id))
             session.execute(delete(BriefRevision).where(BriefRevision.project_id == cleanup_project_id))
             session.execute(delete(Project).where(Project.id == cleanup_project_id))
@@ -138,6 +144,18 @@ def test_api_project_brief_and_approval_boundary(database_session: Session) -> N
                 "X-Generation": str(lease["generation"]),
             },
         )
+        output_response = client.post(
+            "/private/worker/production-result",
+            headers={"X-Ebook-Worker-Token": "test-worker-token"},
+            json={
+                "job_id": lease["job_id"],
+                "worker_id": "api-test-worker",
+                "generation": lease["generation"],
+                "content": "# A concise durable book\n\nThis is an API boundary fixture.",
+                "provider": "test-provider",
+                "model": "test-model",
+            },
+        )
         sse_response = client.get(f"/projects/{project_id}/events/stream?after=0")
 
     assert first.status_code == 200
@@ -145,6 +163,11 @@ def test_api_project_brief_and_approval_boundary(database_session: Session) -> N
     assert first.json() == second.json()
     assert context_response.status_code == 200
     assert context_response.json()["brief"]["promise_or_premise"] == "A concise durable book"
+    assert output_response.status_code == 200
+    assert output_response.json()["artifact_id"]
+    database_session.expire_all()
+    assert database_session.scalar(select(ProductionRun.state).where(ProductionRun.project_id == UUID(project_id))) == "draft_review"
+    assert database_session.scalar(select(Task.provider).where(Task.run_id == UUID(output_response.json()["run_id"]))) == "test-provider"
     assert sse_response.status_code == 200
     assert sse_response.headers["content-type"].startswith("text/event-stream")
     assert "run.approved" in sse_response.text
@@ -212,7 +235,9 @@ def test_section_revisions_are_immutable_and_stale_writes_are_rejected(database_
 
 
 def _approve(database_session: Session) -> tuple[object, object]:
-    brief = database_session.scalar(select(BriefRevision))
+    brief = database_session.scalar(
+        select(BriefRevision).where(BriefRevision.project_id == database_session.info["fixture_project_id"])
+    )
     assert brief is not None
     project_id = brief.project_id
     brief_id = brief.id

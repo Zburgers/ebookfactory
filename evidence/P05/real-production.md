@@ -1,0 +1,10 @@
+# P05 real production evidence
+
+- UTC: 2026-09-18T18:31Z–18:32Z; delivered code revision is recorded by the follow-up commit containing this evidence.
+- Target: owner-authorized native PostgreSQL 16 database `ebookfactory` via Unix-socket peer role `naki`; local API on `127.0.0.1:18080`; rootless Podman was not used for this host-side acceptance slice.
+- Route: provider setting configured for `openai-codex`; approved briefs were claimed through the private fenced API context endpoint and executed by `apps/worker/src/production.ts` with model `openai-codex/gpt-5.6-luna`, `--thinking low`, and Pi extensions, skills, prompt templates, tools and session disabled.
+- Real nonfiction result: project `Luna Low Final Nonfiction`, run `fe44b221-cf62-46ee-9c65-779bde43f061`, job `609454a4-3bfe-4d9d-a8d8-6375c4f000e1`, artifact `var/artifacts/fe44b221-cf62-46ee-9c65-779bde43f061/book.md`, 972 bytes, SHA-256 `590b339880a528d9143359ec12f2118f9d78c1b777cab7e5e6aff657b11231d9`.
+- Real fiction result: project `Luna Low Final Fiction`, run `ca6aa4fe-802e-4efa-adad-685e320a13f4`, job `7d208b36-7199-4a1d-856e-f4865a24140d`, artifact `var/artifacts/ca6aa4fe-802e-4efa-adad-685e320a13f4/book.md`, 1002 bytes, SHA-256 `ef4d81b466fb3c405896cd57c12d6ae8633d55c51da9d07a4f4ab4fd652b38cb`.
+- PostgreSQL verification: both runs are `draft_review`, tasks/jobs are `succeeded`, task and attempt lineage record provider `openai-codex` and model `openai-codex/gpt-5.6-luna`, and persisted section-revision hashes equal artifact hashes.
+- Correction: an earlier probe stored malformed `[object Object]` output because Pi stream deltas and final messages were concatenated. It is excluded from acceptance. The parser now consumes only authoritative `message_end` assistant content; the focused production-boundary regression and the two final artifacts above verify the correction.
+- Limitations: this proves real host-side Pi production and durable artifact lineage, not Podman-mediated production, usage-call finalization/quota, owner revision, publishing formats, art, Telegram, or hard-gate H4 in full.

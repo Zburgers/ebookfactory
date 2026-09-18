@@ -30,8 +30,10 @@ from app.jobs import (
     fail_job,
     heartbeat_job,
 )
-from app.models import BriefRevision, Job, Message, ProductionRun, Project, ProviderSetting, Task
+from app.models import Artifact, BriefRevision, Job, Message, ProductionRun, Project, ProviderSetting, Task
 from app.providers import save_provider_setting
+from app.production import accept_production_output
+from app.artifacts import write_artifact
 from app.tools import InvalidCapability, issue_capability, verify_capability
 from app.usage import finalize_usage_call, record_usage_call, usage_totals
 from app.settings import Settings
@@ -240,6 +242,24 @@ class CapabilityRequest(BaseModel):
 class CapabilityResponse(BaseModel):
     capability: str
     expires_in_seconds: int
+
+
+class ProductionOutputRequest(BaseModel):
+    job_id: UUID
+    worker_id: str = Field(min_length=1, max_length=128)
+    generation: int = Field(ge=1)
+    content: str = Field(min_length=1)
+    provider: str | None = Field(default=None, min_length=1, max_length=64)
+    model: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class ProductionOutputResponse(BaseModel):
+    run_id: UUID
+    task_id: UUID
+    revision_id: UUID
+    artifact_id: UUID
+    content_hash: str
+    duplicate: bool
 
 
 def _require_worker_token(settings: Settings, supplied: str) -> None:
@@ -788,6 +808,72 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             }
         finally:
             session.close()
+
+    @application.post("/private/worker/production-result", response_model=ProductionOutputResponse, tags=["private-worker"])
+    def worker_production_result(
+        payload: ProductionOutputRequest,
+        x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token"),
+    ) -> ProductionOutputResponse:
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
+        session = database.session()
+        try:
+            output = accept_production_output(
+                session,
+                job_id=payload.job_id,
+                worker_id=payload.worker_id,
+                generation=payload.generation,
+                content=payload.content,
+                provider=payload.provider,
+                model=payload.model,
+            )
+        except (StaleLease, CancellationRejected, ValueError) as exc:
+            session.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            session.close()
+
+        artifact_session = database.session()
+        try:
+            artifact = write_artifact(
+                artifact_session,
+                root=resolved_settings.artifact_root,
+                relative_path=f"{output.run_id}/book.md",
+                content=payload.content.encode(),
+                mime_type="text/markdown",
+                run_id=output.run_id,
+                revision_id=output.revision_id,
+            )
+        except FileExistsError:
+            artifact = artifact_session.scalar(
+                select(Artifact).where(Artifact.relative_path == f"{output.run_id}/book.md")
+            )
+            if artifact is None:
+                raise HTTPException(status_code=503, detail="artifact registration unavailable")
+        finally:
+            artifact_session.close()
+
+        completion_session = database.session()
+        try:
+            complete_job(
+                completion_session,
+                job_id=payload.job_id,
+                worker_id=payload.worker_id,
+                generation=payload.generation,
+                result_refs={"revision_id": str(output.revision_id), "artifact_id": str(artifact.id)},
+            )
+        except (StaleLease, CancellationRejected) as exc:
+            completion_session.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            completion_session.close()
+        return ProductionOutputResponse(
+            run_id=output.run_id,
+            task_id=output.task_id,
+            revision_id=output.revision_id,
+            artifact_id=artifact.id,
+            content_hash=output.content_hash,
+            duplicate=output.duplicate,
+        )
 
     @application.post("/private/tools/{tool}", tags=["private-worker"])
     def scoped_tool(

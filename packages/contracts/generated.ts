@@ -100,6 +100,24 @@ export interface MessageView {
   created_at: string;
 }
 
+export interface ProductionOutputRequest {
+  job_id: string;
+  worker_id: string;
+  generation: number;
+  content: string;
+  provider?: string | null;
+  model?: string | null;
+}
+
+export interface ProductionOutputResponse {
+  run_id: string;
+  task_id: string;
+  revision_id: string;
+  artifact_id: string;
+  content_hash: string;
+  duplicate: boolean;
+}
+
 export interface ProjectCreateRequest {
   title: string;
   profile: string;
