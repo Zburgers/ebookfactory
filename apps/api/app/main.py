@@ -33,6 +33,7 @@ from app.models import Message, Project, ProviderSetting
 from app.providers import save_provider_setting
 from app.tools import InvalidCapability, issue_capability, verify_capability
 from app.models import Job, ProductionRun, Task
+from app.usage import finalize_usage_call, record_usage_call, usage_totals
 from app.settings import Settings
 
 
@@ -184,6 +185,25 @@ class ProviderSettingResponse(BaseModel):
     drafting_model: str | None
     review_model: str | None
     credential_configured: bool
+
+
+class UsageCallRequest(BaseModel):
+    call_id: UUID
+    provider: str = Field(min_length=1, max_length=64)
+    model: str = Field(min_length=1, max_length=128)
+    purpose: str = Field(min_length=1, max_length=64)
+    outcome: str = Field(min_length=1, max_length=32)
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    reasoning_tokens: int | None = Field(default=None, ge=0)
+    provider_request_id: str | None = Field(default=None, max_length=255)
+
+
+class UsageFinalizeRequest(BaseModel):
+    outcome: str | None = Field(default=None, max_length=32)
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    reasoning_tokens: int | None = Field(default=None, ge=0)
 
 
 class SectionCreateRequest(BaseModel):
@@ -404,6 +424,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
                 for setting in settings
             ]
+        finally:
+            session.close()
+
+    @application.post("/usage/calls", response_model=dict[str, Any], status_code=201)
+    def record_usage(payload: UsageCallRequest) -> dict[str, Any]:
+        session = database.session()
+        try:
+            result = record_usage_call(session, **payload.model_dump())
+            return result.__dict__
+        finally:
+            session.close()
+
+    @application.post("/usage/calls/{call_id}/finalize", response_model=dict[str, Any])
+    def finalize_usage(call_id: UUID, payload: UsageFinalizeRequest) -> dict[str, Any]:
+        session = database.session()
+        try:
+            result = finalize_usage_call(session, call_id=call_id, **payload.model_dump())
+            return result.__dict__
+        except ValueError as exc:
+            session.rollback()
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        finally:
+            session.close()
+
+    @application.get("/usage", response_model=dict[str, Any])
+    def get_usage(project_id: UUID | None = None) -> dict[str, Any]:
+        session = database.session()
+        try:
+            return usage_totals(session, project_id=project_id)
         finally:
             session.close()
 

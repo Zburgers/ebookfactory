@@ -171,6 +171,25 @@ export interface SectionRevisionResponse {
   content_hash: string;
 }
 
+export interface UsageCallRequest {
+  call_id: string;
+  provider: string;
+  model: string;
+  purpose: string;
+  outcome: string;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  reasoning_tokens?: number | null;
+  provider_request_id?: string | null;
+}
+
+export interface UsageFinalizeRequest {
+  outcome?: string | null;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  reasoning_tokens?: number | null;
+}
+
 export interface ValidationError {
   loc: Array<string | number>;
   msg: string;
