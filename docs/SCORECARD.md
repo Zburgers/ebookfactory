@@ -1,6 +1,6 @@
 # Delivery scorecard
 
-Current score: **70/100 — durable runtime/containment, real production with
+Current score: **72/100 — durable runtime/containment, real production with
 reviewed revision lineage, live usage attribution, dashboard document flow and
 structural publishing packages are evidenced; external hard gates remain.**
 
@@ -11,7 +11,7 @@ structural publishing packages are evidenced; external hard gates remain.**
 | Containment | 10/10 | Filesystem/secret isolation, enforced network/resource limits and label-scoped reconciliation all pass P04 evidence, including unrelated-container preservation |
 | Production | 14/16 | Real fiction/nonfiction output, fenced context/task lineage, owner revision and a resolved review finding are evidenced; durable budget blocking is implemented but its live rejection subcriterion remains unawarded (`evidence/P05/real-production.md`, `evidence/P05/budget-blocking.md`, `evidence/P06/dashboard-correction.md`) |
 | Dashboard | 10/10 | Real Chromium journey covered chat/brief/review, replayed events, section editing, ten export/download links, quota/settings visibility and accessibility checks (`evidence/P06/dashboard-browser-trace.md`) |
-| Usage | 6/12 | Real finalized call attribution, idempotent totals and live redacted Codex subscription windows are evidenced; estimates, Copilot quota and drill-down remain pending (`evidence/P07/live-usage.md`, `evidence/P07/quota-live.md`) |
+| Usage | 8/12 | Real finalized call attribution, idempotent totals, live redacted Codex subscription windows, explicit stale/unknown states and project-scoped call drill-down are evidenced; estimates and Copilot quota remain pending (`evidence/P07/live-usage.md`, `evidence/P07/quota-live.md`, `evidence/P07/usage-drilldown.md`) |
 | Publishing | 10/12 | Real structurally checked EPUB/PDF/DOCX/Markdown, cover, metadata and manifests are persisted; EPUBCheck and Kindle preview remain pending (`evidence/P08/publishing.md`) |
 | Art | 0/5 | pending |
 | Telegram | 0/5 | Durable adapter and redacted status boundary are implemented and tested; live token/chat/sender loop remains pending (`evidence/P09/telegram.md`) |

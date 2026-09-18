@@ -74,6 +74,9 @@ PostgreSQL: synthetic chat/brief/approval, section revision, review display,
 ten export links/download, event replay, quota/settings visibility and
 accessibility checks. The synthetic queued run was cancelled after the trace;
 no model call was made.
+Usage follow-up `e68807f` adds project-scoped call drill-down to the API and
+dashboard. The real Luna usage project now shows its persisted call lineage,
+tokens and outcome while monetary billing remains explicitly unknown.
 
 Operating instruction: for future probes and delegated work, explicitly select
 the least-cost available route, preferably GPT 5.6 Luna low when the runtime
