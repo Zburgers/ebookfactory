@@ -1,0 +1,41 @@
+{
+  "schema_version": "p00.v1",
+  "generated_at_utc": "2026-09-18T16:54:13Z",
+  "runtime": {
+    "pi": {"status":"available","path":"/home/naki/.npm-global/bin/pi","version":"0.85.1"},
+    "codex": {"status":"available","path":"/home/naki/.npm-global/bin/codex","version":"codex-cli 0.155.0"},
+    "podman": {"status":"available","path":"/usr/bin/podman","version":"podman version 4.9.3"},
+    "docker": {"status":"available","path":"/usr/bin/docker","version":"Docker version 29.6.2, build dfc4efb"},
+    "python3": {"status":"available","path":"/home/linuxbrew/.linuxbrew/bin/python3","version":"Python 3.14.4"},
+    "node": {"status":"available","path":"/home/linuxbrew/.linuxbrew/bin/node","version":"v26.0.0"},
+    "npm": {"status":"available","path":"/home/linuxbrew/.linuxbrew/bin/npm","version":"11.12.1"},
+    "uv": {"status":"available","path":"/home/naki/.local/bin/uv","version":"uv 0.11.8 (x86_64-unknown-linux-gnu)"},
+    "pandoc": {"status":"unavailable","path":null,"version":null},
+    "epubcheck": {"status":"unavailable","path":null,"version":null},
+    "chromium": {"status":"available","path":"/snap/bin/chromium","version":"Chromium 153.0.8010.36 snap"},
+    "postgres_client": {"status":"available","path":"/usr/bin/psql","version":"psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)"},
+    "podman_rootless": "verified"
+  },
+  "references": {
+    "Ebookmaker": {"status":"absent","path":"/home/naki/Desktop/itsthatnewshit/isthisreal/Ebookmaker"},
+    "MuMuAINovel": {"status":"absent","path":"/home/naki/Desktop/itsthatnewshit/isthisreal/MuMuAINovel"}
+  },
+  "network": {"listening_tcp_socket_count": 58},
+  "environment_names_only": ["CODEX_CI","CODEX_MANAGED_BY_NPM","CODEX_MANAGED_PACKAGE_ROOT","CODEX_SESSION_ID","CODEX_THREAD_ID","CODEX_VERSION"],
+  "database_target": {
+    "status": "owner_confirmation_required",
+    "identity": null,
+    "reason": "No PostgreSQL target was changed or inferred from listeners."
+  },
+  "telegram": {
+    "status": "not_configured",
+    "reason": "Token and allowed chat/sender IDs were not supplied to this checkout."
+  },
+  "image_capability": {
+    "status": "unverified",
+    "reason": "The installed Codex CLI was inspected for capabilities; no unattended image artifact route was proven."
+  },
+  "strict_requirements": {
+    "missing": []
+  }
+}
