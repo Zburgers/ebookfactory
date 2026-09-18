@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { buildProductionPrompt } from "./apps/worker/src/production.ts";
 import { buildPiArgs, parsePiEvent } from "./apps/worker/src/pi.ts";
 import { buildCodexArtTurn, buildCodexInitialize, buildCodexThreadStart, parseCodexArtEvent } from "./apps/worker/src/codex-art.ts";
+import { parseCodexRateLimits } from "./apps/worker/src/quota.ts";
 
 const context = { project_id: "project-1", run_id: "run-1", brief: { profile: "fiction", promise_or_premise: "A test premise" }, budget: { max_turns: 2 } };
 assert(buildProductionPrompt(context).includes("A test premise"));
@@ -19,5 +20,13 @@ assert.equal(buildCodexInitialize().method, "initialize");
 assert.equal(buildCodexThreadStart("gpt-5.6-luna").params.model, "gpt-5.6-luna");
 assert.equal(buildCodexArtTurn("thread-1", "make a cover").params.input[0].text, "make a cover");
 assert.equal(parseCodexArtEvent(JSON.stringify({ params: { item: { type: "imageGeneration", status: "completed", savedPath: "/tmp/cover.png" } } })).savedPath, "/tmp/cover.png");
+const quota = parseCodexRateLimits({ rateLimits: { rateLimitsByLimitId: { primary: { usedPercent: 29, windowDurationMins: 300, resetsAt: 1789766594 }, secondary: { usedPercent: 26, windowDurationMins: 10080, resetsAt: 1789805318 } }, planType: "plus" } }, new Date("2026-09-19T00:00:00Z"));
+assert.equal(quota.length, 2);
+assert.equal(quota[0].account_alias, "subscription");
+assert.equal(quota[0].remaining, 71);
+assert.equal(quota[0].plan_label, "plus");
+assert(!Object.values(quota[0]).some((value) => String(value).includes("accountId")));
+const unavailable = parseCodexRateLimits({ rateLimits: { rateLimitsByLimitId: { credits: { balance: "0", hasCredits: false } }, planType: "plus" } });
+assert.equal(unavailable[0].capability_state, "unavailable");
 console.log("production boundary behavior test passed");
 NODE

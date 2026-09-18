@@ -192,6 +192,23 @@ export interface ProviderSettingResponse {
   credential_configured: boolean;
 }
 
+export interface QuotaSnapshotRequest {
+  provider: string;
+  account_alias: string;
+  bucket: string;
+  source: string;
+  observed_at: string;
+  stale_after: string;
+  used?: number | string | null;
+  remaining?: number | string | null;
+  units?: string | null;
+  window_seconds?: number | null;
+  resets_at?: string | null;
+  plan_label?: string | null;
+  capability_state: string;
+  error?: string | null;
+}
+
 export interface ReadinessResponse {
   service: string;
   status: string;

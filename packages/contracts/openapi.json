@@ -1028,6 +1028,150 @@
         "title": "ProviderSettingResponse",
         "type": "object"
       },
+      "QuotaSnapshotRequest": {
+        "properties": {
+          "account_alias": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Account Alias",
+            "type": "string"
+          },
+          "bucket": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Bucket",
+            "type": "string"
+          },
+          "capability_state": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Capability State",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "plan_label": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Label"
+          },
+          "provider": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Provider",
+            "type": "string"
+          },
+          "remaining": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining"
+          },
+          "resets_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resets At"
+          },
+          "source": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          },
+          "stale_after": {
+            "format": "date-time",
+            "title": "Stale After",
+            "type": "string"
+          },
+          "units": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units"
+          },
+          "used": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used"
+          },
+          "window_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Seconds"
+          }
+        },
+        "required": [
+          "provider",
+          "account_alias",
+          "bucket",
+          "source",
+          "observed_at",
+          "stale_after",
+          "capability_state"
+        ],
+        "title": "QuotaSnapshotRequest",
+        "type": "object"
+      },
       "ReadinessResponse": {
         "description": "Stable readiness response used by supervisors and dashboards.",
         "properties": {
@@ -1774,6 +1918,61 @@
         "summary": "Health",
         "tags": [
           "operations"
+        ]
+      }
+    },
+    "/private/quota/snapshots": {
+      "post": {
+        "operationId": "record_quota_snapshot_route_private_quota_snapshots_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Ebook-Worker-Token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Ebook-Worker-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuotaSnapshotRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Record Quota Snapshot Route Private Quota Snapshots Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Quota Snapshot Route",
+        "tags": [
+          "private-worker"
         ]
       }
     },
@@ -3402,6 +3601,60 @@
           }
         },
         "summary": "Put Provider"
+      }
+    },
+    "/quota": {
+      "get": {
+        "operationId": "get_quota_quota_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Get Quota Quota Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Quota",
+        "tags": [
+          "operations"
+        ]
       }
     },
     "/ready": {

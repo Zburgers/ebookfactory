@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from decimal import Decimal
 import json
 from pathlib import Path
 from typing import Any
@@ -56,6 +57,7 @@ from app.artifacts import safe_artifact_path, write_artifact
 from app.budget import enforce_budget
 from app.tools import InvalidCapability, issue_capability, verify_capability
 from app.usage import finalize_usage_call, record_usage_call, usage_totals
+from app.quota import list_quota_snapshots, record_quota_snapshot
 from app.settings import Settings
 from app.telegram import config_from_values, link_chat, process_update
 
@@ -247,6 +249,23 @@ class UsageFinalizeRequest(BaseModel):
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
     reasoning_tokens: int | None = Field(default=None, ge=0)
+
+
+class QuotaSnapshotRequest(BaseModel):
+    provider: str = Field(min_length=1, max_length=64)
+    account_alias: str = Field(min_length=1, max_length=128)
+    bucket: str = Field(min_length=1, max_length=128)
+    source: str = Field(min_length=1, max_length=255)
+    observed_at: datetime
+    stale_after: datetime
+    used: Decimal | None = None
+    remaining: Decimal | None = None
+    units: str | None = Field(default=None, max_length=64)
+    window_seconds: int | None = Field(default=None, ge=0)
+    resets_at: datetime | None = None
+    plan_label: str | None = Field(default=None, max_length=128)
+    capability_state: str = Field(min_length=1, max_length=32)
+    error: str | None = None
 
 
 class SectionCreateRequest(BaseModel):
@@ -656,6 +675,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session = database.session()
         try:
             return usage_totals(session, project_id=project_id)
+        finally:
+            session.close()
+
+    @application.post("/private/quota/snapshots", response_model=dict[str, Any], status_code=201, tags=["private-worker"])
+    def record_quota_snapshot_route(
+        payload: QuotaSnapshotRequest,
+        x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token"),
+    ) -> dict[str, Any]:
+        """Accept one redacted provider quota observation from the local worker."""
+
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
+        session = database.session()
+        try:
+            snapshot_id = record_quota_snapshot(session, **payload.model_dump())
+            return {"snapshot_id": snapshot_id}
+        finally:
+            session.close()
+
+    @application.get("/quota", response_model=list[dict[str, Any]], tags=["operations"])
+    def get_quota(provider: str | None = None) -> list[dict[str, Any]]:
+        """Return recent quota observations with expired supported windows marked stale."""
+
+        session = database.session()
+        try:
+            return list_quota_snapshots(session, provider=provider)
         finally:
             session.close()
 
