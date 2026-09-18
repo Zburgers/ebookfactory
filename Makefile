@@ -3,7 +3,7 @@
 API_DIR := apps/api
 EVIDENCE_DIR := evidence/P00
 
-.PHONY: doctor dev verify backup
+.PHONY: doctor dev verify backup restore-check acceptance
 
 doctor:
 	./scripts/doctor.sh --strict --output $(EVIDENCE_DIR)/capabilities.json
@@ -13,6 +13,13 @@ dev:
 
 backup:
 	./scripts/backup.sh
+
+restore-check:
+	@test -n "$(BACKUP)" || (printf 'usage: make restore-check BACKUP=var/backups/file.dump\n' >&2; exit 2)
+	./scripts/restore-check.sh "$(BACKUP)"
+
+acceptance:
+	./scripts/acceptance.sh
 
 verify:
 	uv sync --directory $(API_DIR)
@@ -26,4 +33,5 @@ verify:
 	npm run verify --prefix apps/web
 	./scripts/tests/test_sandbox_args.sh
 	./scripts/tests/test_production_boundary.sh
+	./scripts/tests/test_operations_entrypoints.sh
 	./scripts/check-isolation.sh

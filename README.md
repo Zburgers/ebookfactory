@@ -33,4 +33,4 @@ These are planning scaffolds, not claims that their runtime implementations exis
 - Delivery requires completion score >80/100 AND every mandatory gate. All target functionality remains in scope even if the score crosses 80.
 - No Amazon account upload or publication is authorized by this handoff.
 
-Expected implementation entry points: `make doctor`, `make dev`, `make verify`, `make acceptance`, `make backup`, `make restore-check`. These targets do not exist yet; packet P01/P10 implements them. Avoid claiming they passed before they exist.
+Runnable entry points are `make doctor`, `make dev`, `make verify`, `make acceptance`, `make backup`, and `make restore-check BACKUP=...`. `make acceptance` intentionally exits with PARTIAL until every external hard gate is evidenced; it never weakens the rubric.

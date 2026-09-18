@@ -25,6 +25,16 @@ The restore check validates archive structure without creating or modifying a
 database. A full isolated restore demonstration remains pending because the
 owner prohibited creating another database during this build.
 
+Run the rubric-aware acceptance command:
+
+```sh
+make acceptance
+```
+
+It runs `make verify` and returns exit code 2 with a redacted PARTIAL report
+until the Telegram, Codex image, and isolated-restore evidence exists. This is
+intentional; a green unit suite is not product acceptance.
+
 Rootless containment evidence is reproduced with:
 
 ```sh

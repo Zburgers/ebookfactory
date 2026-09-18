@@ -1,3 +1,3 @@
-# Verification and operations scaffold
+# Verification and operations
 
-Implement doctor.sh, check-isolation.sh, validate-package.sh, acceptance.sh, backup.sh and restore-check.sh in their packets. Use nonzero failures, explicit owned paths and redacted output. These are planned scripts, not implemented checks. Put actual command outcomes under evidence/ and reference them from the scorecard.
+Operational scripts use nonzero failures, explicit owned paths and redacted output. `acceptance.sh` runs the complete verification suite and exits 2 with PARTIAL while external hard gates remain unavailable; `backup.sh` and `restore-check.sh` never create or modify a database.
