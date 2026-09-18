@@ -56,7 +56,10 @@ redacted status boundary; the live bot remains unconfigured. Pending owner
 input: Telegram token and allowed chat/sender IDs. Pending technical proofs: Pi
 model gateway inside containment, Codex subscription image bridge, provider
 quota availability, EPUBCheck/Kindle preview, a real Codex image artifact,
-Telegram loop, isolated restore, and the rest of the integrated product.
+Telegram loop, isolated restore, and the rest of the integrated product. P10
+revision `e15ceb1` adds runnable `make acceptance` and `make restore-check`
+entrypoints; acceptance deliberately exits PARTIAL while those gates remain
+unproven.
 
 Operating instruction: for future probes and delegated work, explicitly select
 the least-cost available route, preferably GPT 5.6 Luna low when the runtime

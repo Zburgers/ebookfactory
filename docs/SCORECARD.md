@@ -27,5 +27,6 @@ runtime; lead critiques are recorded at `evidence/P00/critique.md`,
 `evidence/P05/critique.md`, `evidence/P06/critique.md` and
 `evidence/P07/critique.md`, `evidence/P08/critique.md` and
 `evidence/P05/production-seam-critique.md` and `evidence/P10/backup-critique.md`.
-Final evidence/revision: integrated slice `d2f3cf7`; application delivery remains
+Final evidence/revision: integrated slice `e15ceb1` (with Telegram at `ba181f7`);
+application delivery remains
 partial because the listed external hard gates are not fabricated as passed.

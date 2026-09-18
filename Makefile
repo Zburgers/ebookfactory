@@ -12,11 +12,11 @@ dev:
 	set -a; [ ! -f .env ] || . ./.env; set +a; cd $(API_DIR) && uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 backup:
-	./scripts/backup.sh
+	@./scripts/backup.sh
 
 restore-check:
 	@test -n "$(BACKUP)" || (printf 'usage: make restore-check BACKUP=var/backups/file.dump\n' >&2; exit 2)
-	./scripts/restore-check.sh "$(BACKUP)"
+	@./scripts/restore-check.sh "$(BACKUP)"
 
 acceptance:
 	./scripts/acceptance.sh
