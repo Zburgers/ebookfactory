@@ -90,6 +90,16 @@ export interface MessageResponse {
   duplicate: boolean;
 }
 
+export interface MessageView {
+  message_id: string;
+  sequence: number;
+  channel: string;
+  role: string;
+  content: string;
+  turn_state: string;
+  created_at: string;
+}
+
 export interface ProjectCreateRequest {
   title: string;
   profile: string;
