@@ -1605,6 +1605,79 @@
         ]
       }
     },
+    "/private/worker/jobs/{job_id}/context": {
+      "get": {
+        "operationId": "worker_job_context_private_worker_jobs__job_id__context_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Ebook-Worker-Token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Ebook-Worker-Token",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Worker-ID",
+            "required": true,
+            "schema": {
+              "title": "X-Worker-Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Generation",
+            "required": true,
+            "schema": {
+              "title": "X-Generation",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Worker Job Context Private Worker Jobs  Job Id  Context Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Worker Job Context",
+        "tags": [
+          "private-worker"
+        ]
+      }
+    },
     "/projects": {
       "get": {
         "operationId": "list_projects_projects_get",

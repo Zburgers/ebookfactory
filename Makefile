@@ -22,4 +22,5 @@ verify:
 	npm run verify --prefix apps/worker
 	npm run verify --prefix apps/web
 	./scripts/tests/test_sandbox_args.sh
+	./scripts/tests/test_production_boundary.sh
 	./scripts/check-isolation.sh

@@ -123,10 +123,27 @@ def test_api_project_brief_and_approval_boundary(database_session: Session) -> N
             f"/projects/{project_id}/briefs/{brief['brief_id']}/approve",
             json={"expected_content_hash": brief["content_hash"], "budget": {"max_turns": 4}},
         )
+        lease_response = client.post(
+            "/private/worker/claim",
+            json={"worker_id": "api-test-worker", "lease_seconds": 60},
+            headers={"X-Ebook-Worker-Token": "test-worker-token"},
+        )
+        assert lease_response.status_code == 200
+        lease = lease_response.json()
+        context_response = client.get(
+            f"/private/worker/jobs/{lease['job_id']}/context",
+            headers={
+                "X-Ebook-Worker-Token": "test-worker-token",
+                "X-Worker-ID": "api-test-worker",
+                "X-Generation": str(lease["generation"]),
+            },
+        )
 
     assert first.status_code == 200
     assert second.status_code == 200
     assert first.json() == second.json()
+    assert context_response.status_code == 200
+    assert context_response.json()["brief"]["promise_or_premise"] == "A concise durable book"
 
 
 def test_conversation_messages_are_ordered_and_deduplicated(database_session: Session) -> None:

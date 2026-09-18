@@ -1,8 +1,9 @@
 /**
  * Small trusted supervisor loop for the private durable-job API.
  *
- * Production execution is deliberately not implemented here yet. The loop
- * owns lease calls and leaves container creation to the next sandbox packet;
+ * Production execution is supplied by a trusted callback. The loop
+ * owns lease calls and leaves container/model-gateway lifecycle to the
+ * supervisor integration packet;
  * it never accepts a model-supplied URL, path, or project identity.
  */
 

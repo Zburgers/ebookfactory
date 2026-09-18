@@ -8,9 +8,10 @@ const RESOURCE_FLAGS = [
   "--no-session",
 ];
 
-export function buildPiArgs({ prompt, systemPrompt, model }) {
+export function buildPiArgs({ prompt, systemPrompt, model, thinking = "low" }) {
   if (!prompt) throw new Error("prompt is required");
   const args = [...RESOURCE_FLAGS];
+  args.push("--mode", "json", "--print", "--thinking", thinking);
   if (model) args.push("--model", model);
   if (systemPrompt) args.push("--system-prompt", systemPrompt);
   args.push("-p", prompt);

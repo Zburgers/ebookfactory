@@ -29,10 +29,9 @@ from app.jobs import (
     fail_job,
     heartbeat_job,
 )
-from app.models import Message, Project, ProviderSetting
+from app.models import BriefRevision, Job, Message, ProductionRun, Project, ProviderSetting, Task
 from app.providers import save_provider_setting
 from app.tools import InvalidCapability, issue_capability, verify_capability
-from app.models import Job, ProductionRun, Task
 from app.usage import finalize_usage_call, record_usage_call, usage_totals
 from app.settings import Settings
 
@@ -711,6 +710,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 tool=payload.tool,
             )
             return CapabilityResponse(capability=capability, expires_in_seconds=300)
+        finally:
+            session.close()
+
+    @application.get("/private/worker/jobs/{job_id}/context", tags=["private-worker"])
+    def worker_job_context(
+        job_id: UUID,
+        x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token"),
+        x_worker_id: str = Header(alias="X-Worker-ID"),
+        x_generation: int = Header(alias="X-Generation"),
+    ) -> dict[str, Any]:
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
+        session = database.session()
+        try:
+            row = session.execute(
+                select(Job, Task, ProductionRun, Project, BriefRevision)
+                .join(Task, Task.id == Job.task_id)
+                .join(ProductionRun, ProductionRun.id == Task.run_id)
+                .join(Project, Project.id == ProductionRun.project_id)
+                .join(BriefRevision, BriefRevision.id == ProductionRun.approved_brief_id)
+                .where(
+                    Job.id == job_id,
+                    Job.lease_owner == x_worker_id,
+                    Job.fencing_generation == x_generation,
+                    Job.state == "running",
+                )
+            ).first()
+            if row is None:
+                raise HTTPException(status_code=409, detail="worker lease is not current")
+            job, task, run, project, brief = row
+            if run.state == "cancelled":
+                raise HTTPException(status_code=409, detail="run is cancelled")
+            return {
+                "project_id": project.id,
+                "run_id": run.id,
+                "task_id": task.id,
+                "job_id": job.id,
+                "cancellation_epoch": run.cancellation_epoch,
+                "profile": project.profile,
+                "language": project.language,
+                "brief": brief.structured_brief,
+                "budget": run.budget,
+            }
         finally:
             session.close()
 
