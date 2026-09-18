@@ -15,7 +15,7 @@ complete.**
 | Publishing | 0/12 | P08 artifact validation and Markdown rendering are tested, but no validated EPUB/PDF/DOCX package or Kindle evidence exists (`evidence/P08/`) |
 | Art | 0/5 | pending |
 | Telegram | 0/5 | pending |
-| Operations | 0/6 | P01/P02 have runnable API, migrations and worker callback checks; owned lifecycle and backup/restore remain P10 work |
+| Operations | 0/6 | P10 now has a real peer-authenticated backup/archive check and runbook, but isolated restore and owned service lifecycle are not evidenced (`evidence/P10/`) |
 
 Hard gates H1–H9: NOT RUN. Independent critics remain unavailable in this
 runtime; lead critiques are recorded at `evidence/P00/critique.md`,
@@ -23,6 +23,6 @@ runtime; lead critiques are recorded at `evidence/P00/critique.md`,
 `evidence/P03/critique.md`, `evidence/P04/critique.md`,
 `evidence/P05/critique.md`, `evidence/P06/critique.md` and
 `evidence/P07/critique.md`, `evidence/P08/critique.md` and
-`evidence/P05/production-seam-critique.md`. Final evidence/revision: P05
-production seam `60af606` is the latest
+`evidence/P05/production-seam-critique.md` and `evidence/P10/backup-critique.md`.
+Final evidence/revision: P10 backup `ba9a18a` is the latest
 implementation; integrated application delivery remains unimplemented.

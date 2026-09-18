@@ -35,6 +35,9 @@ fenced worker context endpoint and low-thinking, no-tools Pi runner seam, but
 does not claim a live production run.
 P06 follow-up `54635c5` adds a tested bounded replay SSE endpoint; the shell
 still polls JSON until live relay work is complete.
+P10 revision `ba9a18a` adds a peer-authenticated custom-format backup,
+non-destructive archive check and local runbook; isolated restore and owned
+service lifecycle remain pending.
 
 Next: finish P05 autonomous book production. Pending owner input: Telegram token and
 allowed chat/sender IDs. Pending technical proofs: Pi model gateway inside
