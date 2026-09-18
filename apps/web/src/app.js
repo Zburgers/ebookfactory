@@ -29,7 +29,30 @@ async function loadSections() {
 function renderExports(packageResult) { const box = $("#exports"); box.replaceChildren(); const heading = document.createElement("h4"); heading.textContent = `Export: ${packageResult.title} · ${packageResult.package_state}`; box.append(heading); packageResult.artifacts.forEach((artifact) => { const link = document.createElement("a"); link.href = artifact.download_path; link.textContent = `${artifact.filename} (${artifact.byte_count} bytes)`; link.download = artifact.filename; box.append(link, document.createElement("br")); }); }
 async function loadReviews() { if (!state.selected) return; const reviews = await api(`/projects/${state.selected.project_id}/reviews`); const box = $("#reviews"); box.replaceChildren(); if (!reviews.length) return; const heading = document.createElement("h4"); heading.textContent = "Review findings"; box.append(heading); reviews.forEach((finding) => { const item = document.createElement("p"); item.className = "review-finding"; item.textContent = `${finding.severity} · ${finding.criterion}: ${finding.evidence}${finding.resolution_revision_id ? " · resolved" : " · open"}`; box.append(item); }); }
 async function loadQuota() { const summary = $("#quota-summary"); try { const snapshots = await api("/quota?provider=openai-codex"); summary.replaceChildren(); if (!snapshots.length) { summary.textContent = "No quota observation recorded."; return; } snapshots.forEach((snapshot) => { const item = document.createElement("p"); const used = snapshot.used ?? "unknown"; const remaining = snapshot.remaining ?? "unknown"; item.textContent = `${snapshot.bucket}: ${used}% used · ${remaining}% remaining · ${snapshot.capability_state}${snapshot.resets_at ? ` · resets ${new Date(snapshot.resets_at).toLocaleString()}` : ""}`; summary.append(item); }); } catch (error) { summary.textContent = error.message; } }
-async function loadUsage() { const summary = $("#usage-summary"); try { if (state.selected) { const usage = await api(`/usage?project_id=${state.selected.project_id}`); summary.innerHTML = `<p><strong>${usage.calls}</strong> recorded calls</p><p>Input tokens: ${usage.input_tokens ?? "unknown"} · Output tokens: ${usage.output_tokens ?? "unknown"}</p><p>Estimated cost: <strong>unknown</strong> · Reported billed cost: <strong>unknown</strong></p>`; } await loadQuota(); } catch (error) { summary.textContent = error.message; } }
+function renderUsageCalls(calls) {
+  const summary = $("#usage-calls");
+  summary.replaceChildren();
+  if (!calls.length) { summary.textContent = "No usage calls recorded for this scope."; return; }
+  calls.forEach((call) => {
+    const item = document.createElement("p");
+    const input = call.input_tokens ?? "unknown";
+    const output = call.output_tokens ?? "unknown";
+    item.textContent = `${call.purpose} · ${call.provider}/${call.model} · ${call.outcome} · input ${input} · output ${output} · billing unknown · call ${call.call_id}`;
+    summary.append(item);
+  });
+}
+async function loadUsage() {
+  const summary = $("#usage-summary");
+  try {
+    const scope = state.selected ? `?project_id=${state.selected.project_id}` : "";
+    if (state.selected) {
+      const usage = await api(`/usage${scope}`);
+      summary.innerHTML = `<p><strong>${usage.calls}</strong> recorded calls</p><p>Input tokens: ${usage.input_tokens ?? "unknown"} · Output tokens: ${usage.output_tokens ?? "unknown"}</p><p>Estimated cost: <strong>unknown</strong> · Reported billed cost: <strong>unknown</strong></p>`;
+    }
+    renderUsageCalls(await api(`/usage/calls${scope}`));
+    await loadQuota();
+  } catch (error) { summary.textContent = error.message; }
+}
 
 document.querySelectorAll(".nav-button").forEach((button) => button.addEventListener("click", () => { document.querySelectorAll(".nav-button").forEach((other) => other.classList.toggle("active", other === button)); document.querySelectorAll(".view").forEach((view) => view.classList.toggle("active", view.id === `${button.dataset.view}-view`)); }));
 $("#new-project-button").addEventListener("click", () => $("#project-form").classList.toggle("hidden"));

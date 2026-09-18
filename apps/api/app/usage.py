@@ -123,3 +123,34 @@ def usage_totals(session: Session, *, project_id: UUID | None = None) -> dict[st
         "estimated_cost": None,
         "reported_billed_cost": None,
     }
+
+
+def list_usage_calls(session: Session, *, project_id: UUID | None = None) -> list[dict]:
+    """Return bounded call-level lineage while preserving unknown billing as null."""
+
+    statement = select(UsageCall).order_by(UsageCall.started_at.desc()).limit(200)
+    if project_id is not None:
+        statement = statement.where(UsageCall.project_id == project_id)
+    calls = session.scalars(statement).all()
+    return [
+        {
+            "call_id": call.id,
+            "provider_request_id": call.provider_request_id,
+            "project_id": call.project_id,
+            "run_id": call.run_id,
+            "task_id": call.task_id,
+            "attempt_id": call.attempt_id,
+            "purpose": call.purpose,
+            "provider": call.provider,
+            "model": call.model,
+            "outcome": call.outcome,
+            "started_at": call.started_at,
+            "ended_at": call.ended_at,
+            "input_tokens": call.input_tokens,
+            "output_tokens": call.output_tokens,
+            "reasoning_tokens": call.reasoning_tokens,
+            "estimated_cost": call.estimated_cost,
+            "reported_billed_cost": call.reported_billed_cost,
+        }
+        for call in calls
+    ]

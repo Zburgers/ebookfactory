@@ -56,7 +56,7 @@ from app.reviews import record_finding
 from app.artifacts import safe_artifact_path, write_artifact
 from app.budget import enforce_budget
 from app.tools import InvalidCapability, issue_capability, verify_capability
-from app.usage import finalize_usage_call, record_usage_call, usage_totals
+from app.usage import finalize_usage_call, list_usage_calls, record_usage_call, usage_totals
 from app.quota import list_quota_snapshots, record_quota_snapshot
 from app.settings import Settings
 from app.telegram import config_from_values, link_chat, process_update
@@ -238,6 +238,10 @@ class UsageCallRequest(BaseModel):
     model: str = Field(min_length=1, max_length=128)
     purpose: str = Field(min_length=1, max_length=64)
     outcome: str = Field(min_length=1, max_length=32)
+    project_id: UUID | None = None
+    run_id: UUID | None = None
+    task_id: UUID | None = None
+    attempt_id: UUID | None = None
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
     reasoning_tokens: int | None = Field(default=None, ge=0)
@@ -675,6 +679,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session = database.session()
         try:
             return usage_totals(session, project_id=project_id)
+        finally:
+            session.close()
+
+    @application.get("/usage/calls", response_model=list[dict[str, Any]], tags=["usage"])
+    def get_usage_calls(project_id: UUID | None = None) -> list[dict[str, Any]]:
+        """Return the latest bounded usage-call lineage for an optional project."""
+
+        session = database.session()
+        try:
+            return list_usage_calls(session, project_id=project_id)
         finally:
             session.close()
 

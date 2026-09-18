@@ -305,6 +305,10 @@ export interface UsageCallRequest {
   model: string;
   purpose: string;
   outcome: string;
+  project_id?: string | null;
+  run_id?: string | null;
+  task_id?: string | null;
+  attempt_id?: string | null;
   input_tokens?: number | null;
   output_tokens?: number | null;
   reasoning_tokens?: number | null;
