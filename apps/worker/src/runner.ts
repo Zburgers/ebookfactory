@@ -1,8 +1,13 @@
 import { runPiProduction } from "./production.ts";
+import { runCodexArt } from "./codex-art.ts";
+import { readFile, stat } from "node:fs/promises";
+import path from "node:path";
 
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const DEFAULT_PROVIDER = "openai-codex";
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+const MAX_ART_BYTES = 10 * 1024 * 1024;
+const ART_MIME_BY_EXTENSION = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
 
 /** Build the trusted executor that turns one leased job into a fenced production result. */
 export function createProductionExecutor({
@@ -11,6 +16,7 @@ export function createProductionExecutor({
   workerId,
   provider = DEFAULT_PROVIDER,
   runProduction = runPiProduction,
+  runArt = runCodexArt,
   requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
 }) {
   if (!baseUrl || !token || !workerId) throw new Error("baseUrl, token, and workerId are required");
@@ -40,6 +46,9 @@ export function createProductionExecutor({
     if ((result.provider && result.provider !== provider) || !modelMatches) {
       throw new Error("Pi production provider or model conflicted with saved configuration");
     }
+    const art = context.brief?.art_direction
+      ? await readGeneratedArt(await runArt({ prompt: context.brief.art_direction, model, signal }), signal)
+      : null;
     await requestJson(baseUrl, token, "/private/worker/production-result", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -52,12 +61,26 @@ export function createProductionExecutor({
         model,
         call_id: result.callId,
         usage: result.usage ?? null,
+        ...(art ? { art } : {}),
       }),
       signal,
       requestTimeoutMs,
     });
     return { terminal: true };
   };
+}
+
+async function readGeneratedArt(result, signal) {
+  if (!result?.savedPath || path.isAbsolute(result.savedPath) === false) throw new Error("Codex art adapter returned an invalid savedPath");
+  const extension = path.extname(result.savedPath).toLowerCase();
+  const mimeType = ART_MIME_BY_EXTENSION[extension];
+  if (!mimeType) throw new Error("Codex art adapter returned an unsupported image type");
+  const info = await stat(result.savedPath);
+  if (!info.isFile() || info.size > MAX_ART_BYTES) throw new Error("Codex art output exceeded the bounded file limit");
+  if (signal?.aborted) throw new Error("Codex art aborted");
+  const bytes = await readFile(result.savedPath);
+  if (bytes.length > MAX_ART_BYTES) throw new Error("Codex art output exceeded the bounded file limit");
+  return { filename: path.basename(result.savedPath), mime_type: mimeType, byte_count: bytes.length, content_base64: bytes.toString("base64") };
 }
 
 export async function requestJson(baseUrl, token, path, options) {

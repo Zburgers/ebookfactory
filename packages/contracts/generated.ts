@@ -180,6 +180,13 @@ export interface OrchestratorResultRequest {
   usage?: Record<string, number | null> | null;
 }
 
+export interface ProductionArtRequest {
+  filename: string;
+  mime_type: string;
+  byte_count: number;
+  content_base64: string;
+}
+
 export interface ProductionOutputRequest {
   job_id: string;
   worker_id: string;
@@ -190,6 +197,7 @@ export interface ProductionOutputRequest {
   call_id?: string | null;
   provider_request_id?: string | null;
   usage?: ProductionUsageRequest | null;
+  art?: ProductionArtRequest | null;
 }
 
 export interface ProductionOutputResponse {

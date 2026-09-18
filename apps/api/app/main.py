@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 import json
 import hashlib
+import base64
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -451,6 +452,14 @@ class ProductionOutputRequest(BaseModel):
     call_id: UUID | None = None
     provider_request_id: str | None = Field(default=None, max_length=255)
     usage: "ProductionUsageRequest | None" = None
+    art: "ProductionArtRequest | None" = None
+
+
+class ProductionArtRequest(BaseModel):
+    filename: str = Field(min_length=1, max_length=128)
+    mime_type: str = Field(min_length=1, max_length=64)
+    byte_count: int = Field(ge=1, le=10 * 1024 * 1024)
+    content_base64: str = Field(min_length=4, max_length=14_000_000)
 
 
 class ProductionUsageRequest(BaseModel):
@@ -471,14 +480,31 @@ class ProductionOutputResponse(BaseModel):
     usage_call_id: UUID | None = None
 
 
-def _verify_existing_production_artifact(*, artifact: Artifact, path: Path, run_id: UUID, revision_id: UUID, content: bytes) -> None:
+def _verify_existing_production_artifact(*, artifact: Artifact, path: Path, run_id: UUID, revision_id: UUID, content: bytes, mime_type: str = "text/markdown") -> None:
     """Allow immutable artifact reuse only when disk and registration agree."""
     if (not path.is_file() or hashlib.sha256(content).hexdigest() != artifact.sha256
         or path.stat().st_size != artifact.byte_count
         or hashlib.sha256(path.read_bytes()).hexdigest() != artifact.sha256
-        or artifact.mime_type != "text/markdown" or artifact.run_id != run_id
+        or artifact.mime_type != mime_type or artifact.run_id != run_id
         or artifact.revision_id != revision_id):
         raise ValueError("existing artifact does not match production result")
+
+
+def _decode_production_art(*, payload: ProductionArtRequest) -> tuple[str, bytes]:
+    allowed = {"image/png": ((".png",), b"\x89PNG\r\n\x1a\n"), "image/jpeg": ((".jpg", ".jpeg"), b"\xff\xd8\xff"), "image/webp": ((".webp",), b"RIFF")}
+    if payload.mime_type not in allowed:
+        raise ValueError("unsupported art MIME type")
+    name = Path(payload.filename).name
+    suffixes, magic = allowed[payload.mime_type]
+    if name != payload.filename or Path(name).suffix.lower() not in suffixes:
+        raise ValueError("art filename does not match MIME type")
+    try:
+        content = base64.b64decode(payload.content_base64, validate=True)
+    except (ValueError, base64.binascii.Error) as exc:
+        raise ValueError("art payload is not valid base64") from exc
+    if len(content) != payload.byte_count or len(content) > 10 * 1024 * 1024 or not content.startswith(magic):
+        raise ValueError("art payload failed size or signature validation")
+    return name, content
 
 
 class ExportArtifactResponse(BaseModel):
@@ -1581,6 +1607,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             manage_transaction=False,
                         )
                         created_artifact_path = artifact_candidate_path
+
                     except FileExistsError:
                         artifact = session.scalar(select(Artifact).where(Artifact.relative_path == f"{output.run_id}/book.md"))
                         if artifact is None:
@@ -1591,6 +1618,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             artifact=artifact, path=existing_path, run_id=output.run_id,
                             revision_id=output.revision_id, content=content,
                         )
+
+                    art_artifact = None
+                    if payload.art is not None:
+                        art_filename, art_content = _decode_production_art(payload=payload.art)
+                        art_relative_path = f"{output.run_id}/{art_filename}"
+                        art_candidate_path = safe_artifact_path(resolved_settings.artifact_root, art_relative_path)
+                        try:
+                            art_artifact = write_artifact(
+                                session, root=resolved_settings.artifact_root, relative_path=art_relative_path,
+                                content=art_content, mime_type=payload.art.mime_type, run_id=output.run_id,
+                                revision_id=output.revision_id, manage_transaction=False,
+                            )
+                        except FileExistsError:
+                            art_artifact = session.scalar(select(Artifact).where(Artifact.relative_path == art_relative_path))
+                            if art_artifact is None:
+                                raise HTTPException(status_code=503, detail="art artifact registration unavailable")
+                            _verify_existing_production_artifact(
+                                artifact=art_artifact, path=art_candidate_path, run_id=output.run_id,
+                                revision_id=output.revision_id, content=art_content, mime_type=payload.art.mime_type,
+                            )
 
                     usage_call_id = None
                     if payload.provider and payload.model:
@@ -1632,6 +1679,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         result_refs={
                             "revision_id": str(output.revision_id),
                             "artifact_id": str(artifact.id),
+                            **({"art_artifact_id": str(art_artifact.id)} if art_artifact else {}),
                             **({"usage_call_id": str(usage_call_id)} if usage_call_id else {}),
                         },
                         manage_transaction=False,

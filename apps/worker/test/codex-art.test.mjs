@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { buildCodexArtTurn, buildCodexInitialize, buildCodexThreadStart, parseCodexArtEvent, runCodexArt } from "../src/codex-art.ts";
 
 test("builds the experimental app-server handshake and image turn", () => {
@@ -33,4 +36,24 @@ test("runs the adapter lifecycle against a JSONL app-server boundary", async () 
     });`;
   const result = await runCodexArt({ command: process.execPath, commandArgs: ["-e", script], prompt: "a tiny blue square", model: "least-cost-model", cwd: process.cwd() });
   assert.equal(result.savedPath, "/tmp/fake-art.png");
+});
+
+test("production callback sends bounded adapter bytes only when art direction is approved", async () => {
+  const { createProductionExecutor } = await import("../src/runner.ts");
+  const dir = await mkdtemp(path.join(tmpdir(), "ebook-art-"));
+  const fixture = path.join(dir, "fixture-art.png");
+  await writeFile(fixture, Buffer.concat([Buffer.from("\x89PNG\r\n\x1a\n"), Buffer.from("fixture")]))
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, body: options.body && JSON.parse(options.body) });
+    if (url.endsWith("/context")) return Response.json({ project_id: "p", run_id: "r", brief: { art_direction: "blue square" } });
+    if (url.endsWith("/providers")) return Response.json([{ provider: "openai-codex", scope: "app", protocol: "pi-native", orchestration_model: "m" }]);
+    return Response.json({});
+  };
+  try {
+    await createProductionExecutor({ baseUrl: "http://api", token: "secret", workerId: "w", runProduction: async () => ({ text: "# book", callId: "c" }), runArt: async () => ({ savedPath: fixture }) })({ job_id: "j", generation: 1 });
+    assert.equal(calls.at(-1).body.art.mime_type, "image/png");
+    assert.equal(Buffer.from(calls.at(-1).body.art.content_base64, "base64").toString(), "\x89PNG\r\n\x1a\nfixture");
+  } finally { globalThis.fetch = originalFetch; await rm(dir, { recursive: true, force: true }); }
 });

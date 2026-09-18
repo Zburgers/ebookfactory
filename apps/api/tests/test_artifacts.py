@@ -1,4 +1,5 @@
 from pathlib import Path
+import base64
 import hashlib
 from uuid import uuid4
 
@@ -7,6 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.artifacts import InvalidArtifactPath, reconcile_pending_artifacts, safe_artifact_path, write_artifact
+from app.main import ProductionArtRequest, _decode_production_art
 from app.models import Artifact
 from app.main import _verify_existing_production_artifact
 
@@ -114,3 +116,11 @@ def test_pending_artifact_rolls_back_without_final_file(tmp_path: Path) -> None:
     session.rollback()
     assert not (root / "run-2/book.md").exists()
     assert not list(root.rglob(".pending-*"))
+
+
+def test_production_art_fixture_validates_mime_filename_size_and_signature() -> None:
+    content = b"\x89PNG\r\n\x1a\nfixture"
+    payload = ProductionArtRequest(filename="cover.png", mime_type="image/png", byte_count=len(content), content_base64=base64.b64encode(content).decode())
+    filename, decoded = _decode_production_art(payload=payload)
+    assert filename == "cover.png"
+    assert decoded == content
