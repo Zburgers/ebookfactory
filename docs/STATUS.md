@@ -5,7 +5,7 @@ jobs/events are implemented on the isolated branch. P01 revision `89673c6` provi
 readiness service, pinned Python dependencies, shared JSON/OpenAPI contracts,
 SQLAlchemy metadata and Alembic migrations. The owner-authorized PostgreSQL
 target is `ebookfactory` with peer role `naki`; migrations are at head
-`3c2a5f8e1b4d` and the real readiness check returned `ok`. The P00 report at
+`8b4e6c7d9a10` and the real readiness check returned `ok`. The P00 report at
 `evidence/P00/capabilities.json` records Pi 0.85.1,
 Codex CLI 0.155.0, rootless Podman 4.9.3 and PostgreSQL client 16.15. A real
 Pi CLI probe returned usage fields from `openai-codex` / `gpt-5.5`; this is not
@@ -54,8 +54,8 @@ dependency audit is clean after upgrading Pillow to 12.3.0. P09 revision
 `ba181f7` adds durable allowlisted Telegram receipt/link/outbox state and a
 redacted status boundary; the live bot remains unconfigured. Pending owner
 input: Telegram token and allowed chat/sender IDs. Pending technical proofs: Pi
-model gateway inside containment, Codex subscription image bridge, provider
-quota availability, EPUBCheck/Kindle preview, a real Codex image artifact,
+model gateway inside containment, Codex subscription image bridge, Copilot
+quota/provider billing, EPUBCheck/Kindle preview, a real Codex image artifact,
 Telegram loop, isolated restore, and the rest of the integrated product. P10
 revision `e15ceb1` adds runnable `make acceptance` and `make restore-check`
 entrypoints; target composition was corrected in `1a7c100`, and acceptance
@@ -63,6 +63,12 @@ deliberately exits PARTIAL while those gates remain unproven.
 Production revision `f04fd56` adds durable measured budget blocking for turn,
 token and elapsed-time caps; the focused transition test passes, while a live
 provider rejection remains intentionally unspent/unproven.
+Quota follow-up `530de4e` adds a Codex app-server rate-limit parser, authenticated
+snapshot ingestion, stale/unavailable semantics and a dashboard Usage panel.
+A read-only real subscription probe persisted primary 30% used, secondary 26%
+used and an unavailable credits record without retaining provider account IDs.
+Usage quota evidence earns the Codex quota subcriterion; Copilot quota and
+monetary billing remain unknown.
 
 Operating instruction: for future probes and delegated work, explicitly select
 the least-cost available route, preferably GPT 5.6 Luna low when the runtime

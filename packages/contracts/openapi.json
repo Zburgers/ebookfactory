@@ -1923,6 +1923,7 @@
     },
     "/private/quota/snapshots": {
       "post": {
+        "description": "Accept one redacted provider quota observation from the local worker.",
         "operationId": "record_quota_snapshot_route_private_quota_snapshots_post",
         "parameters": [
           {
@@ -3605,6 +3606,7 @@
     },
     "/quota": {
       "get": {
+        "description": "Return recent quota observations with expired supported windows marked stale.",
         "operationId": "get_quota_quota_get",
         "parameters": [
           {

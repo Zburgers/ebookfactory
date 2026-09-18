@@ -1,6 +1,6 @@
 # Delivery scorecard
 
-Current score: **65/100 — durable runtime/containment, real production with
+Current score: **67/100 — durable runtime/containment, real production with
 reviewed revision lineage, live usage attribution, dashboard document flow and
 structural publishing packages are evidenced; external hard gates remain.**
 
@@ -11,7 +11,7 @@ structural publishing packages are evidenced; external hard gates remain.**
 | Containment | 10/10 | Filesystem/secret isolation, enforced network/resource limits and label-scoped reconciliation all pass P04 evidence, including unrelated-container preservation |
 | Production | 14/16 | Real fiction/nonfiction output, fenced context/task lineage, owner revision and a resolved review finding are evidenced; durable budget blocking is implemented but its live rejection subcriterion remains unawarded (`evidence/P05/real-production.md`, `evidence/P05/budget-blocking.md`, `evidence/P06/dashboard-correction.md`) |
 | Dashboard | 7/10 | Chat/brief/review, event monitoring, section editing and export downloads are implemented and smoke-tested; a full interactive Chromium trace and richer task tree remain pending (`evidence/P06/dashboard-correction.md`) |
-| Usage | 4/12 | Real finalized call attribution and idempotent totals are evidenced; estimates, corrections, Codex/Copilot quota snapshots and drill-down remain pending (`evidence/P07/live-usage.md`) |
+| Usage | 6/12 | Real finalized call attribution, idempotent totals and live redacted Codex subscription windows are evidenced; estimates, Copilot quota and drill-down remain pending (`evidence/P07/live-usage.md`, `evidence/P07/quota-live.md`) |
 | Publishing | 10/12 | Real structurally checked EPUB/PDF/DOCX/Markdown, cover, metadata and manifests are persisted; EPUBCheck and Kindle preview remain pending (`evidence/P08/publishing.md`) |
 | Art | 0/5 | pending |
 | Telegram | 0/5 | Durable adapter and redacted status boundary are implemented and tested; live token/chat/sender loop remains pending (`evidence/P09/telegram.md`) |
