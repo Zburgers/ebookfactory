@@ -5,9 +5,13 @@ description = "FastAPI domain service for the personal Ebook Factory"
 requires-python = ">=3.14,<3.15"
 dependencies = [
   "alembic==1.20.0",
+  "ebooklib==0.20",
   "fastapi==0.141.1",
+  "pillow==12.3.0",
   "psycopg[binary]==3.3.6",
   "pydantic-settings==2.15.0",
+  "python-docx==1.2.0",
+  "reportlab==4.4.9",
   "sqlalchemy==2.0.54",
   "uvicorn==0.53.0",
 ]

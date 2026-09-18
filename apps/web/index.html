@@ -15,6 +15,7 @@
       <nav aria-label="Primary navigation">
         <button class="nav-button active" data-view="projects">Projects</button>
         <button class="nav-button" data-view="studio">Studio</button>
+        <button class="nav-button" data-view="usage">Usage</button>
         <button class="nav-button" data-view="settings">Settings</button>
       </nav>
     </header>
@@ -45,6 +46,12 @@
           <aside class="panel approval-panel"><h3>Brief approval</h3><p class="muted">Create a revision from the current idea, then approve its exact hash to enqueue durable work.</p><form id="brief-form"><label>Promise or premise <textarea name="promise" required rows="4"></textarea></label><label>Audience <input name="audience" value="General readers" /></label><button class="primary">Create brief revision</button></form><div id="brief-result" class="brief-result" aria-live="polite"></div></aside>
         </div>
         <div class="panel timeline-panel"><div class="section-heading compact"><h3>Event timeline</h3><button id="refresh-events" class="quiet">Refresh</button></div><ol id="events" class="timeline" aria-live="polite"></ol></div>
+        <div class="panel document-panel"><div class="section-heading compact"><h3>Manuscript revisions</h3><span class="muted">Owner edits create a new revision.</span></div><div id="sections" class="sections" aria-live="polite"></div><div id="reviews" class="reviews" aria-live="polite"></div><div id="exports" class="exports" aria-live="polite"></div></div>
+      </section>
+
+      <section id="usage-view" class="view" aria-labelledby="usage-heading">
+        <div class="section-heading"><div><p class="eyebrow">ACCOUNTING</p><h2 id="usage-heading">Usage and limits</h2></div><button id="refresh-usage" class="quiet">Refresh</button></div>
+        <div class="panel"><div id="usage-summary" aria-live="polite"><p class="muted">Select a project in Studio to inspect its usage.</p></div></div>
       </section>
 
       <section id="settings-view" class="view" aria-labelledby="settings-heading">

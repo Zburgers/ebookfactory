@@ -11,6 +11,16 @@ export interface ApprovalResponse {
   job_id: string;
 }
 
+export interface ArtifactView {
+  artifact_id: string;
+  revision_id: string | null;
+  relative_path: string;
+  mime_type: string;
+  byte_count: number;
+  sha256: string;
+  validation_state: string;
+}
+
 export interface BriefCreateRequest {
   structured_brief: Record<string, unknown>;
 }
@@ -49,6 +59,21 @@ export interface CompleteRequest {
 export interface DependencyStatus {
   status: string;
   reason?: string | null;
+}
+
+export interface ExportArtifactResponse {
+  artifact_id: string;
+  filename: string;
+  sha256: string;
+  byte_count: number;
+  download_path: string;
+}
+
+export interface ExportResponse {
+  revision_id: string;
+  title: string;
+  package_state: string;
+  artifacts: Array<ExportArtifactResponse>;
 }
 
 export interface FailRequest {
@@ -107,6 +132,9 @@ export interface ProductionOutputRequest {
   content: string;
   provider?: string | null;
   model?: string | null;
+  call_id?: string | null;
+  provider_request_id?: string | null;
+  usage?: ProductionUsageRequest | null;
 }
 
 export interface ProductionOutputResponse {
@@ -116,6 +144,15 @@ export interface ProductionOutputResponse {
   artifact_id: string;
   content_hash: string;
   duplicate: boolean;
+  usage_call_id?: string | null;
+}
+
+export interface ProductionUsageRequest {
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  cache_read_tokens?: number | null;
+  cache_write_tokens?: number | null;
+  reasoning_tokens?: number | null;
 }
 
 export interface ProjectCreateRequest {
@@ -161,6 +198,32 @@ export interface ReadinessResponse {
   dependencies: Record<string, DependencyStatus>;
 }
 
+export interface ReviewFindingRequest {
+  revision_id?: string | null;
+  artifact_id?: string | null;
+  severity: string;
+  criterion: string;
+  evidence: string;
+}
+
+export interface ReviewFindingResponse {
+  finding_id: string;
+}
+
+export interface ReviewFindingView {
+  finding_id: string;
+  revision_id: string | null;
+  artifact_id: string | null;
+  severity: string;
+  criterion: string;
+  evidence: string;
+  resolution_revision_id: string | null;
+}
+
+export interface ReviewResolutionRequest {
+  resolution_revision_id: string;
+}
+
 export interface RunCancelRequest {
   reason: string;
 }
@@ -187,6 +250,16 @@ export interface SectionRevisionResponse {
   revision_id: string;
   revision: number;
   content_hash: string;
+}
+
+export interface SectionView {
+  section_id: string;
+  order_no: number;
+  heading: string;
+  latest_revision_id: string | null;
+  latest_revision: number | null;
+  content: string | null;
+  content_hash: string | null;
 }
 
 export interface UsageCallRequest {

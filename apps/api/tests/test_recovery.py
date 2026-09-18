@@ -25,7 +25,7 @@ from app.jobs import (
     pause_job,
     resume_job,
 )
-from app.models import Artifact, Attempt, BriefRevision, Event, Job, Project, ProductionRun, Task
+from app.models import Artifact, Attempt, BriefRevision, Event, Job, Project, ProductionRun, Task, UsageCall
 from app.main import create_app
 from app.settings import Settings
 
@@ -68,6 +68,7 @@ def database_session() -> Iterator[Session]:
                     Artifact.run_id.in_(select(ProductionRun.id).where(ProductionRun.project_id == cleanup_project_id))
                 )
             )
+            session.execute(delete(UsageCall).where(UsageCall.project_id == cleanup_project_id))
             session.execute(delete(ProductionRun).where(ProductionRun.project_id == cleanup_project_id))
             session.execute(delete(BriefRevision).where(BriefRevision.project_id == cleanup_project_id))
             session.execute(delete(Project).where(Project.id == cleanup_project_id))
@@ -154,6 +155,8 @@ def test_api_project_brief_and_approval_boundary(database_session: Session) -> N
                 "content": "# A concise durable book\n\nThis is an API boundary fixture.",
                 "provider": "test-provider",
                 "model": "test-model",
+                "call_id": str(uuid4()),
+                "usage": {"input_tokens": 4, "output_tokens": 6},
             },
         )
         sse_response = client.get(f"/projects/{project_id}/events/stream?after=0")
@@ -167,7 +170,14 @@ def test_api_project_brief_and_approval_boundary(database_session: Session) -> N
     assert output_response.json()["artifact_id"]
     database_session.expire_all()
     assert database_session.scalar(select(ProductionRun.state).where(ProductionRun.project_id == UUID(project_id))) == "draft_review"
+    assert database_session.scalar(select(Project.state).where(Project.id == UUID(project_id))) == "draft_review"
     assert database_session.scalar(select(Task.provider).where(Task.run_id == UUID(output_response.json()["run_id"]))) == "test-provider"
+    usage_call = database_session.scalar(select(UsageCall).where(UsageCall.project_id == UUID(project_id)))
+    assert usage_call is not None
+    assert usage_call.input_tokens == 4
+    assert usage_call.output_tokens == 6
+    assert usage_call.ended_at is not None
+    assert usage_call.started_at <= usage_call.ended_at
     assert sse_response.status_code == 200
     assert sse_response.headers["content-type"].startswith("text/event-stream")
     assert "run.approved" in sse_response.text

@@ -318,6 +318,7 @@ def complete_job(
         job, task, run, attempt = _locked_lease_context(
             session, job_id=job_id, worker_id=worker_id, generation=generation
         )
+        project = session.scalar(select(Project).where(Project.id == run.project_id).with_for_update())
         now = utc_now()
         job.state = "succeeded"
         job.lease_owner = None
@@ -331,6 +332,8 @@ def complete_job(
         attempt.lease_until = None
         if run.state == "producing":
             run.state = "draft_review"
+        if project is not None and project.state == "producing":
+            project.state = "draft_review"
         append_event(
             session,
             project_id=run.project_id,

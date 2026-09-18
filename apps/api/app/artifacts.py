@@ -79,6 +79,7 @@ def write_artifact(
         )
         session.add(artifact)
         session.flush()
+        session.expunge(artifact)
         return artifact
 
 

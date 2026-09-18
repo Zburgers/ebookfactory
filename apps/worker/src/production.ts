@@ -1,6 +1,7 @@
 /** Bounded host Pi runner; durable job fencing remains owned by the API. */
 
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { buildPiArgs, parsePiEvent } from "./pi.ts";
 
 const SYSTEM_PROMPT =
@@ -18,6 +19,7 @@ export function buildProductionPrompt(context) {
 }
 
 export function runPiProduction({ context, model, command = "pi" }) {
+  const callId = randomUUID();
   const args = buildPiArgs({ prompt: buildProductionPrompt(context), systemPrompt: SYSTEM_PROMPT, model, thinking: "low" });
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], shell: false });
@@ -39,7 +41,22 @@ export function runPiProduction({ context, model, command = "pi" }) {
       const text = events.map((event) => event.text).filter(Boolean).join("\n").trim();
       if (!text) return reject(new Error("Pi production returned no manuscript text"));
       const finalEvent = [...events].reverse().find((event) => event.usage || event.model || event.provider);
-      resolve({ text, provider: finalEvent?.provider || null, model: finalEvent?.model || model || null, usage: finalEvent?.usage || null });
+      const usage = finalEvent?.usage;
+      resolve({
+        callId,
+        text,
+        provider: finalEvent?.provider || null,
+        model: finalEvent?.model || model || null,
+        usage: usage
+          ? {
+              input_tokens: usage.input ?? null,
+              output_tokens: usage.output ?? null,
+              cache_read_tokens: usage.cacheRead ?? null,
+              cache_write_tokens: usage.cacheWrite ?? null,
+              reasoning_tokens: usage.reasoning ?? null,
+            }
+          : null,
+      });
     });
   });
 }

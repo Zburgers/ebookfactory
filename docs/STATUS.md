@@ -43,12 +43,14 @@ non-destructive archive check and local runbook; isolated restore and owned
 service lifecycle remain pending. P04 follow-up `9f87d3e` adds real
 label-scoped container reconciliation and unrelated-container preservation.
 
-Next: add owner revision/review and usage-call finalization around the real
-production path, then continue publishing, art and Telegram. Pending owner
+Next: finish review-aware production and integrate the validated publishing
+package into the dashboard. P07 now has one real finalized usage call and P08
+has real fiction/nonfiction packages; P08 art capability is proven but no
+image-generation turn has been invoked. Pending owner
 input: Telegram token and allowed chat/sender IDs. Pending technical proofs: Pi
 model gateway inside containment, Codex subscription image bridge, provider
-quota availability, maintained publishing converters, isolated restore, and
-the rest of the integrated product.
+quota availability, EPUBCheck/Kindle preview, a real Codex image artifact,
+Telegram loop, isolated restore, and the rest of the integrated product.
 
 Operating instruction: for future probes and delegated work, explicitly select
 the least-cost available route, preferably GPT 5.6 Luna low when the runtime

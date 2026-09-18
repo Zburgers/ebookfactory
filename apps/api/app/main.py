@@ -5,18 +5,20 @@ from datetime import datetime, timedelta
 import json
 from pathlib import Path
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import select
+from sqlalchemy import or_, select
+from sqlalchemy.orm import aliased
 
 from app.database import Database
 from app.conversations import append_message, create_project
 from app.documents import create_brief_revision, create_section, save_section_revision
+from app.exports import MIME_TYPES, PACKAGE_FILES, export_book
 from app.events import replay_events
 from app.jobs import (
     ApprovalConflict,
@@ -30,10 +32,11 @@ from app.jobs import (
     fail_job,
     heartbeat_job,
 )
-from app.models import Artifact, BriefRevision, Job, Message, ProductionRun, Project, ProviderSetting, Task
+from app.models import Artifact, Attempt, BriefRevision, Job, Message, ProductionRun, Project, ProviderSetting, ReviewFinding, Section, SectionRevision, Task, utc_now
 from app.providers import save_provider_setting
 from app.production import accept_production_output
-from app.artifacts import write_artifact
+from app.reviews import record_finding
+from app.artifacts import safe_artifact_path, write_artifact
 from app.tools import InvalidCapability, issue_capability, verify_capability
 from app.usage import finalize_usage_call, record_usage_call, usage_totals
 from app.settings import Settings
@@ -217,6 +220,52 @@ class SectionResponse(BaseModel):
     section_id: UUID
 
 
+class SectionView(BaseModel):
+    section_id: UUID
+    order_no: int
+    heading: str
+    latest_revision_id: UUID | None
+    latest_revision: int | None
+    content: str | None
+    content_hash: str | None
+
+
+class ArtifactView(BaseModel):
+    artifact_id: UUID
+    revision_id: UUID | None
+    relative_path: str
+    mime_type: str
+    byte_count: int
+    sha256: str
+    validation_state: str
+
+
+class ReviewFindingView(BaseModel):
+    finding_id: UUID
+    revision_id: UUID | None
+    artifact_id: UUID | None
+    severity: str
+    criterion: str
+    evidence: str
+    resolution_revision_id: UUID | None
+
+
+class ReviewFindingRequest(BaseModel):
+    revision_id: UUID | None = None
+    artifact_id: UUID | None = None
+    severity: str = Field(min_length=1, max_length=32)
+    criterion: str = Field(min_length=1, max_length=128)
+    evidence: str = Field(min_length=1)
+
+
+class ReviewFindingResponse(BaseModel):
+    finding_id: UUID
+
+
+class ReviewResolutionRequest(BaseModel):
+    resolution_revision_id: UUID
+
+
 class SectionRevisionRequest(BaseModel):
     content: str = Field(min_length=1)
     summary: str = ""
@@ -251,6 +300,17 @@ class ProductionOutputRequest(BaseModel):
     content: str = Field(min_length=1)
     provider: str | None = Field(default=None, min_length=1, max_length=64)
     model: str | None = Field(default=None, min_length=1, max_length=128)
+    call_id: UUID | None = None
+    provider_request_id: str | None = Field(default=None, max_length=255)
+    usage: "ProductionUsageRequest | None" = None
+
+
+class ProductionUsageRequest(BaseModel):
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    cache_read_tokens: int | None = Field(default=None, ge=0)
+    cache_write_tokens: int | None = Field(default=None, ge=0)
+    reasoning_tokens: int | None = Field(default=None, ge=0)
 
 
 class ProductionOutputResponse(BaseModel):
@@ -260,6 +320,22 @@ class ProductionOutputResponse(BaseModel):
     artifact_id: UUID
     content_hash: str
     duplicate: bool
+    usage_call_id: UUID | None = None
+
+
+class ExportArtifactResponse(BaseModel):
+    artifact_id: UUID
+    filename: str
+    sha256: str
+    byte_count: int
+    download_path: str
+
+
+class ExportResponse(BaseModel):
+    revision_id: UUID
+    title: str
+    package_state: str
+    artifacts: list[ExportArtifactResponse]
 
 
 def _require_worker_token(settings: Settings, supplied: str) -> None:
@@ -490,6 +566,69 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             session.close()
 
+    @application.post("/projects/{project_id}/exports/{revision_id}", response_model=ExportResponse, tags=["publishing"])
+    def create_export(project_id: UUID, revision_id: UUID) -> ExportResponse:
+        session = database.session()
+        try:
+            project = session.get(Project, project_id)
+            if project is None:
+                raise HTTPException(status_code=404, detail="project not found")
+            session.rollback()
+            result = export_book(
+                session,
+                root=resolved_settings.artifact_root,
+                project_id=project_id,
+                revision_id=revision_id,
+                language=project.language,
+                profile=project.profile,
+            )
+            return ExportResponse(
+                revision_id=result.revision_id,
+                title=result.title,
+                package_state=result.package_state,
+                artifacts=[
+                    ExportArtifactResponse(
+                        artifact_id=artifact.artifact_id,
+                        filename=artifact.filename,
+                        sha256=artifact.sha256,
+                        byte_count=artifact.byte_count,
+                        download_path=f"/projects/{project_id}/exports/{revision_id}/{artifact.filename}",
+                    )
+                    for artifact in result.artifacts
+                ],
+            )
+        except ValueError as exc:
+            session.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            session.close()
+
+    @application.get("/projects/{project_id}/exports/{revision_id}/{filename}", tags=["publishing"])
+    def download_export(project_id: UUID, revision_id: UUID, filename: str) -> FileResponse:
+        if filename not in PACKAGE_FILES:
+            raise HTTPException(status_code=404, detail="export member not found")
+        session = database.session()
+        try:
+            artifact = session.scalar(
+                select(Artifact)
+                .join(SectionRevision, SectionRevision.id == Artifact.revision_id)
+                .join(Section, Section.id == SectionRevision.section_id)
+                .where(
+                    Artifact.revision_id == revision_id,
+                    Artifact.relative_path == f"exports/{revision_id}/{filename}",
+                    Section.project_id == project_id,
+                )
+            )
+            if artifact is None:
+                raise HTTPException(status_code=404, detail="export member not found")
+            path = safe_artifact_path(resolved_settings.artifact_root, artifact.relative_path)
+            if not path.is_file():
+                raise HTTPException(status_code=503, detail="export file is unavailable")
+            media_type = MIME_TYPES[filename.rsplit(".", 1)[-1]]
+            return FileResponse(path, media_type=media_type, filename=filename)
+        finally:
+            session.close()
+
     @application.post("/sections/{section_id}/revisions", response_model=SectionRevisionResponse, status_code=201)
     def save_section_route(section_id: UUID, payload: SectionRevisionRequest) -> SectionRevisionResponse:
         session = database.session()
@@ -507,6 +646,199 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as exc:
             session.rollback()
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            session.close()
+
+    @application.get("/projects/{project_id}/sections", response_model=list[SectionView], tags=["documents"])
+    def list_sections(project_id: UUID) -> list[SectionView]:
+        session = database.session()
+        try:
+            if session.get(Project, project_id) is None:
+                raise HTTPException(status_code=404, detail="project not found")
+            sections = session.scalars(select(Section).where(Section.project_id == project_id).order_by(Section.order_no)).all()
+            views: list[SectionView] = []
+            for section in sections:
+                revision = session.scalar(
+                    select(SectionRevision)
+                    .where(SectionRevision.section_id == section.id)
+                    .order_by(SectionRevision.revision.desc())
+                )
+                views.append(
+                    SectionView(
+                        section_id=section.id,
+                        order_no=section.order_no,
+                        heading=section.heading,
+                        latest_revision_id=revision.id if revision else None,
+                        latest_revision=revision.revision if revision else None,
+                        content=revision.content if revision else None,
+                        content_hash=revision.content_hash if revision else None,
+                    )
+                )
+            return views
+        finally:
+            session.close()
+
+    @application.get("/projects/{project_id}/artifacts", response_model=list[ArtifactView], tags=["publishing"])
+    def list_artifacts(project_id: UUID) -> list[ArtifactView]:
+        session = database.session()
+        try:
+            rows = session.scalars(
+                select(Artifact)
+                .join(SectionRevision, SectionRevision.id == Artifact.revision_id)
+                .join(Section, Section.id == SectionRevision.section_id)
+                .where(Section.project_id == project_id)
+                .order_by(Artifact.created_at.desc())
+            ).all()
+            return [
+                ArtifactView(
+                    artifact_id=artifact.id,
+                    revision_id=artifact.revision_id,
+                    relative_path=artifact.relative_path,
+                    mime_type=artifact.mime_type,
+                    byte_count=artifact.byte_count,
+                    sha256=artifact.sha256,
+                    validation_state=artifact.validation_state,
+                )
+                for artifact in rows
+            ]
+        finally:
+            session.close()
+
+    @application.get("/projects/{project_id}/reviews", response_model=list[ReviewFindingView], tags=["documents"])
+    def list_reviews(project_id: UUID) -> list[ReviewFindingView]:
+        session = database.session()
+        try:
+            finding_revision = aliased(SectionRevision)
+            finding_section = aliased(Section)
+            artifact_revision = aliased(SectionRevision)
+            artifact_section = aliased(Section)
+            rows = session.scalars(
+                select(ReviewFinding)
+                .outerjoin(finding_revision, finding_revision.id == ReviewFinding.revision_id)
+                .outerjoin(finding_section, finding_section.id == finding_revision.section_id)
+                .outerjoin(Artifact, Artifact.id == ReviewFinding.artifact_id)
+                .outerjoin(artifact_revision, artifact_revision.id == Artifact.revision_id)
+                .outerjoin(artifact_section, artifact_section.id == artifact_revision.section_id)
+                .outerjoin(ProductionRun, ProductionRun.id == Artifact.run_id)
+                .where(
+                    or_(
+                        finding_section.project_id == project_id,
+                        artifact_section.project_id == project_id,
+                        ProductionRun.project_id == project_id,
+                    )
+                )
+                .order_by(ReviewFinding.created_at.desc())
+            ).all()
+            return [
+                ReviewFindingView(
+                    finding_id=finding.id,
+                    revision_id=finding.revision_id,
+                    artifact_id=finding.artifact_id,
+                    severity=finding.severity,
+                    criterion=finding.criterion,
+                    evidence=finding.evidence,
+                    resolution_revision_id=finding.resolution_revision_id,
+                )
+                for finding in rows
+            ]
+        finally:
+            session.close()
+
+    @application.post("/projects/{project_id}/reviews", response_model=ReviewFindingResponse, status_code=201, tags=["documents"])
+    def create_review_finding(project_id: UUID, payload: ReviewFindingRequest) -> ReviewFindingResponse:
+        session = database.session()
+        try:
+            if session.get(Project, project_id) is None:
+                raise HTTPException(status_code=404, detail="project not found")
+            if payload.revision_id is not None:
+                valid = session.scalar(
+                    select(SectionRevision.id)
+                    .join(Section, Section.id == SectionRevision.section_id)
+                    .where(SectionRevision.id == payload.revision_id, Section.project_id == project_id)
+                )
+                if valid is None:
+                    raise HTTPException(status_code=404, detail="revision not found")
+            if payload.artifact_id is not None:
+                valid = session.scalar(
+                    select(Artifact.id)
+                    .outerjoin(SectionRevision, SectionRevision.id == Artifact.revision_id)
+                    .outerjoin(Section, Section.id == SectionRevision.section_id)
+                    .outerjoin(ProductionRun, ProductionRun.id == Artifact.run_id)
+                    .where(
+                        Artifact.id == payload.artifact_id,
+                        or_(
+                            Section.project_id == project_id,
+                            ProductionRun.project_id == project_id,
+                        ),
+                    )
+                )
+                if valid is None:
+                    raise HTTPException(status_code=404, detail="artifact not found")
+            session.rollback()
+            finding_id = record_finding(
+                session,
+                revision_id=payload.revision_id,
+                artifact_id=payload.artifact_id,
+                severity=payload.severity,
+                criterion=payload.criterion,
+                evidence=payload.evidence,
+            )
+            return ReviewFindingResponse(finding_id=finding_id)
+        except ValueError as exc:
+            session.rollback()
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            session.close()
+
+    @application.post("/projects/{project_id}/reviews/{finding_id}/resolve", response_model=ReviewFindingView, tags=["documents"])
+    def resolve_review_finding(
+        project_id: UUID, finding_id: UUID, payload: ReviewResolutionRequest
+    ) -> ReviewFindingView:
+        session = database.session()
+        try:
+            finding_revision = aliased(SectionRevision)
+            finding_section = aliased(Section)
+            artifact_revision = aliased(SectionRevision)
+            artifact_section = aliased(Section)
+            row = session.execute(
+                select(ReviewFinding)
+                .outerjoin(finding_revision, finding_revision.id == ReviewFinding.revision_id)
+                .outerjoin(finding_section, finding_section.id == finding_revision.section_id)
+                .outerjoin(Artifact, Artifact.id == ReviewFinding.artifact_id)
+                .outerjoin(artifact_revision, artifact_revision.id == Artifact.revision_id)
+                .outerjoin(artifact_section, artifact_section.id == artifact_revision.section_id)
+                .outerjoin(ProductionRun, ProductionRun.id == Artifact.run_id)
+                .where(
+                    ReviewFinding.id == finding_id,
+                    or_(
+                        finding_section.project_id == project_id,
+                        artifact_section.project_id == project_id,
+                        ProductionRun.project_id == project_id,
+                    ),
+                )
+                .with_for_update()
+            ).first()
+            if row is None:
+                raise HTTPException(status_code=404, detail="review finding not found")
+            finding = row[0]
+            valid = session.scalar(
+                select(SectionRevision.id)
+                .join(Section, Section.id == SectionRevision.section_id)
+                .where(SectionRevision.id == payload.resolution_revision_id, Section.project_id == project_id)
+            )
+            if valid is None:
+                raise HTTPException(status_code=404, detail="resolution revision not found")
+            finding.resolution_revision_id = payload.resolution_revision_id
+            session.commit()
+            return ReviewFindingView(
+                finding_id=finding.id,
+                revision_id=finding.revision_id,
+                artifact_id=finding.artifact_id,
+                severity=finding.severity,
+                criterion=finding.criterion,
+                evidence=finding.evidence,
+                resolution_revision_id=finding.resolution_revision_id,
+            )
         finally:
             session.close()
 
@@ -852,6 +1184,47 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             artifact_session.close()
 
+        usage_call_id = None
+        if payload.provider and payload.model:
+            attempt_session = database.session()
+            try:
+                attempt = attempt_session.scalar(
+                    select(Attempt).where(
+                        Attempt.task_id == output.task_id,
+                        Attempt.fencing_generation == payload.generation,
+                    )
+                )
+            finally:
+                attempt_session.close()
+            usage_session = database.session()
+            try:
+                usage = payload.usage
+                usage_started_at = utc_now()
+                usage_result = record_usage_call(
+                    usage_session,
+                    call_id=payload.call_id or uuid4(),
+                    provider=payload.provider,
+                    model=payload.model,
+                    purpose="production",
+                    outcome="succeeded",
+                    started_at=usage_started_at,
+                    ended_at=utc_now(),
+                    provider_request_id=payload.provider_request_id,
+                    project_id=output.project_id,
+                    run_id=output.run_id,
+                    task_id=output.task_id,
+                    attempt_id=attempt.id if attempt else None,
+                    input_tokens=usage.input_tokens if usage else None,
+                    output_tokens=usage.output_tokens if usage else None,
+                    cache_read_tokens=usage.cache_read_tokens if usage else None,
+                    cache_write_tokens=usage.cache_write_tokens if usage else None,
+                    reasoning_tokens=usage.reasoning_tokens if usage else None,
+                    source_metadata={"source": "pi-final-message", "reported_usage": usage.model_dump() if usage else None},
+                )
+                usage_call_id = usage_result.call_id
+            finally:
+                usage_session.close()
+
         completion_session = database.session()
         try:
             complete_job(
@@ -859,7 +1232,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 job_id=payload.job_id,
                 worker_id=payload.worker_id,
                 generation=payload.generation,
-                result_refs={"revision_id": str(output.revision_id), "artifact_id": str(artifact.id)},
+                result_refs={
+                    "revision_id": str(output.revision_id),
+                    "artifact_id": str(artifact.id),
+                    **({"usage_call_id": str(usage_call_id)} if usage_call_id else {}),
+                },
             )
         except (StaleLease, CancellationRejected) as exc:
             completion_session.rollback()
@@ -873,6 +1250,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             artifact_id=artifact.id,
             content_hash=output.content_hash,
             duplicate=output.duplicate,
+            usage_call_id=usage_call_id,
         )
 
     @application.post("/private/tools/{tool}", tags=["private-worker"])
