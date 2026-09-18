@@ -5,7 +5,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.main import create_app
-from app.models import Base, Conversation, Event, Message, Project
+from app.models import Base, Conversation, Event, Message, Project, TelegramOutbox
+from app.telegram import link_chat
 from app.settings import Settings
 
 
@@ -88,6 +89,36 @@ def test_trusted_orchestrator_worker_claims_and_persists_assistant_lineage(tmp_p
         replay = client.post("/private/orchestrator/result", headers=headers, json={**lease_data, "content": "duplicate", "provider": "openai-codex", "model": "openai-codex/gpt-5.6-luna", "call_id": str(uuid4())})
         assert replay.status_code == 200
         assert replay.json()["duplicate"] is True
+
+
+def test_completed_telegram_turn_enqueues_assistant_outbox(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'telegram-completion.db'}"
+    engine = create_engine(database_url)
+    Base.metadata.create_all(engine)
+    project = Project(id=uuid4(), title="Telegram book", profile="fiction", language="en")
+    project_id = project.id
+    conversation = Conversation(id=uuid4(), project_id=project.id, channel="dashboard")
+    conversation_id = conversation.id
+    project.conversation_id = conversation.id
+    with Session(engine) as session:
+        session.add_all([project, conversation])
+        session.commit()
+    with Session(engine) as session:
+        link_chat(session, chat_id=6165158640, project_id=project_id)
+    with TestClient(create_app(Settings(database_url=database_url, worker_token="worker"))) as client:
+        message = client.post(f"/projects/{project_id}/messages", json={"conversation_id": str(conversation_id), "content": "Hello", "channel": "telegram", "external_dedupe_id": "telegram:88"}).json()
+        headers = {"X-Ebook-Worker-Token": "worker"}
+        lease = client.post("/private/orchestrator/claim", json={"worker_id": "pi-1"}, headers=headers).json()
+        completed = client.post("/private/orchestrator/result", headers=headers, json={
+            **lease, "content": "Assistant reply", "provider": "test", "model": "test-model", "call_id": str(uuid4()),
+        })
+        assert completed.status_code == 200
+
+        with client.app.state.database.session() as session:
+            rows = session.scalars(select(TelegramOutbox)).all()
+            assert [(row.chat_id, row.text, row.dedupe_key) for row in rows] == [
+                (6165158640, "Assistant reply", f"orchestrator:{lease['turn_id']}:assistant")
+            ]
 
 
 def test_orchestrator_context_is_cut_off_at_claimed_user_message(tmp_path) -> None:

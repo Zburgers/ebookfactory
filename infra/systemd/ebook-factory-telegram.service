@@ -1,0 +1,17 @@
+[Unit]
+Description=Ebook Factory Telegram polling worker
+After=network-online.target ebook-factory-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.config/shipyard/worktrees/ebookfactory/codex-ebook-factory-v2
+EnvironmentFile=-%h/.config/shipyard/worktrees/ebookfactory/codex-ebook-factory-v2/.env
+EnvironmentFile=-%h/ebookfactory/.env
+Environment=PYTHONPATH=%h/.config/shipyard/worktrees/ebookfactory/codex-ebook-factory-v2/apps/api
+ExecStart=%h/.config/shipyard/worktrees/ebookfactory/codex-ebook-factory-v2/apps/api/.venv/bin/python scripts/telegram-worker.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

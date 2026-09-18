@@ -2,7 +2,7 @@
 set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-unit_names=(ebook-factory-api.service ebook-factory-worker.service)
+unit_names=(ebook-factory-api.service ebook-factory-worker.service ebook-factory-telegram.service)
 config_root="${XDG_CONFIG_HOME:-$HOME/.config}"
 unit_dir="$config_root/systemd/user"
 start_service=true

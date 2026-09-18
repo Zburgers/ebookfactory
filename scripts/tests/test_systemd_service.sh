@@ -35,3 +35,9 @@ if command -v systemd-analyze >/dev/null 2>&1; then
 fi
 
 echo "systemd service manifest checks passed"
+
+telegram_unit="$project_root/infra/systemd/ebook-factory-telegram.service"
+[[ -f "$telegram_unit" ]] || { echo "missing Telegram systemd unit: $telegram_unit" >&2; exit 1; }
+grep -q 'scripts/telegram-worker.py' "$telegram_unit"
+grep -q 'Restart=always' "$telegram_unit"
+grep -q 'PYTHONPATH=.*apps/api' "$telegram_unit"

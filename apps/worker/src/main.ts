@@ -1,4 +1,40 @@
 import { runOrchestratorWorker } from "./orchestrator.ts";
+import { createProductionExecutor } from "./runner.ts";
+import { runSupervisor } from "./supervisor.ts";
+
+export async function runWorkerQueues({
+  baseUrl,
+  token,
+  workerId,
+  signal,
+  productionSupervisor = (options) => runSupervisor(options),
+  orchestratorWorker = (options) => runOrchestratorWorker(options),
+  productionExecutorFactory = (options) => createProductionExecutor(options),
+}) {
+  const productionWorkerId = `${workerId}-production`;
+  const orchestratorWorkerId = `${workerId}-orchestrator`;
+  const executeProduction = productionExecutorFactory({
+    baseUrl,
+    token,
+    workerId: productionWorkerId,
+  });
+
+  await Promise.all([
+    productionSupervisor({
+      baseUrl,
+      token,
+      workerId: productionWorkerId,
+      execute: executeProduction,
+      signal,
+    }),
+    orchestratorWorker({
+      baseUrl,
+      token,
+      workerId: orchestratorWorkerId,
+      signal,
+    }),
+  ]);
+}
 
 const baseUrl = process.env.EBOOK_FACTORY_API_URL || "http://127.0.0.1:6969";
 const token = process.env.EBOOK_FACTORY_WORKER_TOKEN;
@@ -8,5 +44,5 @@ if (process.env.EBOOK_FACTORY_RUN_WORKER === "1") {
   const controller = new AbortController();
   process.once("SIGTERM", () => controller.abort());
   process.once("SIGINT", () => controller.abort());
-  await runOrchestratorWorker({ baseUrl, token, workerId, signal: controller.signal });
+  await runWorkerQueues({ baseUrl, token, workerId, signal: controller.signal });
 }

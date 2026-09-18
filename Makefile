@@ -15,16 +15,16 @@ install-service:
 	./scripts/install-user-service.sh
 
 start:
-	systemctl --user start ebook-factory-api.service ebook-factory-worker.service
+	systemctl --user start ebook-factory-api.service ebook-factory-worker.service ebook-factory-telegram.service
 
 stop:
-	systemctl --user stop ebook-factory-worker.service ebook-factory-api.service
+	systemctl --user stop ebook-factory-telegram.service ebook-factory-worker.service ebook-factory-api.service
 
 restart:
-	systemctl --user restart ebook-factory-api.service ebook-factory-worker.service
+	systemctl --user restart ebook-factory-api.service ebook-factory-worker.service ebook-factory-telegram.service
 
 status:
-	systemctl --user status ebook-factory-api.service ebook-factory-worker.service --no-pager
+	systemctl --user status ebook-factory-api.service ebook-factory-worker.service ebook-factory-telegram.service --no-pager
 
 backup:
 	@./scripts/backup.sh
@@ -55,4 +55,5 @@ verify:
 	./scripts/tests/test_worker_supervisor.sh
 	./scripts/tests/test_worker_runner.sh
 	./scripts/tests/test_worker_service.sh
+	PYTHONPATH=$(API_DIR) $(API_DIR)/.venv/bin/python scripts/tests/test_telegram_worker.py
 	./scripts/check-isolation.sh

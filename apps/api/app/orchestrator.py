@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.events import append_event
-from app.models import Conversation, Message, OrchestratorTurn, Project, utc_now
+from app.models import Conversation, Message, OrchestratorTurn, Project, TelegramLink, TelegramOutbox, utc_now
 from app.usage import record_usage_call
 
 
@@ -77,6 +77,7 @@ def complete_turn(session: Session, *, turn_id: UUID, worker_id: str, generation
         if lease_until is None or lease_until < utc_now():
             raise ValueError("orchestrator turn lease is no longer current")
         conversation = session.scalar(select(Conversation).where(Conversation.id == turn.conversation_id).with_for_update())
+        user_message = session.scalar(select(Message).where(Message.id == turn.user_message_id))
         next_sequence = (max([m.sequence for m in session.scalars(select(Message).where(Message.conversation_id == turn.conversation_id)).all()] or [0]) + 1)
         message = Message(project_id=turn.project_id, conversation_id=turn.conversation_id, sequence=next_sequence, channel=conversation.channel, role="assistant", content=content, turn_state="completed")
         session.add(message)
@@ -84,5 +85,13 @@ def complete_turn(session: Session, *, turn_id: UUID, worker_id: str, generation
         record_usage_call(session, call_id=call_id, provider=provider, model=model, purpose="orchestration", outcome="succeeded", project_id=turn.project_id, started_at=utc_now(), ended_at=utc_now(), input_tokens=(usage or {}).get("input_tokens"), output_tokens=(usage or {}).get("output_tokens"), source_metadata={"source": "pi-orchestrator"}, manage_transaction=False)
         turn.assistant_message_id = message.id
         turn.provider, turn.model, turn.state, turn.lease_owner, turn.lease_until = provider, model, "succeeded", None, None
+        if user_message is not None and user_message.channel == "telegram":
+            link = session.scalar(select(TelegramLink).where(TelegramLink.conversation_id == conversation.id))
+            if link is not None:
+                session.add(TelegramOutbox(
+                    chat_id=link.chat_id,
+                    text=content[:4096],
+                    dedupe_key=f"orchestrator:{turn.id}:assistant",
+                ))
         append_event(session, project_id=turn.project_id, kind="orchestrator.turn.completed", payload={"turn_id": str(turn.id), "message_id": str(message.id), "provider": provider, "model": model})
         return message, False

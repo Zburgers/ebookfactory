@@ -5,7 +5,11 @@ import { spawn } from "node:child_process";
 const CLIENT_INFO = { name: "ebook-factory-art", title: "Ebook Factory", version: "0.1.0" };
 
 export function buildCodexInitialize() {
-  return { method: "initialize", id: 0, params: { clientInfo: CLIENT_INFO } };
+  return {
+    method: "initialize",
+    id: 0,
+    params: { clientInfo: CLIENT_INFO, capabilities: { experimentalApi: true } },
+  };
 }
 
 export function buildCodexThreadStart(model) {
@@ -37,8 +41,8 @@ export function parseCodexArtEvent(line) {
   }
 }
 
-export function runCodexArt({ prompt, model = "gpt-5.6-luna", command = "codex", cwd }) {
-  const child = spawn(command, ["app-server"], { cwd, shell: false, stdio: ["pipe", "pipe", "pipe"] });
+export function runCodexArt({ prompt, model = "gpt-5.6-luna", command = "codex", commandArgs = ["app-server"], cwd }) {
+  const child = spawn(command, commandArgs, { cwd, shell: false, stdio: ["pipe", "pipe", "pipe"] });
   return new Promise((resolve, reject) => {
     let stderr = "";
     let buffer = "";

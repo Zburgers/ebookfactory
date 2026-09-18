@@ -4,7 +4,7 @@ from uuid import uuid4
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.models import Base, Conversation, Message, Project, TelegramOutbox, TelegramState, TelegramUpdate
+from app.models import Base, Conversation, Message, OrchestratorTurn, Project, TelegramOutbox, TelegramState, TelegramUpdate
 from app.telegram import TelegramConfig, process_update, record_outbox_failure, record_outbox_sent
 
 
@@ -49,8 +49,14 @@ def test_linked_message_and_outbox_are_replay_safe(tmp_path: Path) -> None:
         assert first.accepted is True
         assert replay.duplicate is True
         assert len(session.scalars(select(Message).where(Message.channel == "telegram")).all()) == 1
+        turns = session.scalars(select(OrchestratorTurn)).all()
+        assert len(turns) == 1
+        assert turns[0].user_message_id == session.scalar(select(Message).where(Message.channel == "telegram")).id
+        assert turns[0].dedupe_key == "telegram:2"
+        assert session.get(TelegramUpdate, 2).processed_at is not None
         outbox = session.scalars(select(TelegramOutbox)).all()
-        assert len(outbox) >= 2
+        assert len(outbox) == 2
+        assert sum(item.dedupe_key == "telegram:2:response" for item in outbox) == 1
         outbox_id = outbox[0].id
         session.rollback()
         record_outbox_failure(session, outbox_id, "temporary network error")

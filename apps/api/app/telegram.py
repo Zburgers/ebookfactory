@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.conversations import append_message
 from app.jobs import ApprovalConflict, cancel_run, pause_job, resume_job
+from app.orchestrator import enqueue_turn
 from app.models import (
     Job,
     Project,
@@ -118,6 +119,8 @@ def _ensure_state(session: Session) -> TelegramState:
 
 
 def _ack_update(session: Session, update_id: int, *, error: str | None = None) -> None:
+    if session.in_transaction():
+        session.commit()
     with session.begin():
         stored = session.get(TelegramUpdate, update_id, with_for_update=True)
         if stored is None:
@@ -176,6 +179,15 @@ def _command(text: str) -> tuple[str, list[str]]:
 
 
 def _queue_response(session: Session, *, chat_id: int, update_id: int, text: str) -> UUID:
+    if session.in_transaction():
+        outbox = _queue_message(
+            session,
+            chat_id=chat_id,
+            text=text,
+            dedupe_key=f"telegram:{update_id}:response",
+        )
+        session.commit()
+        return outbox.id
     with session.begin():
         outbox = _queue_message(
             session,
@@ -273,6 +285,14 @@ def _response_for_command(session: Session, *, chat_id: int, update_id: int, tex
             external_dedupe_id=f"telegram:{update_id}",
             role="user",
             content=text,
+            manage_transaction=False,
+        )
+        enqueue_turn(
+            session,
+            project_id=project_id,
+            conversation_id=conversation_id,
+            message_id=result.message_id,
+            dedupe_key=f"telegram:{update_id}",
         )
         response_id = _queue_response(
             session,
