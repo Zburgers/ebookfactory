@@ -32,7 +32,7 @@ export function parseCodexArtEvent(line) {
     if (item?.type !== "imageGeneration") return null;
     return {
       status: item.status,
-      savedPath: item.savedPath || null,
+      savedPath: item.saved_path || item.savedPath || null,
       result: item.result || null,
       failure: item.failure || null,
     };

@@ -24,6 +24,13 @@ test("parses the app-server imageGeneration notification and savedPath", () => {
   assert.equal(parseCodexArtEvent('{"params":{"item":{"type":"image_generation"}}}'), null);
 });
 
+test("parses the current app-server snake_case saved_path field", () => {
+  assert.deepEqual(parseCodexArtEvent(JSON.stringify({
+    method: "item/completed",
+    params: { item: { type: "imageGeneration", status: "completed", saved_path: "/tmp/current-art.png", result: "ok" } },
+  })), { status: "completed", savedPath: "/tmp/current-art.png", result: "ok", failure: null });
+});
+
 test("runs the adapter lifecycle against a JSONL app-server boundary", async () => {
   const script = `
     const readline = require("node:readline");
@@ -32,7 +39,7 @@ test("runs the adapter lifecycle against a JSONL app-server boundary", async () 
       const m = JSON.parse(line);
       if (m.id === 0) process.stdout.write(JSON.stringify({ id: 0, result: {} }) + "\\n");
       if (m.id === 1) process.stdout.write(JSON.stringify({ id: 1, result: { thread: { id: "fake-thread" } } }) + "\\n");
-      if (m.id === 2) process.stdout.write(JSON.stringify({ params: { item: { type: "imageGeneration", status: "completed", savedPath: "/tmp/fake-art.png", result: "ok" } } }) + "\\n");
+      if (m.id === 2) process.stdout.write(JSON.stringify({ params: { item: { type: "imageGeneration", status: "completed", saved_path: "/tmp/fake-art.png", result: "ok" } } }) + "\\n");
     });`;
   const result = await runCodexArt({ command: process.execPath, commandArgs: ["-e", script], prompt: "a tiny blue square", model: "least-cost-model", cwd: process.cwd() });
   assert.equal(result.savedPath, "/tmp/fake-art.png");
