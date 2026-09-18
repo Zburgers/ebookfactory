@@ -1082,9 +1082,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             rows = session.scalars(
                 select(Artifact)
-                .join(SectionRevision, SectionRevision.id == Artifact.revision_id)
-                .join(Section, Section.id == SectionRevision.section_id)
-                .where(Section.project_id == project_id)
+                .where(
+                    or_(
+                        Artifact.revision_id.in_(
+                            select(SectionRevision.id)
+                            .join(Section, Section.id == SectionRevision.section_id)
+                            .where(Section.project_id == project_id)
+                        ),
+                        Artifact.run_id.in_(
+                            select(ProductionRun.id).where(ProductionRun.project_id == project_id)
+                        ),
+                    )
+                )
                 .order_by(Artifact.created_at.desc())
             ).all()
             return [
