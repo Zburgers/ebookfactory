@@ -61,8 +61,11 @@ revision `e15ceb1` adds runnable `make acceptance` and `make restore-check`
 entrypoints; target composition was corrected in `1a7c100`, and acceptance
 deliberately exits PARTIAL while those gates remain unproven.
 Production revision `f04fd56` adds durable measured budget blocking for turn,
-token and elapsed-time caps; the focused transition test passes, while a live
-provider rejection remains intentionally unspent/unproven.
+token and elapsed-time caps; the focused transition test and the later live
+API boundary rejection pass. Provider-side rejection remains intentionally
+unspent/unproven. A real
+PostgreSQL/API boundary check rejected an over-budget production result before
+publication and recorded the blocked transition in `evidence/P05/budget-live.md`.
 Quota follow-up `530de4e` adds a Codex app-server rate-limit parser, authenticated
 snapshot ingestion, stale/unavailable semantics and a dashboard Usage panel.
 A read-only real subscription probe persisted primary 30% used, secondary 26%
