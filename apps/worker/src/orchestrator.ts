@@ -1,8 +1,37 @@
 import { ORCHESTRATOR_SYSTEM_PROMPT, runPiProduction } from "./production.ts";
 import { requestJson } from "./runner.ts";
+import { fileURLToPath } from "node:url";
 
 const DEFAULT_POLL_MS = 1000;
 const DEFAULT_PROVIDER = "openai-codex";
+const ORCHESTRATOR_EXTENSION_PATH = fileURLToPath(new URL("./orchestrator-tools.mjs", import.meta.url));
+const ORCHESTRATOR_TOOL_ALLOWLIST = ["factory_read_state", "factory_mark_gate", "factory_spawn_agent"];
+
+function activityFromPiEvent(event) {
+  if (!event?.type) return null;
+  if (event.type === "tool_execution_start") return {
+    activity_type: "tool.started",
+    payload: { tool_call_id: event.toolCallId, tool_name: event.toolName, arguments: event.args },
+  };
+  if (event.type === "tool_execution_update") return {
+    activity_type: "tool.updated",
+    payload: { tool_call_id: event.toolCallId, tool_name: event.toolName, result: event.result },
+  };
+  if (event.type === "tool_execution_end") return {
+    activity_type: event.isError ? "tool.failed" : "tool.completed",
+    payload: { tool_call_id: event.toolCallId, tool_name: event.toolName, result: event.result, error: event.isError || undefined },
+  };
+  if (event.type === "message_update" && event.delta) return {
+    activity_type: "message.delta",
+    payload: { delta: event.delta },
+  };
+  if (event.type === "message_start") return { activity_type: "message.started", payload: {} };
+  if (event.type === "message_end") return {
+    activity_type: "message.completed",
+    payload: { text: event.text },
+  };
+  return null;
+}
 
 export function createOrchestratorExecutor({ baseUrl, token, workerId, provider = DEFAULT_PROVIDER, runProduction = runPiProduction, skillPaths = [] }) {
   if (!baseUrl || !token || !workerId) throw new Error("baseUrl, token, and workerId are required");
@@ -18,6 +47,16 @@ export function createOrchestratorExecutor({ baseUrl, token, workerId, provider 
       context,
       model,
       skillPaths,
+      extensionPaths: [ORCHESTRATOR_EXTENSION_PATH],
+      toolAllowlist: ORCHESTRATOR_TOOL_ALLOWLIST,
+      noBuiltinTools: true,
+      env: {
+        EBOOK_FACTORY_API_URL: baseUrl,
+        EBOOK_FACTORY_WORKER_TOKEN: token,
+        EBOOK_FACTORY_WORKER_ID: workerId,
+        EBOOK_FACTORY_TURN_ID: lease.turn_id,
+        EBOOK_FACTORY_GENERATION: String(lease.generation),
+      },
       systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
       signal,
       onTextDelta: (delta) => requestJson(baseUrl, token, "/private/orchestrator/delta", {
@@ -26,6 +65,21 @@ export function createOrchestratorExecutor({ baseUrl, token, workerId, provider 
         body: JSON.stringify({ turn_id: lease.turn_id, worker_id: workerId, generation: lease.generation, delta }),
         signal,
       }),
+      onEvent: async (event) => {
+        const activity = activityFromPiEvent(event);
+        if (!activity) return;
+        await requestJson(baseUrl, token, "/private/orchestrator/activity", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            turn_id: lease.turn_id,
+            worker_id: workerId,
+            generation: lease.generation,
+            ...activity,
+          }),
+          signal,
+        });
+      },
     });
     const suffix = model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model;
     if ((result.provider && result.provider !== provider) || (result.model && result.model !== model && result.model !== suffix)) {

@@ -19,6 +19,29 @@ test("buildPiArgs keeps discovery disabled while explicitly loading trusted skil
   ]);
 });
 
+test("buildPiArgs can enable only the trusted project extension tools", () => {
+  const args = buildPiArgs({
+    prompt: "hello",
+    systemPrompt: "system",
+    model: "test-model",
+    skillPaths: ["/trusted/kdp-publish"],
+    extensionPaths: ["/trusted/orchestrator-tools.mjs"],
+    toolAllowlist: ["factory_read_state", "factory_mark_gate"],
+    noBuiltinTools: true,
+  });
+
+  assert.equal(args.includes("--no-builtin-tools"), true);
+  assert.equal(args.includes("--no-tools"), false);
+  assert.deepEqual(args.slice(args.indexOf("--extension"), args.indexOf("--mode")), [
+    "--extension",
+    "/trusted/orchestrator-tools.mjs",
+  ]);
+  assert.deepEqual(args.slice(args.indexOf("--tools"), args.indexOf("--thinking")), [
+    "--tools",
+    "factory_read_state,factory_mark_gate",
+  ]);
+});
+
 test("parsePiEvent exposes Pi JSON text deltas without treating them as final output", () => {
   const parsed = parsePiEvent(JSON.stringify({
     type: "message_update",
@@ -33,6 +56,27 @@ test("parsePiEvent exposes Pi JSON text deltas without treating them as final ou
     usage: { input: 4, output: 1 },
     delta: "Hello ",
     text: "",
+  });
+});
+
+test("parsePiEvent exposes tool execution lifecycle data", () => {
+  assert.deepEqual(parsePiEvent(JSON.stringify({
+    type: "tool_execution_start",
+    toolCallId: "call-1",
+    toolName: "factory_read_state",
+    args: { focus: "gates" },
+  })), {
+    type: "tool_execution_start",
+    provider: undefined,
+    model: undefined,
+    usage: undefined,
+    delta: "",
+    text: "",
+    toolCallId: "call-1",
+    toolName: "factory_read_state",
+    args: { focus: "gates" },
+    result: undefined,
+    isError: undefined,
   });
 });
 
@@ -63,6 +107,35 @@ test("runPiProduction forwards deltas and uses the authoritative final message o
 
   assert.equal(result.text, "Hello world");
   assert.deepEqual(deltas, ["Hello ", "world"]);
+});
+
+test("runPiProduction forwards structured tool activity to the durable caller", async () => {
+  const activities = [];
+  const spawnProcess = () => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => {};
+    queueMicrotask(() => {
+      child.stdout.emit("data", Buffer.from([
+        JSON.stringify({ type: "tool_execution_start", toolCallId: "call-1", toolName: "factory_read_state", args: { focus: "gates" } }),
+        JSON.stringify({ type: "tool_execution_end", toolCallId: "call-1", toolName: "factory_read_state", result: { content: [{ type: "text", text: "state" }] }, isError: false }),
+        JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "Done" }] } }),
+      ].join("\n") + "\n"));
+      child.emit("close", 0);
+    });
+    return child;
+  };
+
+  await runPiProduction({
+    context: { project_id: "p", messages: [{ role: "user", content: "hi" }] },
+    model: "test-model",
+    spawnProcess,
+    onEvent: async (event) => activities.push(event),
+  });
+
+  assert.deepEqual(activities.map((event) => event.type), ["tool_execution_start", "tool_execution_end", "message_end"]);
+  assert.equal(activities[0].toolName, "factory_read_state");
 });
 
 test("runPiProduction forwards explicit skill paths without enabling discovery", async () => {

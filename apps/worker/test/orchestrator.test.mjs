@@ -30,6 +30,35 @@ test("trusted orchestrator executor passes its explicit skill path and safe syst
   assert.equal(calls.some((call) => call.url.endsWith("/private/orchestrator/result")), true);
 });
 
+test("trusted orchestrator executor durably reports tool activity", async () => {
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, options });
+    if (url.endsWith("/private/orchestrator/turn-activity/context")) return new Response(JSON.stringify({ project_id: "p", messages: [] }), { status: 200 });
+    if (url.endsWith("/private/worker/providers")) return new Response(JSON.stringify([{ provider: "openai-codex", scope: "app", protocol: "pi-native", orchestration_model: "gpt-5.6-luna" }]), { status: 200 });
+    if (url.endsWith("/private/orchestrator/activity")) return new Response(JSON.stringify({ accepted: true }), { status: 200 });
+    if (url.endsWith("/private/orchestrator/result")) return new Response(JSON.stringify({ state: "completed" }), { status: 200 });
+    throw new Error(`unexpected request: ${url}`);
+  };
+
+  const execute = createOrchestratorExecutor({
+    baseUrl: "http://api",
+    token: "token",
+    workerId: "worker-activity",
+    runProduction: async (options) => {
+      await options.onEvent({ type: "tool_execution_start", toolCallId: "call-1", toolName: "factory_read_state", args: { focus: "gates" } });
+      return { text: "done", callId: "call-activity", provider: "openai-codex", model: "gpt-5.6-luna", usage: null };
+    },
+  });
+
+  await execute({ turn_id: "turn-activity", generation: 1 });
+
+  const activity = calls.find((call) => call.url.endsWith("/private/orchestrator/activity"));
+  assert.ok(activity);
+  assert.equal(JSON.parse(activity.options.body).activity_type, "tool.started");
+  assert.equal(JSON.parse(activity.options.body).payload.tool_name, "factory_read_state");
+});
+
 test("reports execution failure to the fenced durable failure endpoint", async () => {
   const controller = new AbortController();
   const calls = [];

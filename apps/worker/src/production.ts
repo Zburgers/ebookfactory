@@ -11,7 +11,8 @@ export const ORCHESTRATOR_SYSTEM_PROMPT =
   "You are the Ebook Factory main orchestrator and the only agent that speaks to the owner. " +
   "Use the trusted kdp-publish, kdp-audit, and kdp-listing skills as workflow references for Kindle drafting, audit, listing, preparation, and preview guidance. " +
   "Treat their requirements and pricing notes as potentially stale; current official KDP guidance and the application's publishing contract take precedence. " +
-  "The skill is advisory in this worker: tool access is disabled, so never claim that you ran a skill command or performed an external action. " +
+  "You have only three trusted project tools: read the current project state, mark a workflow gate, and queue a bounded project-scoped agent. " +
+  "Use those tools when needed; never claim that work happened without a tool result or durable context. The tools cannot run arbitrary shell, access host files, or publish externally. " +
   "Never upload to KDP, create or change an Amazon account, enter tax or bank details, buy proof copies, enroll in KDP Select, set pricing, or publish without a separate explicit owner decision; never click publish. " +
   "Return safe plans, bounded decisions, observable status, and owner questions. Do not reveal hidden chain-of-thought, credentials, or private runtime data.";
 const MAX_OUTPUT_BYTES = 1024 * 1024;
@@ -23,6 +24,14 @@ export function buildProductionPrompt(context) {
       "You are the Ebook Factory dashboard orchestrator. Answer the user's latest message directly.",
       "Use the conversation context, do not invoke tools, and do not claim work was performed unless it was.",
       JSON.stringify({ project_id: context.project_id, messages: context.messages }),
+    ].join("\n\n");
+  }
+  if (context.task_type === "orchestrator-research") {
+    return [
+      "You are a bounded research agent working for the Ebook Factory orchestrator.",
+      "Return focused evidence and recommendations for the assigned question. Do not write the entire book, invoke tools, access files, reveal secrets, or change project state.",
+      "Separate known facts, assumptions, open questions, and a concrete recommendation. Keep the result concise enough for the orchestrator to review.",
+      JSON.stringify({ project_id: context.project_id, run_id: context.run_id, instruction: context.instruction, brief: context.brief, context: context.agent_context }),
     ].join("\n\n");
   }
   if (context.task_type === "outline") {
@@ -74,11 +83,11 @@ export function buildProductionPrompt(context) {
   ].join("\n\n");
 }
 
-export function runPiProduction({ context, model, thinking = "low", command = "pi", signal, spawnProcess = spawn, onTextDelta, skillPaths = [], systemPrompt = PRODUCTION_SYSTEM_PROMPT }) {
+export function runPiProduction({ context, model, thinking = "low", command = "pi", signal, spawnProcess = spawn, onTextDelta, onEvent, skillPaths = [], extensionPaths = [], toolAllowlist = [], noBuiltinTools = false, env, systemPrompt = PRODUCTION_SYSTEM_PROMPT }) {
   const callId = randomUUID();
-  const args = buildPiArgs({ prompt: buildProductionPrompt(context), systemPrompt, model, thinking, skillPaths });
+  const args = buildPiArgs({ prompt: buildProductionPrompt(context), systemPrompt, model, thinking, skillPaths, extensionPaths, toolAllowlist, noBuiltinTools });
   return new Promise((resolve, reject) => {
-    const child = spawnProcess(command, args, { stdio: ["ignore", "pipe", "pipe"], shell: false });
+    const child = spawnProcess(command, args, { stdio: ["ignore", "pipe", "pipe"], shell: false, ...(env ? { env: { ...process.env, ...env } } : {}) });
     const events = [];
     let stdout = "";
     let stderr = "";
@@ -87,6 +96,8 @@ export function runPiProduction({ context, model, thinking = "low", command = "p
     let killTimer;
     let deltaQueue = Promise.resolve();
     let deltaError = null;
+    let eventQueue = Promise.resolve();
+    let eventError = null;
     const cleanup = () => {
       signal?.removeEventListener("abort", abort);
       if (killTimer) clearTimeout(killTimer);
@@ -117,6 +128,11 @@ export function runPiProduction({ context, model, thinking = "low", command = "p
       const event = parsePiEvent(line);
       if (!event) return;
       events.push(event);
+      if (onEvent) {
+        eventQueue = eventQueue.then(() => onEvent(event)).catch((error) => {
+          eventError ||= error;
+        });
+      }
       if (event.delta && onTextDelta) {
         deltaQueue = deltaQueue.then(() => onTextDelta(event.delta)).catch((error) => {
           deltaError ||= error;
@@ -142,6 +158,8 @@ export function runPiProduction({ context, model, thinking = "low", command = "p
       if (stdout.trim()) recordEvent(stdout.trim());
       await deltaQueue;
       if (deltaError) return settleReject(deltaError);
+      await eventQueue;
+      if (eventError) return settleReject(eventError);
       const finalEvent = [...events].reverse().find((event) => event.type === "message_end" && event.text);
       const completedText = finalEvent?.text || [...events].reverse().find((event) => event.type === "text_end" && event.text)?.text;
       const streamedText = events.map((event) => event.delta).filter(Boolean).join("");

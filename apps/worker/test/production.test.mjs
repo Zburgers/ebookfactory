@@ -54,3 +54,18 @@ test("assembly task asks for server-side persisted section revisions", () => {
   assert.match(prompt, /persisted section revisions/);
   assert.doesNotMatch(prompt, /complete prose/);
 });
+
+test("orchestrator research prompt keeps delegated work bounded", () => {
+  const prompt = buildProductionPrompt({
+    project_id: "p",
+    run_id: "r",
+    task_type: "orchestrator-research",
+    instruction: "Compare ebook preview checks for this brief.",
+    agent_context: { source: "owner request" },
+    brief: { audience: "readers" },
+  });
+  assert.match(prompt, /bounded research agent/);
+  assert.match(prompt, /Compare ebook preview checks/);
+  assert.match(prompt, /known facts, assumptions, open questions/);
+  assert.match(prompt, /invoke tools, access files/);
+});
