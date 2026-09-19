@@ -26,7 +26,7 @@ from app.database import Database
 from app.conversations import append_message, create_project
 from app.orchestrator import append_delta, claim_turn, complete_turn, enqueue_turn, fail_turn, heartbeat_turn, locked_turn
 from app.documents import create_brief_revision, create_section, save_section_revision
-from app.exports import MIME_TYPES, PACKAGE_FILES, export_book, verify_export_members
+from app.exports import MIME_TYPES, PACKAGE_FILES, _verify_export_provenance, export_book, verify_export_members
 from app.events import replay_events
 from app.jobs import (
     ApprovalConflict,
@@ -1295,6 +1295,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
             artifact = next(member for member in members if member.id == artifact.id)
             path = safe_artifact_path(resolved_settings.artifact_root, artifact.relative_path)
+            if filename == "metadata.json":
+                try:
+                    _verify_export_provenance(path, revision_id)
+                except ValueError as exc:
+                    raise HTTPException(status_code=409, detail=str(exc)) from exc
             media_type = MIME_TYPES[filename.rsplit(".", 1)[-1]]
             return FileResponse(path, media_type=media_type, filename=filename)
         finally:

@@ -11,7 +11,7 @@ from sqlalchemy import event
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Artifact, Section, SectionRevision
+from app.models import Artifact, Section, SectionRevision, UsageCall
 
 
 class InvalidArtifactPath(ValueError):
@@ -78,6 +78,15 @@ def write_artifact(
 
     if len(content) > max_bytes:
         raise ValueError("artifact exceeds size limit")
+    if usage_call_id is not None:
+        usage_call = session.scalar(select(UsageCall).where(UsageCall.id == usage_call_id))
+        if (
+            usage_call is None
+            or usage_call.purpose != "art"
+            or attempt_id is None
+            or usage_call.attempt_id != attempt_id
+        ):
+            raise ValueError("usage call binding does not match art artifact attempt")
     target = safe_artifact_path(root, relative_path)
     root.resolve().mkdir(parents=True, exist_ok=True)
     target.parent.mkdir(parents=True, exist_ok=True)

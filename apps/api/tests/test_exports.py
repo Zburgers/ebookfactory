@@ -539,3 +539,9 @@ def test_existing_legacy_placeholder_provenance_fails_closed(tmp_path: Path) -> 
         session.commit()
         with pytest.raises(ValueError, match="legacy export provenance"):
             export_book(session, root=root, project_id=project_id, revision_id=revision_id, language="en", profile="fiction")
+        with TestClient(
+            create_app(Settings(database_url=f"sqlite:///{tmp_path / 'legacy-export.db'}", owner_token="owner", artifact_root=root)),
+            headers={"Authorization": "Bearer owner"},
+        ) as client:
+            response = client.get(f"/projects/{project_id}/exports/{revision_id}/metadata.json")
+        assert response.status_code == 409

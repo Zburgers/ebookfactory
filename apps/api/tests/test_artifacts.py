@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.artifacts import InvalidArtifactPath, reconcile_pending_artifacts, safe_artifact_path, write_artifact
 from app.main import ProductionArtRequest, _decode_production_art
-from app.models import Artifact
+from app.models import Artifact, Base, UsageCall, utc_now
 from app.main import _verify_existing_production_artifact
 
 
@@ -45,6 +45,35 @@ def test_artifact_write_is_hashed_and_immutable(tmp_path: Path) -> None:
             relative_path="run-1/book.md",
             content=b"changed",
             mime_type="text/markdown",
+        )
+
+
+def test_artifact_write_rejects_cross_attempt_usage_binding(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'artifact-usage.db'}")
+    Base.metadata.create_all(engine)
+    session = Session(engine)
+    usage_call = UsageCall(
+        id=uuid4(),
+        attempt_id=uuid4(),
+        purpose="art",
+        provider="test-provider",
+        model="test-model",
+        started_at=utc_now(),
+        ended_at=utc_now(),
+        outcome="succeeded",
+        normalization_version="v1",
+    )
+    session.add(usage_call)
+    session.commit()
+    with pytest.raises(ValueError, match="usage call binding"):
+        write_artifact(
+            session,
+            root=tmp_path / "artifacts",
+            relative_path="run-1/cover.png",
+            content=b"cover",
+            mime_type="image/png",
+            attempt_id=uuid4(),
+            usage_call_id=usage_call.id,
         )
 
 
