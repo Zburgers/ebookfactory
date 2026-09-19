@@ -1,6 +1,9 @@
 # Ebook Factory v2
 
-Status: DESIGN HANDOFF / NOT IMPLEMENTED. This folder contains the approved product design, implementation scaffold, and build-agent instructions. No application, database, credentials, or containers were provisioned by this handoff.
+Status: DEPLOYED CANDIDATE / PARTIAL ACCEPTANCE. Revision `bf8230b` is the
+reviewed v2 candidate used by the local services. The runtime, database, worker,
+dashboard and Telegram paths are provisioned; Kindle preview, live owner art
+approval and unsupported provider billing/quota sources remain external gates.
 
 A private ebook production system: discuss an idea with one orchestrator, approve a brief, let durable production jobs research/write/edit, review the manuscript and art, then download a publishing package. Fiction and nonfiction share a document core. Dashboard is primary; Telegram is a second channel to the same conversation.
 
@@ -21,7 +24,9 @@ A private ebook production system: discuss an idea with one orchestrator, approv
 
 `apps/api/` owns the domain, persistence, scoped tools, exports, Telegram, and replayable events. `apps/worker/` owns Pi sessions and the supervised execution boundary. `apps/web/` owns the dashboard using existing UI components. `packages/contracts/` contains wire schemas; `packages/prompts/` contains versioned book profiles. `infra/` contains migrations, Podman execution, and service setup. `scripts/` and `evidence/` hold reproducible checks and redacted results.
 
-These are planning scaffolds, not claims that their runtime implementations exist. Read each directory README for intended files. Do not copy the legacy project into this tree.
+The runtime implementation and its evidence live in this tree. Read the
+contract and acceptance documents before changing behavior, and do not copy the
+legacy project into this tree.
 
 ## Scope and open inputs
 

@@ -17,6 +17,15 @@ Nonfiction: source URLs, access dates, claim-to-source references and actual sup
 - `metadata.json` and `metadata.csv`: title/subtitle/author/language/description/keywords/category suggestions and AI-content provenance. These are owner handoff data, not an asserted Amazon bulk-upload schema.
 - `sources.json`, `manifest.json`, `validation.json`: citations, exact revision/asset hashes and checks performed.
 
+An export requested from any section revision in a completed multi-section run
+resolves the run's dependency-fenced section revisions and packages the whole
+manuscript. If the owner edits one of those sections, the new revision replaces
+only that section while the other frozen run revisions remain in the package;
+`metadata.json` and `manifest.json` record the complete source-revision list.
+Packages created before this scope record was introduced are not silently
+treated as complete: a multi-section replay fails closed until a new immutable
+package is generated.
+
 Cover guidance snapshot: Amazon recommends 2560 high x 1600 wide and requires cover files under 50 MB. Re-read official requirements during implementation. Do not silently distort generated artwork to match a ratio; use deliberate crop/layout. Cover text must agree with metadata.
 
 ## Validation levels

@@ -27,7 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.artifacts import safe_artifact_path, write_artifact
-from app.models import Artifact, Project, Section, SectionRevision, UsageCall
+from app.models import Artifact, Project, Section, SectionRevision, Task, UsageCall
 
 
 PACKAGE_FILES = (
@@ -74,6 +74,15 @@ class ExportResult:
     artifacts: tuple[ExportArtifact, ...]
 
 
+@dataclass(frozen=True)
+class ManuscriptScope:
+    """The frozen section revisions that make up one export package."""
+
+    title: str
+    body: str
+    revision_ids: tuple[UUID, ...]
+
+
 def _title_and_body(content: str, fallback: str) -> tuple[str, str]:
     match = re.search(r"^#\s+(.+?)\s*$", content, re.MULTILINE)
     title = match.group(1).strip() if match else fallback.strip() or "Untitled manuscript"
@@ -81,6 +90,135 @@ def _title_and_body(content: str, fallback: str) -> tuple[str, str]:
     if match and match.start() == 0:
         body = content[match.end() :].strip()
     return title, body
+
+
+def _section_body(content: str) -> str:
+    """Strip an accidental document title before nesting a section in a book."""
+
+    return _title_and_body(content, "")[1]
+
+
+def _revision_is_descendant(session: Session, *, candidate: SectionRevision, ancestor_id: UUID) -> bool:
+    """Follow immutable parent links without allowing a malformed cycle to loop forever."""
+
+    seen: set[UUID] = set()
+    current: SectionRevision | None = candidate
+    while current is not None and current.id not in seen:
+        if current.id == ancestor_id:
+            return True
+        seen.add(current.id)
+        current = session.get(SectionRevision, current.parent_revision_id) if current.parent_revision_id else None
+    return False
+
+
+def _production_scope_entries(
+    session: Session,
+    *,
+    project_id: UUID,
+    production_task: Task,
+) -> list[tuple[Section, SectionRevision]]:
+    """Resolve one production task's dependency-fenced section revisions."""
+
+    entries: list[tuple[Section, SectionRevision]] = []
+    for dependency_value in production_task.dependencies or []:
+        try:
+            dependency_id = UUID(dependency_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("production manuscript scope contains an invalid dependency") from exc
+        section_task = session.get(Task, dependency_id)
+        if (
+            section_task is None
+            or section_task.run_id != production_task.run_id
+            or section_task.task_type != "section-draft"
+            or section_task.status != "succeeded"
+        ):
+            raise ValueError("production manuscript scope is incomplete")
+        section_id = section_task.result_refs.get("section_id")
+        revision_id = section_task.result_refs.get("revision_id")
+        section = session.get(Section, UUID(section_id)) if section_id else None
+        section_revision = session.get(SectionRevision, UUID(revision_id)) if revision_id else None
+        if (
+            section is None
+            or section.project_id != project_id
+            or section_revision is None
+            or section_revision.section_id != section.id
+        ):
+            raise ValueError("production manuscript scope is outside the project")
+        if not any(existing_section.id == section.id for existing_section, _ in entries):
+            entries.append((section, section_revision))
+    return sorted(entries, key=lambda item: item[0].order_no)
+
+
+def _production_scope_for_revision(
+    session: Session,
+    *,
+    project_id: UUID,
+    revision: SectionRevision,
+) -> list[tuple[Section, SectionRevision]] | None:
+    """Find the completed production run that owns an anchor or owner revision."""
+
+    production_artifacts = session.execute(
+        select(Artifact, Task)
+        .join(Task, Task.run_id == Artifact.run_id)
+        .join(SectionRevision, SectionRevision.id == Artifact.revision_id)
+        .join(Section, Section.id == SectionRevision.section_id)
+        .where(
+            Artifact.run_id.is_not(None),
+            Artifact.mime_type == "text/markdown",
+            Artifact.relative_path.like("%/book.md"),
+            Section.project_id == project_id,
+            Task.task_type == "production",
+        )
+    ).all()
+    for _, production_task in production_artifacts:
+        entries = _production_scope_entries(
+            session, project_id=project_id, production_task=production_task
+        )
+        if not entries:
+            continue
+        for index, (section, section_revision) in enumerate(entries):
+            if section.id == revision.section_id and _revision_is_descendant(
+                session, candidate=revision, ancestor_id=section_revision.id
+            ):
+                entries[index] = (section, revision)
+                return entries
+    return None
+
+
+def _resolve_manuscript_scope(
+    session: Session,
+    *,
+    project_id: UUID,
+    revision_id: UUID,
+) -> ManuscriptScope:
+    """Resolve one revision into a complete production manuscript when possible."""
+
+    row = session.execute(
+        select(Project, SectionRevision)
+        .join(Section, Section.project_id == Project.id)
+        .join(SectionRevision, SectionRevision.section_id == Section.id)
+        .where(Project.id == project_id, SectionRevision.id == revision_id)
+    ).first()
+    if row is None:
+        raise ValueError("revision does not belong to project")
+    project, revision = row
+    production_scope = _production_scope_for_revision(
+        session, project_id=project_id, revision=revision
+    )
+    if production_scope is None:
+        title, body = _title_and_body(revision.content, project.title)
+        return ManuscriptScope(title=title, body=body, revision_ids=(revision.id,))
+    entries = production_scope
+    title, _ = _title_and_body(revision.content, project.title)
+    body = "\n\n".join(
+        f"## {section.heading}\n\n{_section_body(section_revision.content)}"
+        for section, section_revision in entries
+    )
+    return ManuscriptScope(
+        title=title,
+        body=body,
+        revision_ids=tuple(section_revision.id for _, section_revision in entries),
+    )
 
 
 def _markdown_blocks(content: str) -> list[tuple[str, str]]:
@@ -289,6 +427,7 @@ def _metadata(
     language: str,
     profile: str,
     revision_id: UUID,
+    source_revision_ids: tuple[UUID, ...],
     image_provenance: dict[str, object],
 ) -> dict[str, object]:
     return {
@@ -301,6 +440,7 @@ def _metadata(
         "keywords": [],
         "categories": [],
         "revision_id": str(revision_id),
+        "source_revision_ids": [str(source_revision_id) for source_revision_id in source_revision_ids],
         "ai_content_provenance": {
             "text": {
                 "source": "revisioned-manuscript",
@@ -322,7 +462,7 @@ def _metadata_csv(metadata: dict[str, object]) -> bytes:
     return output.getvalue().encode()
 
 
-def _validate_files(files: dict[str, bytes]) -> dict[str, object]:
+def _validate_files(files: dict[str, bytes], *, source_revision_count: int) -> dict[str, object]:
     checks: dict[str, bool] = {}
     checks["markdown_nonempty"] = bool(files["book.md"].strip())
     checks["pdf_signature"] = files["book.pdf"].startswith(b"%PDF-")
@@ -336,6 +476,7 @@ def _validate_files(files: dict[str, bytes]) -> dict[str, object]:
     with Image.open(io.BytesIO(files["cover.jpg"])) as cover:
         checks["cover_rgb"] = cover.mode == "RGB"
         checks["cover_dimensions"] = cover.size == (1600, 2560)
+    checks["manuscript_scope_complete"] = source_revision_count >= 1
     checks["all_structural_checks_pass"] = all(checks.values())
     return {"package_state": "structurally_validated" if checks["all_structural_checks_pass"] else "generated", "checks": checks, "kindle_preview": "pending"}
 
@@ -366,7 +507,11 @@ def verify_export_members(
     return members
 
 
-def _verify_export_provenance(metadata_path: Path, revision_id: UUID) -> None:
+def _verify_export_provenance(
+    metadata_path: Path,
+    revision_id: UUID,
+    expected_revision_ids: tuple[UUID, ...] | None = None,
+) -> None:
     """Reject historical packages whose provenance is not machine-readable."""
     try:
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -382,6 +527,13 @@ def _verify_export_provenance(metadata_path: Path, revision_id: UUID) -> None:
         "owner_review_required": True,
     }:
         raise ValueError("legacy export provenance is invalid")
+    if expected_revision_ids:
+        expected = [str(source_revision_id) for source_revision_id in expected_revision_ids]
+        recorded = metadata.get("source_revision_ids")
+        if recorded is not None and recorded != expected:
+            raise ValueError("export manuscript scope does not match the requested revision")
+        if len(expected) > 1 and recorded != expected:
+            raise ValueError("export manuscript scope is incomplete")
     if not isinstance(image, dict):
         raise ValueError("legacy export provenance is invalid")
     source_artifact_id = image.get("source_artifact_id")
@@ -424,16 +576,10 @@ def export_book(
 ) -> ExportResult:
     """Generate or replay one immutable package for an exact section revision."""
 
-    row = session.execute(
-        select(Project, Section, SectionRevision)
-        .join(Section, Section.project_id == Project.id)
-        .join(SectionRevision, SectionRevision.section_id == Section.id)
-        .where(Project.id == project_id, SectionRevision.id == revision_id)
-    ).first()
-    if row is None:
-        raise ValueError("revision does not belong to project")
-    project, _, revision = row
-    title, body = _title_and_body(revision.content, project.title)
+    scope = _resolve_manuscript_scope(
+        session, project_id=project_id, revision_id=revision_id
+    )
+    title, body = scope.title, scope.body
     existing = session.scalars(
         select(Artifact).where(Artifact.relative_path.like(f"exports/{revision_id}/%"))
     ).all()
@@ -457,7 +603,9 @@ def export_book(
         verified = verify_export_members(session, root=root, revision_id=revision_id)
         metadata_artifact = next(item for item in verified if Path(item.relative_path).name == "metadata.json")
         metadata_path = safe_artifact_path(root, metadata_artifact.relative_path)
-        _verify_export_provenance(metadata_path, revision_id)
+        _verify_export_provenance(
+            metadata_path, revision_id, expected_revision_ids=scope.revision_ids
+        )
         _verify_source_artifact_review(session, metadata_path)
         if art_artifact_id is not None:
             try:
@@ -476,14 +624,21 @@ def export_book(
                 for a in sorted(verified, key=lambda item: item.relative_path)
             ),
         )
-    markdown = _canonical_markdown(title, revision.content)
+    markdown = _canonical_markdown(title, body)
     cover_source, image_provenance = _cover_source(
         session, root=root, revision_id=revision_id, project_id=project_id, art_artifact_id=art_artifact_id
     )
     image_provenance["final_cover_filename"] = "cover.jpg"
     cover = _make_cover(title, cover_source)
     image_provenance["final_cover_sha256"] = hashlib.sha256(cover).hexdigest()
-    metadata = _metadata(title, language, profile, revision_id, image_provenance)
+    metadata = _metadata(
+        title,
+        language,
+        profile,
+        revision_id,
+        scope.revision_ids,
+        image_provenance,
+    )
     files = {
         "book.md": markdown.encode(),
         "cover.jpg": cover,
@@ -494,12 +649,18 @@ def export_book(
         "metadata.csv": _metadata_csv(metadata),
         "sources.json": b"[]\n",
     }
-    validation = _validate_files(files)
+    validation = _validate_files(files, source_revision_count=len(scope.revision_ids))
     manifest_files = [
         {"filename": name, "byte_count": len(content), "sha256": hashlib.sha256(content).hexdigest()}
         for name, content in files.items()
     ]
-    manifest = {"project_id": str(project_id), "revision_id": str(revision_id), "title": title, "files": manifest_files}
+    manifest = {
+        "project_id": str(project_id),
+        "revision_id": str(revision_id),
+        "source_revision_ids": [str(source_revision_id) for source_revision_id in scope.revision_ids],
+        "title": title,
+        "files": manifest_files,
+    }
     files["manifest.json"] = (json.dumps(manifest, indent=2) + "\n").encode()
     files["validation.json"] = (json.dumps(validation, indent=2) + "\n").encode()
     package_prefix = f"exports/{revision_id}"

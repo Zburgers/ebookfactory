@@ -26,7 +26,7 @@ from app.database import Database
 from app.conversations import append_message, create_project
 from app.orchestrator import append_delta, claim_turn, complete_turn, enqueue_turn, fail_turn, heartbeat_turn, locked_turn
 from app.documents import create_brief_revision, create_section, save_section_revision
-from app.exports import MIME_TYPES, PACKAGE_FILES, _verify_export_provenance, _verify_source_artifact_review, export_book, verify_export_members
+from app.exports import MIME_TYPES, PACKAGE_FILES, _resolve_manuscript_scope, _verify_export_provenance, _verify_source_artifact_review, export_book, verify_export_members
 from app.events import replay_events
 from app.jobs import (
     ApprovalConflict,
@@ -1320,6 +1320,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="export member not found")
         session = database.session()
         try:
+            try:
+                scope = _resolve_manuscript_scope(
+                    session, project_id=project_id, revision_id=revision_id
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
             artifact = session.scalar(
                 select(Artifact)
                 .join(SectionRevision, SectionRevision.id == Artifact.revision_id)
@@ -1342,7 +1348,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             path = safe_artifact_path(resolved_settings.artifact_root, artifact.relative_path)
             if filename == "metadata.json":
                 try:
-                    _verify_export_provenance(path, revision_id)
+                    _verify_export_provenance(
+                        path, revision_id, expected_revision_ids=scope.revision_ids
+                    )
                 except ValueError as exc:
                     raise HTTPException(status_code=409, detail=str(exc)) from exc
             try:

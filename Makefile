@@ -46,6 +46,7 @@ verify:
 	./scripts/tests/test_doctor.sh
 	./scripts/tests/test_migrations.sh
 	./scripts/tests/test_contract_generation.sh
+	./scripts/tests/test_recovery_postgres_isolation.sh
 	./scripts/tests/test_recovery_postgres.sh
 	npm run verify --prefix apps/worker
 	npm run verify --prefix apps/web
@@ -56,6 +57,7 @@ verify:
 	./scripts/tests/test_service_entrypoint.sh
 	./scripts/tests/test_serve_api_tls.sh
 	./scripts/tests/test_systemd_service.sh
+	bash scripts/tests/test_acceptance_evidence.sh
 	./scripts/tests/test_worker_supervisor.sh
 	./scripts/tests/test_worker_runner.sh
 	./scripts/tests/test_worker_service.sh

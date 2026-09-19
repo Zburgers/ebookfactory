@@ -1,5 +1,15 @@
 # Build status
 
+2026-09-19: Reconciliation QA found and repaired two journey defects. SQLite
+production callbacks now normalize persisted naïve lease timestamps before UTC
+fence checks. Multi-section exports now follow the completed production task's
+dependency-fenced section revisions, retain all sections after an owner edit,
+and record the complete source-revision list in metadata and the manifest.
+The isolated journey evidence is at
+`evidence/P08/manual-journey-qa.md`. Recovery PostgreSQL verification now
+requires an explicitly separate `EBOOK_FACTORY_TEST_DATABASE_URL`; it never
+falls back to the live service database.
+
 2026-09-19: Telegram project routing is live and durable at revision
 `f2d614f`. The single configured owner chat is automatically linked to all 27
 projects with exactly one active selection. `/help` sends an inline project

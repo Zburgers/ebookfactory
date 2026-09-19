@@ -29,6 +29,11 @@ separate outline/manuscript lineage. A real systemd run is recorded at
 50-page sectioned replay is now evidenced, but external
 publishing/quota gates remain open.
 
+The reconciliation replay also verified the complete multi-section export
+scope and owner-revision replacement path in an isolated API journey. This
+repairs a packaging correctness hole but does not add Kindle visual-preview or
+live owner-decision evidence, so the conservative score remains unchanged.
+
 Revision `25268b1` plus `3a029c7` now prove a real bounded Codex image output
 and dashboard-visible production artifact. Revision `2ad955e` proves a real
 durable dashboard-to-Luna completion and live

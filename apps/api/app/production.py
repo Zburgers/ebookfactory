@@ -4,6 +4,7 @@ import hashlib
 import re
 from contextlib import nullcontext
 from dataclasses import dataclass
+from datetime import timezone
 from uuid import UUID
 
 from sqlalchemy import select
@@ -195,7 +196,12 @@ def accept_production_output(
             or job.lease_owner != worker_id
             or job.fencing_generation != generation
             or job.lease_until is None
-            or job.lease_until < utc_now()
+            or (
+                job.lease_until.replace(tzinfo=timezone.utc)
+                if job.lease_until.tzinfo is None
+                else job.lease_until
+            )
+            < utc_now()
         ):
             raise StaleLease("job lease is no longer current")
         brief = session.get(BriefRevision, run.approved_brief_id)

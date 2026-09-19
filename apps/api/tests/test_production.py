@@ -1,9 +1,13 @@
 from uuid import uuid4
 
 import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
 
 from app.production import parse_production_sections, validate_production_text
-from app.main import BriefCreateRequest
+from app.main import BriefCreateRequest, create_app
+from app.models import Base
+from app.settings import Settings
 
 
 def _page_sections(count: int, body: str = "prose") -> str:
@@ -57,3 +61,65 @@ def test_brief_rejects_reversed_page_or_word_ranges() -> None:
         BriefCreateRequest(structured_brief={"target_pages": {"minimum": 150, "maximum": 50}})
     with pytest.raises(ValueError, match="minimum must not exceed maximum"):
         BriefCreateRequest(structured_brief={"target_length": {"minimum_words": 3000, "maximum_words": 1000}})
+
+
+def test_sqlite_production_result_accepts_persisted_lease(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'sqlite-production.db'}"
+    Base.metadata.create_all(create_engine(database_url))
+    settings = Settings(
+        database_url=database_url,
+        owner_token="owner",
+        worker_token="worker",
+        artifact_root=tmp_path / "artifacts",
+    )
+
+    with TestClient(create_app(settings), headers={"Authorization": "Bearer owner"}) as client:
+        project = client.post(
+            "/projects", json={"title": "SQLite Production", "profile": "fiction", "language": "en"}
+        ).json()
+        project_id = project["project_id"]
+        brief = client.post(
+            f"/projects/{project_id}/briefs",
+            json={"structured_brief": {"promise_or_premise": "A bounded story"}},
+        ).json()
+        approval = client.post(
+            f"/projects/{project_id}/briefs/{brief['brief_id']}/approve",
+            json={"expected_content_hash": brief["content_hash"], "budget": {}},
+        ).json()
+        worker_headers = {"X-Ebook-Worker-Token": "worker"}
+        outline = client.post(
+            "/private/worker/claim", json={"worker_id": "sqlite-worker"}, headers=worker_headers
+        ).json()
+        outline_result = client.post(
+            "/private/worker/task-result",
+            headers=worker_headers,
+            json={
+                "job_id": outline["job_id"],
+                "worker_id": "sqlite-worker",
+                "generation": outline["generation"],
+                "result": "## Opening\nA bounded story.",
+                "provider": "fixture",
+                "model": "fixture",
+                "call_id": str(uuid4()),
+            },
+        )
+        assert outline_result.status_code == 200, outline_result.text
+        production = client.post(
+            "/private/worker/claim", json={"worker_id": "sqlite-worker"}, headers=worker_headers
+        ).json()
+        result = client.post(
+            "/private/worker/production-result",
+            headers=worker_headers,
+            json={
+                "job_id": production["job_id"],
+                "worker_id": "sqlite-worker",
+                "generation": production["generation"],
+                "content": "# SQLite Production\n\nA bounded story.",
+                "provider": "fixture",
+                "model": "fixture",
+                "call_id": str(uuid4()),
+            },
+        )
+
+    assert result.status_code == 200, result.text
+    assert result.json()["run_id"] == approval["run_id"]

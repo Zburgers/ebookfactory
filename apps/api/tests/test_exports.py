@@ -147,6 +147,92 @@ def test_export_package_generates_all_formats_and_is_idempotent(tmp_path: Path) 
     ).hexdigest()
 
 
+def test_export_scope_includes_all_production_section_revisions(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'multi-section-export.db'}")
+    Base.metadata.create_all(engine)
+    project_id = uuid4()
+    run_id = uuid4()
+    root = tmp_path / "artifacts"
+    production_path = root / str(run_id) / "book.md"
+    production_path.parent.mkdir(parents=True)
+    production_content = b"assembled production manuscript"
+    production_path.write_bytes(production_content)
+
+    with Session(engine) as session:
+        project = Project(id=project_id, title="Scope Book", profile="fiction", language="en")
+        brief = BriefRevision(
+            id=uuid4(), project_id=project_id, revision=1, structured_brief={}, content_hash="a" * 64
+        )
+        run = ProductionRun(id=run_id, project_id=project_id, approved_brief_id=brief.id)
+        session.add_all([project, brief, run])
+        session.flush()
+        sections = [
+            Section(project_id=project_id, order_no=index, heading=f"Chapter {index}")
+            for index in range(1, 4)
+        ]
+        session.add_all(sections)
+        session.flush()
+        revisions = [
+            SectionRevision(
+                section_id=section.id,
+                revision=1,
+                content=f"Body for chapter {index}.",
+                content_hash=str(index) * 64,
+            )
+            for index, section in enumerate(sections, start=1)
+        ]
+        session.add_all(revisions)
+        session.flush()
+        section_tasks = [
+            Task(
+                run_id=run_id,
+                task_type="section-draft",
+                status="succeeded",
+                result_refs={"section_id": str(section.id), "revision_id": str(revision.id)},
+            )
+            for section, revision in zip(sections, revisions)
+        ]
+        session.add_all(section_tasks)
+        session.flush()
+        session.add(
+            Task(
+                run_id=run_id,
+                task_type="production",
+                status="succeeded",
+                dependencies=[str(task.id) for task in section_tasks],
+                result_refs={"revision_id": str(revisions[0].id)},
+            )
+        )
+        session.add(
+            Artifact(
+                run_id=run_id,
+                revision_id=revisions[0].id,
+                relative_path=f"{run_id}/book.md",
+                mime_type="text/markdown",
+                byte_count=len(production_content),
+                sha256=hashlib.sha256(production_content).hexdigest(),
+            )
+        )
+        revision_ids = [revision.id for revision in revisions]
+        session.commit()
+        result = export_book(
+            session,
+            root=root,
+            project_id=project_id,
+            revision_id=revisions[0].id,
+            language="en",
+            profile="fiction",
+        )
+
+    export_root = root / f"exports/{revision_ids[0]}"
+    markdown = (export_root / "book.md").read_text()
+    metadata = json.loads((export_root / "metadata.json").read_text())
+    assert result.package_state == "structurally_validated"
+    assert all(f"## Chapter {index}" in markdown for index in range(1, 4))
+    assert all(f"Body for chapter {index}." in markdown for index in range(1, 4))
+    assert metadata["source_revision_ids"] == [str(revision_id) for revision_id in revision_ids]
+
+
 def test_review_artifacts_are_project_scoped_and_resolvable(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'reviews.db'}"
     engine = create_engine(database_url)
