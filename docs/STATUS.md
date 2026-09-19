@@ -1,5 +1,16 @@
 # Build status
 
+2026-09-19 20:42 UTC: Final reconciliation verification for the functional
+factory slice passed. `make verify` returned 102 API tests, 29 worker tests,
+10 web tests, migrations/contracts, service lifecycle, private-LAN/Tailscale
+transport, sandbox containment, Telegram, EPUBCheck entrypoint and restore
+checks successfully. Twenty-one PostgreSQL recovery cases remain explicitly
+skipped because `EBOOK_FACTORY_TEST_DATABASE_URL` is not configured. The live
+API at `192.168.29.14:6969` remains ready, and the API, worker and Telegram
+units are enabled and active. Official KDP guidance was rechecked: Kindle
+Previewer/Online Previewer is still an owner-authorized visual gate, not
+something EPUBCheck can certify.
+
 2026-09-19 20:27 UTC: Revision `e4f00b0` closes three remaining internal
 product holes. Brief metadata now flows into EPUB/PDF/DOCX/JSON output from the
 approved run brief; the Studio's delivery-format choices are honored while

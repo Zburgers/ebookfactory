@@ -14,6 +14,15 @@ preflight and manual package QA). These repair usability and package quality;
 they do not fabricate Kindle Previewer or owner-art decisions, so the score is
 unchanged.
 
+The final audit verification at `05099b7` passes the application, worker,
+dashboard and operational gates. The only skipped cases are 21 isolated
+PostgreSQL recovery tests without `EBOOK_FACTORY_TEST_DATABASE_URL`; no
+external gate is counted as passed from that omission. The remaining work is
+deliberately owner- or provider-gated: authenticated live visual QA and an art
+decision, Kindle Previewer/Online Previewer evidence for the exact final EPUB,
+and provider-specific billing/quota evidence where the provider does not expose
+it locally.
+
 The latest implementation adds live orchestrator delta relay, owner-boundary
 repairs, live non-persistent quota reads, a corrected page-target prompt, and a
 durable outline-to-production-to-review run with real Luna usage lineage. By
