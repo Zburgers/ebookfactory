@@ -59,6 +59,15 @@
             "title": "Decision",
             "type": "string"
           },
+          "expected_owner_review_state": {
+            "enum": [
+              "pending",
+              "approved",
+              "revision_requested"
+            ],
+            "title": "Expected Owner Review State",
+            "type": "string"
+          },
           "note": {
             "anyOf": [
               {
@@ -73,7 +82,8 @@
           }
         },
         "required": [
-          "decision"
+          "decision",
+          "expected_owner_review_state"
         ],
         "title": "ArtifactReviewRequest",
         "type": "object"

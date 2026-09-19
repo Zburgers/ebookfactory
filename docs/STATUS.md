@@ -1,5 +1,14 @@
 # Build status
 
+2026-09-19: The owner art-review workflow is now durable and fail-closed.
+Image decisions are PostgreSQL state with optimistic concurrency; inconsistent
+cross-project artifact relationships are rejected across listing, download,
+review findings and resolution. Revision-requested source art blocks new
+exports, replay and package downloads. The dashboard sends the expected review
+state and labels it correctly. Evidence is at
+`evidence/P08/art-review-workflow.md`; this does not claim that the owner has
+performed the live review action.
+
 2026-09-19: Telegram is configured and the poller is active, but the live audit
 still shows no owner-authored free-text message. The allowlisted chat is linked
 to `Live outline handoff verification`, so the owner must link the intended

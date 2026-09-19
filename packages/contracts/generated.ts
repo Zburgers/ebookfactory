@@ -14,6 +14,7 @@ export interface ApprovalResponse {
 export interface ArtifactReviewRequest {
   decision: string;
   note?: string | null;
+  expected_owner_review_state: string;
 }
 
 export interface ArtifactReviewResponse {

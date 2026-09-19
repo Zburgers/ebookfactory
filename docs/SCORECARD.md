@@ -17,6 +17,11 @@ and attempt, verifies canonical package members, and fails closed on legacy
 placeholder provenance. A live persisted Codex image produced a 10-member
 package that passed EPUBCheck (`evidence/P08/art-export-live.md`).
 
+The owner art-review workflow is now durable, project-scoped and fail-closed
+for stale source images and derived packages (`evidence/P08/art-review-workflow.md`).
+The score remains conservative at 85 because no live owner review decision has
+been performed yet.
+
 The outline-stage packet now adds a durable dependency-gated outline handoff,
 terminal dependency failure propagation, typed worker context contracts and
 separate outline/manuscript lineage. A real systemd run is recorded at
