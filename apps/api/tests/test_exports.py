@@ -649,3 +649,84 @@ def test_artifact_owner_review_is_project_scoped_and_durable(tmp_path: Path) -> 
         )
     assert derived_review.status_code == 422
     assert wrong_project.status_code == 404
+
+
+def test_inconsistent_artifact_relationships_are_not_exposed_across_projects(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'artifact-scope.db'}"
+    engine = create_engine(database_url)
+    Base.metadata.create_all(engine)
+    project_a_id, project_b_id = uuid4(), uuid4()
+    brief_a_id, brief_b_id = uuid4(), uuid4()
+    revision_a_id, revision_b_id = uuid4(), uuid4()
+    root = tmp_path / "artifacts"
+    artifact_path = root / "leaked.txt"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_content = b"must not cross project boundaries"
+    artifact_path.write_bytes(artifact_content)
+
+    with Session(engine) as session:
+        project_a = Project(id=project_a_id, title="Project A", profile="fiction", language="en")
+        project_b = Project(id=project_b_id, title="Project B", profile="fiction", language="en")
+        brief_a = BriefRevision(
+            id=brief_a_id,
+            project_id=project_a_id,
+            revision=1,
+            structured_brief={"promise": "A"},
+            content_hash="a" * 64,
+        )
+        brief_b = BriefRevision(
+            id=brief_b_id,
+            project_id=project_b_id,
+            revision=1,
+            structured_brief={"promise": "B"},
+            content_hash="b" * 64,
+        )
+        section_a = Section(project_id=project_a_id, order_no=1, heading="A")
+        section_b = Section(project_id=project_b_id, order_no=1, heading="B")
+        session.add_all([project_a, project_b, brief_a, brief_b, section_a, section_b])
+        session.flush()
+        revision_a = SectionRevision(
+            id=revision_a_id,
+            section_id=section_a.id,
+            revision=1,
+            content="# A",
+            content_hash="c" * 64,
+        )
+        revision_b = SectionRevision(
+            id=revision_b_id,
+            section_id=section_b.id,
+            revision=1,
+            content="# B",
+            content_hash="d" * 64,
+        )
+        run_a = ProductionRun(id=uuid4(), project_id=project_a_id, approved_brief_id=brief_a_id)
+        run_b = ProductionRun(id=uuid4(), project_id=project_b_id, approved_brief_id=brief_b_id)
+        session.add_all([revision_a, revision_b, run_a, run_b])
+        session.flush()
+        leaked_artifact = Artifact(
+            run_id=run_a.id,
+            revision_id=revision_b_id,
+            relative_path=str(artifact_path.relative_to(root)),
+            mime_type="text/plain",
+            byte_count=len(artifact_content),
+            sha256=hashlib.sha256(artifact_content).hexdigest(),
+        )
+        session.add(leaked_artifact)
+        session.commit()
+        artifact_id = leaked_artifact.id
+
+    with TestClient(
+        create_app(Settings(database_url=database_url, owner_token="owner", artifact_root=root)),
+        headers={"Authorization": "Bearer owner"},
+    ) as client:
+        list_a = client.get(f"/projects/{project_a_id}/artifacts")
+        list_b = client.get(f"/projects/{project_b_id}/artifacts")
+        download_a = client.get(f"/projects/{project_a_id}/artifacts/{artifact_id}/download")
+        download_b = client.get(f"/projects/{project_b_id}/artifacts/{artifact_id}/download")
+
+    assert list_a.status_code == 200
+    assert list_b.status_code == 200
+    assert list_a.json() == []
+    assert list_b.json() == []
+    assert download_a.status_code == 404
+    assert download_b.status_code == 404

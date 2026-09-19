@@ -747,6 +747,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.login_attempts = {}
     application.state.login_attempts_lock = threading.Lock()
 
+    def artifact_belongs_to_project(session, artifact: Artifact, project_id: UUID) -> bool:
+        """Require every present artifact relationship to resolve to one project."""
+        relationship_projects: list[UUID] = []
+        if artifact.run_id is not None:
+            run_project_id = session.scalar(select(ProductionRun.project_id).where(ProductionRun.id == artifact.run_id))
+            if run_project_id is None:
+                return False
+            relationship_projects.append(run_project_id)
+        if artifact.revision_id is not None:
+            revision_project_id = session.scalar(
+                select(Section.project_id)
+                .join(SectionRevision, SectionRevision.section_id == Section.id)
+                .where(SectionRevision.id == artifact.revision_id)
+            )
+            if revision_project_id is None:
+                return False
+            relationship_projects.append(revision_project_id)
+        return bool(relationship_projects) and all(related_id == project_id for related_id in relationship_projects)
+
     def custom_openapi() -> dict[str, Any]:
         if application.openapi_schema:
             return application.openapi_schema
@@ -1371,22 +1390,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def list_artifacts(project_id: UUID) -> list[ArtifactView]:
         session = database.session()
         try:
-            rows = session.scalars(
-                select(Artifact)
-                .where(
-                    or_(
-                        Artifact.revision_id.in_(
-                            select(SectionRevision.id)
-                            .join(Section, Section.id == SectionRevision.section_id)
-                            .where(Section.project_id == project_id)
-                        ),
-                        Artifact.run_id.in_(
-                            select(ProductionRun.id).where(ProductionRun.project_id == project_id)
-                        ),
-                    )
-                )
-                .order_by(Artifact.created_at.desc())
-            ).all()
+            rows = session.scalars(select(Artifact).order_by(Artifact.created_at.desc())).all()
+            rows = [artifact for artifact in rows if artifact_belongs_to_project(session, artifact, project_id)]
             return [
                 ArtifactView(
                     artifact_id=artifact.id,
@@ -1417,17 +1422,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             artifact = session.scalar(select(Artifact).where(Artifact.id == artifact_id).with_for_update())
             if artifact is None:
                 raise HTTPException(status_code=404, detail="artifact not found in project")
-            if artifact.run_id is not None:
-                run_project_id = session.scalar(select(ProductionRun.project_id).where(ProductionRun.id == artifact.run_id))
-                if run_project_id != project_id:
-                    raise HTTPException(status_code=404, detail="artifact not found in project")
-            if artifact.revision_id is not None:
-                revision_project_id = session.scalar(
-                    select(Section.project_id).join(SectionRevision, SectionRevision.section_id == Section.id).where(SectionRevision.id == artifact.revision_id)
-                )
-                if revision_project_id != project_id:
-                    raise HTTPException(status_code=404, detail="artifact not found in project")
-            if artifact.run_id is None and artifact.revision_id is None:
+            if not artifact_belongs_to_project(session, artifact, project_id):
                 raise HTTPException(status_code=404, detail="artifact not found in project")
             if not artifact.mime_type.lower().startswith("image/"):
                 raise HTTPException(status_code=422, detail="owner review is only available for image artifacts")
@@ -1459,21 +1454,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def download_artifact(project_id: UUID, artifact_id: UUID) -> FileResponse:
         session = database.session()
         try:
-            artifact = session.scalar(
-                select(Artifact)
-                .where(
-                    Artifact.id == artifact_id,
-                    or_(
-                        Artifact.run_id.in_(select(ProductionRun.id).where(ProductionRun.project_id == project_id)),
-                        Artifact.revision_id.in_(
-                            select(SectionRevision.id)
-                            .join(Section, Section.id == SectionRevision.section_id)
-                            .where(Section.project_id == project_id)
-                        ),
-                    ),
-                )
-            )
-            if artifact is None:
+            artifact = session.get(Artifact, artifact_id)
+            if artifact is None or not artifact_belongs_to_project(session, artifact, project_id):
                 raise HTTPException(status_code=404, detail="artifact not found")
             path = safe_artifact_path(resolved_settings.artifact_root, artifact.relative_path)
             if not path.is_file() or path.stat().st_size != artifact.byte_count:
