@@ -56,11 +56,31 @@ def test_word_target_keeps_single_document_compatibility() -> None:
     assert sections[0].heading == "Draft manuscript"
 
 
+def test_word_target_enforces_requested_bounds() -> None:
+    with pytest.raises(ValueError, match="short for the requested word range"):
+        validate_production_text("word " * 99, page_target=False, target_length={"minimum_words": 100, "maximum_words": 200})
+    validate_production_text("word " * 150, page_target=False, target_length={"minimum_words": 100, "maximum_words": 200})
+    with pytest.raises(ValueError, match="long for the requested word range"):
+        validate_production_text("word " * 201, page_target=False, target_length={"minimum_words": 100, "maximum_words": 200})
+
+
 def test_brief_rejects_reversed_page_or_word_ranges() -> None:
     with pytest.raises(ValueError, match="minimum must not exceed maximum"):
         BriefCreateRequest(structured_brief={"target_pages": {"minimum": 150, "maximum": 50}})
     with pytest.raises(ValueError, match="minimum must not exceed maximum"):
         BriefCreateRequest(structured_brief={"target_length": {"minimum_words": 3000, "maximum_words": 1000}})
+
+
+def test_brief_rejects_non_positive_or_ambiguous_length_targets() -> None:
+    with pytest.raises(ValueError, match="positive"):
+        BriefCreateRequest(structured_brief={"target_pages": {"minimum": 0, "maximum": 10}})
+    with pytest.raises(ValueError, match="one length target"):
+        BriefCreateRequest(
+            structured_brief={
+                "target_pages": {"minimum": 1, "maximum": 2},
+                "target_length": {"minimum_words": 100, "maximum_words": 200},
+            }
+        )
 
 
 def test_sqlite_production_result_accepts_persisted_lease(tmp_path) -> None:

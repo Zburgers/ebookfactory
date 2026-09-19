@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 test("outline leases use low-thinking Pi and fenced task-result callback", async () => {
   const { createProductionExecutor } = await import("../src/runner.ts");
@@ -48,6 +51,39 @@ test("production leases pass bounded outline context and retain production resul
   }
   assert.ok(requests.some((url) => url.endsWith("/production-result")));
   assert.equal(received.content, "# book");
+});
+
+test("art revision leases call Codex art with owner feedback and use the art result route", async () => {
+  const { createProductionExecutor } = await import("../src/runner.ts");
+  const dir = await mkdtemp(path.join(tmpdir(), "ebook-art-revision-"));
+  const fixture = path.join(dir, "revision.png");
+  await writeFile(fixture, Buffer.concat([Buffer.from("\x89PNG\r\n\x1a\n"), Buffer.from("revision")]))
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, options });
+    if (url.endsWith("/context")) return Response.json({
+      task_type: "art-revision", project_id: "p", run_id: "r", task_id: "t", job_id: "j", brief: { art_direction: "a blue star" }, budget: {},
+      art_revision: { feedback: "Make it anime-inspired and specific.", source_artifact_id: "a" },
+    });
+    if (url.endsWith("/providers")) return Response.json([{ provider: "openai-codex", scope: "app", protocol: "pi-native", drafting_model: "drafter" }]);
+    if (url.endsWith("/art-result")) return Response.json({ accepted: true });
+    throw new Error(`unexpected ${url}`);
+  };
+  let artPrompt;
+  try {
+    await createProductionExecutor({
+      baseUrl: "http://api", token: "secret", workerId: "w",
+      runProduction: async () => { throw new Error("Pi must not run for art-only revision"); },
+      runArt: async ({ prompt }) => { artPrompt = prompt; return { savedPath: fixture, callId: "art-revision-call", providerRequestId: "resp-art", usage: { input: 2, output: 3 } }; },
+    })({ job_id: "j", generation: 1 });
+  } finally { globalThis.fetch = originalFetch; await rm(dir, { recursive: true, force: true }); }
+  assert.match(artPrompt, /anime-inspired/);
+  const callback = calls.find(({ url }) => url.endsWith("/art-result"));
+  assert.ok(callback);
+  const body = JSON.parse(callback.options.body);
+  assert.equal(body.art.call_id, "art-revision-call");
+  assert.equal(body.art.filename, "revision.png");
 });
 
 test("review leases use low-thinking Pi and fenced task-result accounting", async () => {

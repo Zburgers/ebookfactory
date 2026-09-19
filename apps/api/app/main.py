@@ -27,7 +27,8 @@ from app.conversations import append_message, create_project
 from app.orchestrator import append_delta, claim_turn, complete_turn, enqueue_turn, fail_turn, heartbeat_turn, locked_turn
 from app.documents import create_brief_revision, create_section, save_section_revision
 from app.exports import MIME_TYPES, PACKAGE_FILES, _resolve_manuscript_scope, _verify_export_provenance, _verify_source_artifact_review, export_book, verify_export_members
-from app.events import replay_events
+from app.events import append_event, replay_events
+from app.execution import build_execution_snapshot
 from app.jobs import (
     ApprovalConflict,
     CancellationRejected,
@@ -40,6 +41,7 @@ from app.jobs import (
     complete_task_result,
     fail_job,
     heartbeat_job,
+    enqueue_art_revision,
 )
 from app.models import (
     Artifact,
@@ -214,6 +216,7 @@ class WorkerJobContextResponse(BaseModel):
     budget: dict[str, Any]
     outline: WorkerOutlineContext | None = None
     section: WorkerSectionContext | None = None
+    art_revision: dict[str, str] | None = None
     assembly: bool = False
     review_sections: list[WorkerReviewSection] = Field(default_factory=list)
 
@@ -262,10 +265,22 @@ class BriefCreateRequest(BaseModel):
     def validate_target_ranges(self) -> "BriefCreateRequest":
         pages = self.structured_brief.get("target_pages")
         words = self.structured_brief.get("target_length")
-        if pages and pages.get("minimum", 0) > pages.get("maximum", 0):
-            raise ValueError("minimum must not exceed maximum")
-        if words and words.get("minimum_words", 0) > words.get("maximum_words", 0):
-            raise ValueError("minimum must not exceed maximum")
+        if pages and words:
+            raise ValueError("choose one length target")
+        ranges = ((pages, "minimum", "maximum"), (words, "minimum_words", "maximum_words"))
+        for target, minimum_key, maximum_key in ranges:
+            if target is None:
+                continue
+            if not isinstance(target, dict):
+                raise ValueError("length target must be an object")
+            minimum = target.get(minimum_key)
+            maximum = target.get(maximum_key)
+            if not isinstance(minimum, int) or isinstance(minimum, bool) or not isinstance(maximum, int) or isinstance(maximum, bool):
+                raise ValueError("length target values must be integers")
+            if minimum < 1 or maximum < 1:
+                raise ValueError("length target values must be positive")
+            if minimum > maximum:
+                raise ValueError("minimum must not exceed maximum")
         return self
 
 
@@ -482,7 +497,8 @@ class ArtifactReviewRequest(BaseModel):
 
 
 class ArtifactReviewResponse(ArtifactView):
-    pass
+    revision_job_id: UUID | None = None
+    revision_task_id: UUID | None = None
 
 
 class ReviewFindingView(BaseModel):
@@ -580,6 +596,18 @@ class TaskResultRequest(WorkerMutationRequest):
 
 class TaskResultResponse(BaseModel):
     accepted: bool
+
+
+class ArtRevisionResultRequest(WorkerMutationRequest):
+    provider: str = Field(min_length=1, max_length=64)
+    model: str = Field(min_length=1, max_length=128)
+    art: ProductionArtRequest
+
+
+class ArtRevisionResultResponse(BaseModel):
+    accepted: bool
+    artifact_id: UUID
+    usage_call_id: UUID | None = None
 
 
 class ProductionOutputResponse(BaseModel):
@@ -1444,21 +1472,51 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def review_artifact(project_id: UUID, artifact_id: UUID, request: ArtifactReviewRequest) -> ArtifactReviewResponse:
         session = database.session()
         try:
-            artifact = session.scalar(select(Artifact).where(Artifact.id == artifact_id).with_for_update())
-            if artifact is None:
-                raise HTTPException(status_code=404, detail="artifact not found in project")
-            if not artifact_belongs_to_project(session, artifact, project_id):
-                raise HTTPException(status_code=404, detail="artifact not found in project")
-            if not artifact.mime_type.lower().startswith("image/"):
-                raise HTTPException(status_code=422, detail="owner review is only available for image artifacts")
-            if artifact.relative_path.startswith("exports/"):
-                raise HTTPException(status_code=422, detail="derived export artifacts cannot be owner reviewed")
-            if artifact.owner_review_state != request.expected_owner_review_state:
-                raise HTTPException(status_code=409, detail="artifact owner review state changed")
-            artifact.owner_review_state = "approved" if request.decision == "approve" else "revision_requested"
-            artifact.owner_review_note = request.note
-            artifact.owner_reviewed_at = utc_now()
-            session.commit()
+            with session.begin():
+                artifact = session.scalar(select(Artifact).where(Artifact.id == artifact_id).with_for_update())
+                if artifact is None:
+                    raise HTTPException(status_code=404, detail="artifact not found in project")
+                if not artifact_belongs_to_project(session, artifact, project_id):
+                    raise HTTPException(status_code=404, detail="artifact not found in project")
+                if not artifact.mime_type.lower().startswith("image/"):
+                    raise HTTPException(status_code=422, detail="owner review is only available for image artifacts")
+                if artifact.relative_path.startswith("exports/"):
+                    raise HTTPException(status_code=422, detail="derived export artifacts cannot be owner reviewed")
+                if artifact.owner_review_state != request.expected_owner_review_state:
+                    raise HTTPException(status_code=409, detail="artifact owner review state changed")
+                previous_state = artifact.owner_review_state
+                artifact.owner_review_state = "approved" if request.decision == "approve" else "revision_requested"
+                artifact.owner_review_note = request.note
+                artifact.owner_reviewed_at = utc_now()
+                revision = None
+                if request.decision == "request_revision" and artifact.run_id is not None:
+                    try:
+                        revision = enqueue_art_revision(
+                            session,
+                            project_id=project_id,
+                            artifact_id=artifact.id,
+                            note=request.note or "Owner requested a new artwork revision.",
+                            manage_transaction=False,
+                        )
+                    except ValueError as exc:
+                        raise HTTPException(status_code=422, detail=str(exc)) from exc
+                append_event(
+                    session,
+                    project_id=project_id,
+                    run_id=artifact.run_id,
+                    kind="artifact.owner_reviewed",
+                    payload={
+                        "artifact_id": str(artifact.id),
+                        "sha256": artifact.sha256,
+                        "decision": request.decision,
+                        "previous_state": previous_state,
+                        "new_state": artifact.owner_review_state,
+                        "note": (request.note or "")[:4_000],
+                        "reviewed_at": artifact.owner_reviewed_at.isoformat(),
+                        "revision_job_id": str(revision.job_id) if revision else None,
+                        "revision_task_id": str(revision.task_id) if revision else None,
+                    },
+                )
             return ArtifactReviewResponse(
                 artifact_id=artifact.id,
                 revision_id=artifact.revision_id,
@@ -1471,6 +1529,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 owner_review_note=artifact.owner_review_note,
                 owner_reviewed_at=artifact.owner_reviewed_at,
                 download_path=f"/projects/{project_id}/artifacts/{artifact.id}/download",
+                revision_job_id=revision.job_id if revision else None,
+                revision_task_id=revision.task_id if revision else None,
             )
         finally:
             session.close()
@@ -1536,6 +1596,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             if session.get(Project, project_id) is None:
                 raise HTTPException(status_code=404, detail="project not found")
+            finding_artifact = None
             if payload.revision_id is not None:
                 valid = session.scalar(
                     select(SectionRevision.id)
@@ -1545,8 +1606,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 if valid is None:
                     raise HTTPException(status_code=404, detail="revision not found")
             if payload.artifact_id is not None:
-                artifact = session.get(Artifact, payload.artifact_id)
-                if artifact is None or not artifact_belongs_to_project(session, artifact, project_id):
+                finding_artifact = session.get(Artifact, payload.artifact_id)
+                if finding_artifact is None or not artifact_belongs_to_project(session, finding_artifact, project_id):
                     raise HTTPException(status_code=404, detail="artifact not found")
             session.rollback()
             finding_id = record_finding(
@@ -1557,6 +1618,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 criterion=payload.criterion,
                 evidence=payload.evidence,
             )
+            with session.begin():
+                append_event(
+                    session,
+                    project_id=project_id,
+                    run_id=finding_artifact.run_id if finding_artifact is not None else None,
+                    kind="review.finding.created",
+                    payload={
+                        "finding_id": str(finding_id),
+                        "revision_id": str(payload.revision_id) if payload.revision_id else None,
+                        "artifact_id": str(payload.artifact_id) if payload.artifact_id else None,
+                        "severity": payload.severity,
+                        "criterion": payload.criterion,
+                        "evidence": payload.evidence[:4_000],
+                    },
+                )
             return ReviewFindingResponse(finding_id=finding_id)
         except ValueError as exc:
             session.rollback()
@@ -1596,6 +1672,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if valid is None:
                 raise HTTPException(status_code=404, detail="resolution revision not found")
             finding.resolution_revision_id = payload.resolution_revision_id
+            finding_artifact = session.get(Artifact, finding.artifact_id) if finding.artifact_id is not None else None
+            append_event(
+                session,
+                project_id=project_id,
+                run_id=finding_artifact.run_id if finding_artifact is not None else None,
+                kind="review.finding.resolved",
+                payload={
+                    "finding_id": str(finding.id),
+                    "resolution_revision_id": str(payload.resolution_revision_id),
+                },
+            )
             session.commit()
             return ReviewFindingView(
                 finding_id=finding.id,
@@ -1704,6 +1791,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 }
                 for event in replay_events(session, project_id=project_id, after_id=after, limit=limit)
             ]
+        finally:
+            session.close()
+
+    @application.get("/projects/{project_id}/execution", tags=["operations"])
+    def project_execution(project_id: UUID, after: int = 0, limit: int = 250) -> dict[str, Any]:
+        """Return a bounded owner-only control-room snapshot from durable records."""
+
+        session = database.session()
+        try:
+            try:
+                return build_execution_snapshot(
+                    session,
+                    project_id=project_id,
+                    after_event_id=max(0, after),
+                    limit=limit,
+                )
+            except LookupError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
         finally:
             session.close()
 
@@ -1936,6 +2041,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(status_code=409, detail="run is cancelled")
             review_sections: list[dict[str, Any]] = []
             section_context: dict[str, str] | None = None
+            art_revision_context: dict[str, str] | None = None
             assembly_ready = False
             if task.task_type == "section-draft":
                 section_context = {
@@ -1951,6 +2057,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     and dependency.status == "succeeded"
                     for dependency_id in dependencies
                 )
+            if task.task_type == "art-revision":
+                art_revision_context = {
+                    "source_artifact_id": str(task.result_refs.get("source_artifact_id", "")),
+                    "source_sha256": str(task.result_refs.get("source_sha256", "")),
+                    "feedback": str(task.result_refs.get("feedback", ""))[:4_000],
+                    "art_direction": str(brief.structured_brief.get("art_direction", ""))[:4_000],
+                }
             if task.task_type == "review":
                 production_task = session.scalar(
                     select(Task).where(Task.run_id == run.id, Task.task_type == "production")
@@ -2012,6 +2125,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 ),
                 "review_sections": review_sections,
                 "section": section_context,
+                "art_revision": art_revision_context,
                 "assembly": assembly_ready,
             }
             # Assert the actual serialized response remains inside the worker
@@ -2107,6 +2221,152 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except (StaleLease, CancellationRejected, ValueError) as exc:
             session.rollback()
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            session.close()
+
+    @application.post("/private/worker/art-result", response_model=ArtRevisionResultResponse, tags=["private-worker"])
+    def worker_art_revision_result(
+        payload: ArtRevisionResultRequest,
+        x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token"),
+    ) -> ArtRevisionResultResponse:
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
+        session = database.session()
+        created_artifact_path: Path | None = None
+        try:
+            with session.begin():
+                budget_allowed, budget_reason = enforce_budget(
+                    session,
+                    job_id=payload.job_id,
+                    worker_id=payload.worker_id,
+                    generation=payload.generation,
+                    input_tokens=payload.art.usage.input_tokens if payload.art.usage else None,
+                    output_tokens=payload.art.usage.output_tokens if payload.art.usage else None,
+                    reasoning_tokens=payload.art.usage.reasoning_tokens if payload.art.usage else None,
+                    manage_transaction=False,
+                )
+                if not budget_allowed:
+                    raise HTTPException(status_code=409, detail=f"art revision budget blocked: {budget_reason}")
+                row = session.execute(
+                    select(Job, Task, ProductionRun, Attempt)
+                    .join(Task, Task.id == Job.task_id)
+                    .join(ProductionRun, ProductionRun.id == Task.run_id)
+                    .join(Attempt, Attempt.task_id == Task.id)
+                    .where(
+                        Job.id == payload.job_id,
+                        Task.task_type == "art-revision",
+                        Attempt.fencing_generation == payload.generation,
+                    )
+                    .with_for_update()
+                ).first()
+                if row is None:
+                    raise HTTPException(status_code=409, detail="art revision result lease is no longer current")
+                _, task, run, attempt = row
+                source_id = task.result_refs.get("source_artifact_id")
+                source = session.get(Artifact, UUID(source_id)) if source_id else None
+                if source is None or source.run_id != run.id or source.sha256 != task.result_refs.get("source_sha256"):
+                    raise HTTPException(status_code=409, detail="art revision source is no longer current")
+                if not source.mime_type.lower().startswith("image/"):
+                    raise HTTPException(status_code=409, detail="art revision source is not an image")
+                art_usage_call_id = None
+                if payload.art.call_id:
+                    art_usage = payload.art.usage
+                    usage_result = record_usage_call(
+                        session,
+                        call_id=payload.art.call_id,
+                        provider=payload.provider,
+                        model=payload.model,
+                        purpose="art",
+                        outcome="succeeded",
+                        started_at=utc_now(),
+                        ended_at=utc_now(),
+                        provider_request_id=payload.art.provider_request_id,
+                        project_id=run.project_id,
+                        run_id=run.id,
+                        task_id=task.id,
+                        attempt_id=attempt.id,
+                        expected_attempt_id=attempt.id,
+                        expected_purpose="art",
+                        input_tokens=art_usage.input_tokens if art_usage else None,
+                        output_tokens=art_usage.output_tokens if art_usage else None,
+                        cache_read_tokens=art_usage.cache_read_tokens if art_usage else None,
+                        cache_write_tokens=art_usage.cache_write_tokens if art_usage else None,
+                        reasoning_tokens=art_usage.reasoning_tokens if art_usage else None,
+                        source_metadata={"source": "codex-app-server-art-revision", "reported_usage": art_usage.model_dump() if art_usage else None},
+                        manage_transaction=False,
+                    )
+                    art_usage_call_id = usage_result.call_id
+                art_filename, art_content = _decode_production_art(payload=payload.art)
+                relative_path = f"{run.id}/art-revision-{task.id}-{art_filename}"
+                artifact_path = safe_artifact_path(resolved_settings.artifact_root, relative_path)
+                try:
+                    artifact = write_artifact(
+                        session,
+                        root=resolved_settings.artifact_root,
+                        relative_path=relative_path,
+                        content=art_content,
+                        mime_type=payload.art.mime_type,
+                        run_id=run.id,
+                        attempt_id=attempt.id,
+                        usage_call_id=art_usage_call_id,
+                        revision_id=source.revision_id,
+                        manage_transaction=False,
+                    )
+                    created_artifact_path = artifact_path
+                except FileExistsError:
+                    artifact = session.scalar(select(Artifact).where(Artifact.relative_path == relative_path))
+                    if artifact is None:
+                        raise HTTPException(status_code=503, detail="art revision artifact registration unavailable")
+                    _verify_existing_production_artifact(
+                        artifact=artifact,
+                        path=artifact_path,
+                        run_id=run.id,
+                        revision_id=source.revision_id,
+                        content=art_content,
+                        mime_type=payload.art.mime_type,
+                        attempt_id=attempt.id,
+                        usage_call_id=art_usage_call_id,
+                    )
+                append_event(
+                    session,
+                    project_id=run.project_id,
+                    run_id=run.id,
+                    task_id=task.id,
+                    kind="art.generated",
+                    payload={
+                        "artifact_id": str(artifact.id),
+                        "source_artifact_id": str(source.id),
+                        "sha256": artifact.sha256,
+                        "byte_count": artifact.byte_count,
+                        "provider": payload.provider,
+                        "model": payload.model,
+                        "usage_call_id": str(art_usage_call_id) if art_usage_call_id else None,
+                    },
+                )
+                complete_job(
+                    session,
+                    job_id=payload.job_id,
+                    worker_id=payload.worker_id,
+                    generation=payload.generation,
+                    result_refs={
+                        **task.result_refs,
+                        "artifact_id": str(artifact.id),
+                        "provider": payload.provider,
+                        "model": payload.model,
+                        "usage_call_id": str(art_usage_call_id) if art_usage_call_id else None,
+                    },
+                    manage_transaction=False,
+                )
+            return ArtRevisionResultResponse(accepted=True, artifact_id=artifact.id, usage_call_id=art_usage_call_id)
+        except (StaleLease, CancellationRejected, ValueError) as exc:
+            session.rollback()
+            if created_artifact_path is not None:
+                created_artifact_path.unlink(missing_ok=True)
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception:
+            session.rollback()
+            if created_artifact_path is not None:
+                created_artifact_path.unlink(missing_ok=True)
+            raise
         finally:
             session.close()
 

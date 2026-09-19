@@ -19,15 +19,26 @@ const EVENT_LABELS = {
   "orchestrator.turn.failed": "Orchestrator failed",
   "orchestrator.turn.retryable_failure": "Orchestrator retrying",
   "run.approved": "Brief approved",
+  "run.plan.created": "Production plan created",
+  "task.enqueued": "Task queued",
   "job.claimed": "Work started",
+  "agent.started": "Agent started",
   "job.checkpointed": "Work checkpointed",
   "job.completed": "Work completed",
+  "agent.completed": "Agent completed",
   "job.failed": "Work failed",
+  "agent.failed": "Agent failed",
+  "job.retry_wait": "Work retrying",
   "job.paused": "Work paused",
   "job.resumed": "Work resumed",
   "job.blocked": "Work blocked",
   "run.cancelled": "Run cancelled",
   "production.output.accepted": "Draft accepted",
+  "artifact.owner_reviewed": "Owner reviewed artwork",
+  "art.revision.queued": "Artwork revision queued",
+  "art.generated": "Artwork generated",
+  "review.finding.created": "Review finding recorded",
+  "review.finding.resolved": "Review finding resolved",
 };
 
 const TERMINAL_STATES = new Set(["blocked", "failed", "cancelled"]);
@@ -76,6 +87,87 @@ export function formatArtifactSize(bytes) {
 
 export function formatEventKind(kind) {
   return EVENT_LABELS[kind] || String(kind || "Event").replaceAll(".", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+export function formatBriefLength(brief = {}) {
+  const pages = brief.target_pages;
+  if (pages?.minimum != null && pages?.maximum != null) {
+    return `${Number(pages.minimum).toLocaleString()}–${Number(pages.maximum).toLocaleString()} pages`;
+  }
+  const words = brief.target_length;
+  if (words?.minimum_words != null && words?.maximum_words != null) {
+    return `${Number(words.minimum_words).toLocaleString()}–${Number(words.maximum_words).toLocaleString()} words`;
+  }
+  return "Length not set";
+}
+
+export function groupArtifact(artifact = {}) {
+  const path = String(artifact.relative_path || "").toLowerCase();
+  if (path.startsWith("exports/")) return "package";
+  if (artifact.mime_type?.startsWith("image/")) return "artwork";
+  const extension = artifactFilename(artifact).split(".").pop()?.toLowerCase();
+  if (["json", "csv"].includes(extension) || /metadata|manifest|sources|validation/.test(path)) return "metadata";
+  return "manuscript";
+}
+
+export function executionTaskTree(run = {}) {
+  const tasks = (run.tasks || []).map((task) => ({ ...task, children: [] }));
+  const byId = new Map(tasks.map((task) => [String(task.task_id), task]));
+  const roots = [];
+  tasks.forEach((task) => {
+    const parent = task.parent_task_id && byId.get(String(task.parent_task_id));
+    if (parent) parent.children.push(task);
+    else roots.push(task);
+  });
+  return roots;
+}
+
+export function executionEventPresentation(event = {}) {
+  const payload = event.payload || {};
+  if (event.kind === "artifact.owner_reviewed") {
+    const decision = payload.decision === "approve" ? "Approved" : "Revision requested";
+    return { label: "Owner reviewed artwork", detail: `${decision}${payload.note ? ` · ${payload.note}` : ""}`, tone: "review" };
+  }
+  if (event.kind === "agent.started") {
+    return { label: "Agent started", detail: payload.task_type ? `Working on ${payload.task_type}.` : "A bounded task attempt started.", tone: "active" };
+  }
+  if (event.kind === "agent.completed") {
+    return { label: "Agent completed", detail: payload.task_type ? `${payload.task_type} returned a durable result.` : "A bounded task completed.", tone: "complete" };
+  }
+  if (event.kind === "art.revision.queued") {
+    return { label: "Artwork revision queued", detail: "Owner feedback is queued for a new immutable image.", tone: "active" };
+  }
+  if (event.kind === "run.plan.created") {
+    return { label: "Production plan created", detail: `${payload.task_count || "The"} durable task${payload.task_count === 1 ? "" : "s"} recorded for this run.`, tone: "active" };
+  }
+  if (event.kind === "task.enqueued") {
+    return { label: "Task queued", detail: payload.task_type ? `${payload.task_type} is waiting for its dependencies.` : "A bounded task is waiting for execution.", tone: "active" };
+  }
+  if (event.kind === "job.claimed" || event.kind === "orchestrator.turn.claimed") {
+    return { label: formatEventKind(event.kind), detail: payload.task_type ? `A worker claimed ${payload.task_type}.` : "A durable worker lease is active.", tone: "active" };
+  }
+  if (event.kind === "job.completed") {
+    return { label: "Work completed", detail: payload.task_type ? `${payload.task_type} completed and recorded its result.` : "A durable job completed.", tone: "complete" };
+  }
+  if (event.kind === "job.failed" || event.kind === "agent.failed") {
+    return { label: formatEventKind(event.kind), detail: payload.error_class ? `Failure boundary: ${payload.error_class}.` : "Inspect the task attempt for the failure boundary.", tone: "review" };
+  }
+  if (event.kind === "production.output.accepted") {
+    return { label: "Draft accepted", detail: "The manuscript revision is now available to inspect.", tone: "complete" };
+  }
+  if (event.kind === "review.finding.created") {
+    return { label: "Review finding recorded", detail: payload.criterion ? `${payload.severity || "Review"} · ${payload.criterion}.` : "A review finding is attached to the source.", tone: "review" };
+  }
+  if (event.kind === "review.finding.resolved") {
+    return { label: "Review finding resolved", detail: "A later source revision was recorded as the resolution.", tone: "complete" };
+  }
+  return { label: formatEventKind(event.kind), detail: "", tone: "neutral" };
+}
+
+export function conversationEmptyState(execution = {}) {
+  if ((execution.conversation || []).length) return "";
+  if ((execution.runs || []).length) return "No owner chat turn was used for this production run. The durable task trace below is the source of truth.";
+  return "No conversation yet. Start with the book idea or fill in the brief to begin.";
 }
 
 function hasDraft(sections) {

@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
+import hashlib
 from typing import Any
 from uuid import UUID
 
@@ -10,7 +11,7 @@ from sqlalchemy import and_, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.events import append_event
-from app.models import Attempt, BriefRevision, Job, Project, ProductionRun, Task, utc_now
+from app.models import Artifact, Attempt, BriefRevision, Job, Project, ProductionRun, Task, utc_now
 
 
 class ApprovalConflict(RuntimeError):
@@ -39,6 +40,16 @@ class ApprovalResult:
 
 
 @dataclass(frozen=True)
+class ArtRevisionResult:
+    """Stable identifiers returned when an owner requests new artwork."""
+
+    run_id: UUID
+    task_id: UUID
+    job_id: UUID
+    source_artifact_id: UUID
+
+
+@dataclass(frozen=True)
 class JobLease:
     """The committed lease identity a worker must echo on every mutation."""
 
@@ -56,6 +67,24 @@ class HeartbeatResult:
     """The new committed lease expiry."""
 
     lease_until: datetime
+
+
+def _bounded_result_refs(result_refs: dict[str, Any], *, max_text: int = 2_000) -> dict[str, Any]:
+    """Keep lifecycle events useful without copying unbounded worker output."""
+
+    bounded: dict[str, Any] = {}
+    for key, value in result_refs.items():
+        if isinstance(value, str):
+            bounded[key] = value[:max_text]
+        elif isinstance(value, (int, float, bool)) or value is None:
+            bounded[key] = value
+        elif isinstance(value, list):
+            bounded[key] = [str(item)[:256] for item in value[:32]]
+        elif isinstance(value, dict):
+            bounded[key] = {str(child_key): str(child_value)[:256] for child_key, child_value in list(value.items())[:32]}
+        else:
+            bounded[key] = str(value)[:256]
+    return bounded
 
 
 def _existing_approval(session: Session, *, project_id: UUID, brief_id: UUID) -> ApprovalResult | None:
@@ -184,7 +213,132 @@ def approve_brief_and_enqueue(
             kind="run.approved",
             payload={"brief_id": str(brief.id), "run_id": str(run.id), "job_id": str(job.id)},
         )
+        append_event(
+            session,
+            project_id=project_id,
+            run_id=run.id,
+            kind="run.plan.created",
+            payload={
+                "brief_id": str(brief.id),
+                "tasks": [
+                    {
+                        "task_id": str(candidate.id),
+                        "task_type": candidate.task_type,
+                        "parent_task_id": str(candidate.parent_task_id) if candidate.parent_task_id else None,
+                        "dependencies": candidate.dependencies,
+                        "input_revision_ids": candidate.input_revision_ids,
+                        "job_id": str(candidate_job.id),
+                        "job_type": candidate_job.job_type,
+                        "dedupe_key": candidate_job.dedupe_key,
+                    }
+                    for candidate, candidate_job in ((outline, outline_job), (task, job), (review, review_job))
+                ],
+            },
+        )
         return ApprovalResult(run_id=run.id, task_id=task.id, job_id=job.id)
+
+
+def enqueue_art_revision(
+    session: Session,
+    *,
+    project_id: UUID,
+    artifact_id: UUID,
+    note: str,
+    manage_transaction: bool = True,
+) -> ArtRevisionResult:
+    """Create one durable artwork revision job for one immutable source artifact.
+
+    The source artifact is never changed. The note hash is part of the job
+    dedupe key, so repeated browser retries converge on one task and job.
+    """
+
+    cleaned_note = note.strip()
+    if not cleaned_note:
+        raise ValueError("art revision feedback is required")
+    note_hash = hashlib.sha256(cleaned_note.encode()).hexdigest()
+    dedupe_key = f"art-revision:{artifact_id}:{note_hash}"
+    with (session.begin() if manage_transaction else nullcontext()):
+        existing_job = session.scalar(select(Job).where(Job.dedupe_key == dedupe_key).with_for_update())
+        if existing_job is not None:
+            existing_task = session.get(Task, existing_job.task_id)
+            if existing_task is None:
+                raise ValueError("art revision job has no task")
+            existing_run = session.get(ProductionRun, existing_task.run_id)
+            if existing_run is None or existing_run.project_id != project_id:
+                raise ValueError("art revision job is outside the project")
+            source_id = UUID(existing_task.result_refs["source_artifact_id"])
+            return ArtRevisionResult(existing_run.id, existing_task.id, existing_job.id, source_id)
+
+        source = session.scalar(select(Artifact).where(Artifact.id == artifact_id).with_for_update())
+        if source is None or not source.mime_type.lower().startswith("image/") or source.run_id is None:
+            raise ValueError("source artwork is not revisionable")
+        run = session.scalar(select(ProductionRun).where(ProductionRun.id == source.run_id).with_for_update())
+        project = session.scalar(select(Project).where(Project.id == project_id).with_for_update())
+        if run is None or project is None or run.project_id != project_id:
+            raise ValueError("source artwork is outside the project")
+        if run.state in {"cancelled", "failed", "blocked"}:
+            raise ValueError("production run is not accepting revisions")
+        parent_task = session.scalar(
+            select(Task).where(Task.run_id == run.id, Task.task_type == "production").order_by(Task.created_at.desc())
+        )
+        result_refs = {
+            "source_artifact_id": str(source.id),
+            "source_sha256": source.sha256,
+            "feedback": cleaned_note[:4_000],
+            "feedback_hash": note_hash,
+        }
+        task = Task(
+            run_id=run.id,
+            parent_task_id=parent_task.id if parent_task else None,
+            task_type="art-revision",
+            dependencies=[],
+            input_revision_ids=[str(source.revision_id)] if source.revision_id else [],
+            result_refs=result_refs,
+            status="queued",
+        )
+        session.add(task)
+        session.flush()
+        job = Job(
+            task_id=task.id,
+            job_type="art-revision.start",
+            payload={"run_id": str(run.id), "task_id": str(task.id), "cancellation_epoch": run.cancellation_epoch},
+            dedupe_key=dedupe_key,
+            state="queued",
+        )
+        session.add(job)
+        session.flush()
+        run.state = "producing"
+        project.state = "producing"
+        append_event(
+            session,
+            project_id=project_id,
+            run_id=run.id,
+            task_id=task.id,
+            kind="art.revision.queued",
+            payload={
+                "job_id": str(job.id),
+                "source_artifact_id": str(source.id),
+                "source_sha256": source.sha256,
+                "feedback": cleaned_note[:4_000],
+                "feedback_hash": note_hash,
+            },
+        )
+        append_event(
+            session,
+            project_id=project_id,
+            run_id=run.id,
+            task_id=task.id,
+            kind="task.enqueued",
+            payload={
+                "job_id": str(job.id),
+                "task_id": str(task.id),
+                "task_type": task.task_type,
+                "parent_task_id": str(task.parent_task_id) if task.parent_task_id else None,
+                "input_revision_ids": task.input_revision_ids,
+                "dedupe_key": job.dedupe_key,
+            },
+        )
+        return ArtRevisionResult(run.id, task.id, job.id, source.id)
 
 
 def claim_job(session: Session, *, worker_id: str, lease_seconds: int = 60) -> JobLease | None:
@@ -265,6 +419,25 @@ def claim_job(session: Session, *, worker_id: str, lease_seconds: int = 60) -> J
                 "worker_id": worker_id,
                 "generation": job.fencing_generation,
                 "attempt_id": str(attempt.id),
+            },
+        )
+        append_event(
+            session,
+            project_id=run.project_id,
+            run_id=run.id,
+            task_id=task.id,
+            kind="agent.started",
+            payload={
+                "job_id": str(job.id),
+                "attempt_id": str(attempt.id),
+                "attempt_no": attempt.attempt_no,
+                "worker_id": worker_id,
+                "generation": job.fencing_generation,
+                "task_type": task.task_type,
+                "provider": task.provider,
+                "model": task.model,
+                "input_revision_ids": task.input_revision_ids,
+                "started_at": now.isoformat(),
             },
         )
         return JobLease(
@@ -402,6 +575,30 @@ def complete_job(
             task_id=task.id,
             kind="job.completed",
             payload={"job_id": str(job.id), "generation": generation, "result_refs": result_refs},
+        )
+        started_at = attempt.started_at
+        if started_at is not None and started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+        duration_seconds = max(0.0, (now - started_at).total_seconds()) if started_at is not None else None
+        append_event(
+            session,
+            project_id=run.project_id,
+            run_id=run.id,
+            task_id=task.id,
+            kind="agent.completed",
+            payload={
+                "job_id": str(job.id),
+                "attempt_id": str(attempt.id),
+                "attempt_no": attempt.attempt_no,
+                "generation": generation,
+                "task_type": task.task_type,
+                "provider": task.provider,
+                "model": task.model,
+                "status": task.status,
+                "finished_at": now.isoformat(),
+                "duration_seconds": duration_seconds,
+                "result_refs": _bounded_result_refs(result_refs),
+            },
         )
 
 
@@ -544,6 +741,24 @@ def fail_job(
             task_id=task.id,
             kind=event_kind,
             payload={"job_id": str(job.id), "generation": generation, "error_class": error_class},
+        )
+        append_event(
+            session,
+            project_id=run.project_id,
+            run_id=run.id,
+            task_id=task.id,
+            kind="agent.failed",
+            payload={
+                "job_id": str(job.id),
+                "attempt_id": str(attempt.id),
+                "attempt_no": attempt.attempt_no,
+                "generation": generation,
+                "task_type": task.task_type,
+                "status": task.status,
+                "error_class": error_class,
+                "retryable": retryable and job.state == "retry_wait",
+                "finished_at": now.isoformat(),
+            },
         )
 
 

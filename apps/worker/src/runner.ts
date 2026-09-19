@@ -52,6 +52,33 @@ export function createProductionExecutor({
         ? (configured?.orchestration_model || configured?.drafting_model || configured?.review_model)
         : (configured?.drafting_model || configured?.orchestration_model || configured?.review_model);
     if (!configured || !model) throw new Error(`configured provider ${provider} has no usable model`);
+    if (context.task_type === "art-revision") {
+      const feedback = context.art_revision?.feedback || "Create a replacement artwork direction based on the owner's request.";
+      const originalDirection = context.brief?.art_direction || "Create artwork that fits the approved book brief.";
+      const artPrompt = [
+        "Create a replacement ebook artwork asset.",
+        "Preserve the approved art direction while applying the owner's requested changes.",
+        `Approved art direction: ${originalDirection}`,
+        `Owner feedback: ${feedback}`,
+        "Return only the saved image artifact; do not alter manuscript or project state.",
+      ].join("\n\n");
+      const art = await readGeneratedArt(await runArt({ prompt: artPrompt, model, signal }), signal);
+      await requestJson(baseUrl, token, "/private/worker/art-result", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          job_id: lease.job_id,
+          worker_id: workerId,
+          generation: lease.generation,
+          provider,
+          model,
+          art,
+        }),
+        signal,
+        requestTimeoutMs,
+      });
+      return { terminal: true };
+    }
     if (context.task_type === "production" && context.assembly) {
       await requestJson(baseUrl, token, "/private/worker/production-result", {
         method: "POST", headers: { "content-type": "application/json" },

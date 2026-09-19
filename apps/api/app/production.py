@@ -63,7 +63,25 @@ def expand_outline_sections(session: Session, *, outline_task: Task, production_
             task = Task(run_id=run.id, parent_task_id=outline_task.id, task_type="section-draft", dependencies=[str(outline_task.id)], input_revision_ids=outline_task.input_revision_ids, result_refs={"section_id": str(section.id), "heading": item.heading, "outline": item.content}, status="queued")
             session.add(task)
             session.flush()
-            session.add(Job(task_id=task.id, job_type="section-draft.start", payload={"run_id": str(run.id), "task_id": str(task.id), "cancellation_epoch": run.cancellation_epoch}, dedupe_key=f"section:{outline_task.id}:{order_no}", state="queued"))
+            job = Job(task_id=task.id, job_type="section-draft.start", payload={"run_id": str(run.id), "task_id": str(task.id), "cancellation_epoch": run.cancellation_epoch}, dedupe_key=f"section:{outline_task.id}:{order_no}", state="queued")
+            session.add(job)
+            session.flush()
+            append_event(
+                session,
+                project_id=run.project_id,
+                run_id=run.id,
+                task_id=task.id,
+                kind="task.enqueued",
+                payload={
+                    "job_id": str(job.id),
+                    "task_id": str(task.id),
+                    "task_type": task.task_type,
+                    "parent_task_id": str(task.parent_task_id),
+                    "dependencies": task.dependencies,
+                    "input_revision_ids": task.input_revision_ids,
+                    "dedupe_key": job.dedupe_key,
+                },
+            )
         else:
             task.result_refs = {**task.result_refs, "heading": item.heading, "outline": item.content}
         sections.append(task)
@@ -127,7 +145,13 @@ def assemble_section_revisions(
     )
 
 
-def validate_production_text(content: str, *, page_target: bool, target_pages: dict | None = None) -> None:
+def validate_production_text(
+    content: str,
+    *,
+    page_target: bool,
+    target_pages: dict | None = None,
+    target_length: dict | None = None,
+) -> None:
     if not content.strip():
         raise ValueError("production output is empty")
     lowered = content.lower()
@@ -145,6 +169,14 @@ def validate_production_text(content: str, *, page_target: bool, target_pages: d
             raise ValueError("production output is too short for the requested page range")
         if word_count > maximum_words:
             raise ValueError("production output is too long for the requested page range")
+    if not page_target and target_length:
+        word_count = len(re.findall(r"\b[\w'-]+\b", content))
+        minimum_words = int(target_length["minimum_words"])
+        maximum_words = int(target_length["maximum_words"])
+        if word_count < minimum_words:
+            raise ValueError("production output is too short for the requested word range")
+        if word_count > maximum_words:
+            raise ValueError("production output is too long for the requested word range")
 
 
 def parse_production_sections(content: str, *, page_target: bool) -> list[ParsedSection]:
@@ -207,7 +239,12 @@ def accept_production_output(
         brief = session.get(BriefRevision, run.approved_brief_id)
         structured_brief = brief.structured_brief if brief else {}
         page_target = bool(structured_brief.get("target_pages"))
-        validate_production_text(content, page_target=page_target, target_pages=structured_brief.get("target_pages"))
+        validate_production_text(
+            content,
+            page_target=page_target,
+            target_pages=structured_brief.get("target_pages"),
+            target_length=structured_brief.get("target_length"),
+        )
         parsed_sections = parse_production_sections(content, page_target=page_target)
         if provider:
             task.provider = provider
