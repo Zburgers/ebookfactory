@@ -70,7 +70,7 @@ from app.tools import InvalidCapability, issue_capability, verify_capability
 from app.usage import finalize_usage_call, list_usage_calls, record_usage_call, usage_totals
 from app.quota import list_quota_snapshots, record_quota_snapshot
 from app.settings import Settings
-from app.telegram import config_from_values, link_chat, process_update
+from app.telegram import config_from_values, link_chat, link_configured_chats, process_update
 
 
 class HealthResponse(BaseModel):
@@ -116,6 +116,7 @@ class TelegramStatusResponse(BaseModel):
     allowed_chat_count: int
     allowed_sender_count: int
     linked_chat_count: int
+    linked_project_count: int
     next_update_id: int
 
 
@@ -865,13 +866,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session = database.session()
         try:
             state = session.get(TelegramState, 1)
-            linked_chat_count = session.scalar(select(func.count(TelegramLink.id))) or 0
+            linked_chat_count = session.scalar(select(func.count(func.distinct(TelegramLink.chat_id)))) or 0
+            linked_project_count = session.scalar(select(func.count(func.distinct(TelegramLink.project_id)))) or 0
             return TelegramStatusResponse(
                 configured=config.configured,
                 token_configured=config.token_configured,
                 allowed_chat_count=len(config.allowed_chat_ids),
                 allowed_sender_count=len(config.allowed_sender_ids),
                 linked_chat_count=linked_chat_count,
+                linked_project_count=linked_project_count,
                 next_update_id=state.next_update_id if state else 0,
             )
         finally:
@@ -934,6 +937,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 profile=payload.profile,
                 language=payload.language,
             )
+            config = config_from_values(
+                token=resolved_settings.telegram_bot_token,
+                allowed_chat_ids=resolved_settings.telegram_allowed_chat_ids,
+                allowed_sender_ids=resolved_settings.telegram_allowed_sender_ids,
+            )
+            if config.configured:
+                link_configured_chats(session, chat_ids=config.allowed_chat_ids)
             project = session.get(Project, result.project_id)
             if project is None:
                 raise HTTPException(status_code=503, detail="project creation unavailable")

@@ -13,6 +13,7 @@ from app.telegram import (
     TelegramConfig,
     claim_outbox,
     config_from_values,
+    link_configured_chats,
     process_update,
     record_outbox_failure,
     record_outbox_sent,
@@ -47,7 +48,11 @@ def drain_outbox(database: Database, bot: TelegramBotClient, *, limit: int = 20)
         if delivery is None:
             break
         try:
-            message_id = bot.send_message(chat_id=delivery.chat_id, text=delivery.text)
+            reply_markup = getattr(delivery, "reply_markup", None)
+            if reply_markup is None:
+                message_id = bot.send_message(chat_id=delivery.chat_id, text=delivery.text)
+            else:
+                message_id = bot.send_message(chat_id=delivery.chat_id, text=delivery.text, reply_markup=reply_markup)
         except Exception as exc:  # noqa: BLE001 - delivery state records sanitized error
             session = database.session()
             try:
@@ -86,6 +91,11 @@ def main() -> None:
     if not config.configured:
         raise SystemExit("Telegram is not configured: set token and allowlists")
     database = Database(settings.database_url)
+    startup_session = database.session()
+    try:
+        link_configured_chats(startup_session, chat_ids=config.allowed_chat_ids)
+    finally:
+        startup_session.close()
     bot = TelegramBotClient(settings.telegram_bot_token or "")
     retries = 0
     while True:

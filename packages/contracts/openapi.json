@@ -2491,6 +2491,10 @@
             "title": "Linked Chat Count",
             "type": "integer"
           },
+          "linked_project_count": {
+            "title": "Linked Project Count",
+            "type": "integer"
+          },
           "next_update_id": {
             "title": "Next Update Id",
             "type": "integer"
@@ -2506,6 +2510,7 @@
           "allowed_chat_count",
           "allowed_sender_count",
           "linked_chat_count",
+          "linked_project_count",
           "next_update_id"
         ],
         "title": "TelegramStatusResponse",

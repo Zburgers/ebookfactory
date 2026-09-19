@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, Index, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import Uuid
 
@@ -217,15 +217,19 @@ class TelegramUpdate(CreatedMixin, Base):
 
 
 class TelegramLink(CreatedMixin, UpdatedMixin, Base):
-    """Allowlisted Telegram chat bound to one project conversation."""
+    """Allowlisted chat-to-project association with one active project per chat."""
 
     __tablename__ = "telegram_links"
-    __table_args__ = (UniqueConstraint("chat_id", name="uq_telegram_link_chat"),)
+    __table_args__ = (
+        UniqueConstraint("chat_id", "project_id", name="uq_telegram_link_chat_project"),
+        Index("uq_telegram_link_active_chat", "chat_id", unique=True, sqlite_where=text("is_active = 1"), postgresql_where=text("is_active = true")),
+    )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     conversation_id: Mapped[UUID] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    is_active: Mapped[bool] = mapped_column(nullable=False, default=False)
 
 
 class TelegramOutbox(CreatedMixin, UpdatedMixin, Base):
@@ -238,6 +242,7 @@ class TelegramOutbox(CreatedMixin, UpdatedMixin, Base):
     chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     dedupe_key: Mapped[str] = mapped_column(String(255), nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    reply_markup: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     state: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)

@@ -449,6 +449,7 @@ export interface TelegramStatusResponse {
   allowed_chat_count: number;
   allowed_sender_count: number;
   linked_chat_count: number;
+  linked_project_count: number;
   next_update_id: number;
 }
 

@@ -66,6 +66,7 @@ class OutboxDelivery:
     chat_id: int
     text: str
     attempts: int
+    reply_markup: dict[str, Any] | None = None
 
 
 def _int_id(value: Any) -> int | None:
@@ -141,11 +142,11 @@ def _ack_update(session: Session, update_id: int, *, error: str | None = None) -
         state.next_update_id = update_id + 1 if pending is None else pending
 
 
-def _queue_message(session: Session, *, chat_id: int, text: str, dedupe_key: str) -> TelegramOutbox:
+def _queue_message(session: Session, *, chat_id: int, text: str, dedupe_key: str, reply_markup: dict[str, Any] | None = None) -> TelegramOutbox:
     existing = session.scalar(select(TelegramOutbox).where(TelegramOutbox.dedupe_key == dedupe_key))
     if existing is not None:
         return existing
-    outbox = TelegramOutbox(chat_id=chat_id, text=text[:MAX_MESSAGE_LENGTH], dedupe_key=dedupe_key)
+    outbox = TelegramOutbox(chat_id=chat_id, text=text[:MAX_MESSAGE_LENGTH], dedupe_key=dedupe_key, reply_markup=reply_markup)
     session.add(outbox)
     session.flush()
     return outbox
@@ -154,31 +155,68 @@ def _queue_message(session: Session, *, chat_id: int, text: str, dedupe_key: str
 def link_chat(session: Session, *, chat_id: int, project_id: UUID) -> TelegramLink:
     """Bind one chat to the project's existing conversation."""
 
+    if session.in_transaction():
+        session.rollback()
     with session.begin():
         project = session.scalar(select(Project).where(Project.id == project_id).with_for_update())
         if project is None or project.conversation_id is None:
             raise ValueError("project conversation not found")
-        link = session.scalar(select(TelegramLink).where(TelegramLink.chat_id == chat_id).with_for_update())
+        links = session.scalars(select(TelegramLink).where(TelegramLink.chat_id == chat_id).with_for_update()).all()
+        link = next((row for row in links if row.project_id == project.id), None)
         if link is None:
-            link = TelegramLink(chat_id=chat_id, project_id=project.id, conversation_id=project.conversation_id)
+            link = TelegramLink(chat_id=chat_id, project_id=project.id, conversation_id=project.conversation_id, is_active=True)
             session.add(link)
-        else:
-            link.project_id = project.id
-            link.conversation_id = project.conversation_id
+        for row in links:
+            if row.project_id != project.id:
+                row.is_active = False
+        session.flush()
+        for row in links:
+            if row.project_id == project.id:
+                row.is_active = True
+        link.is_active = True
         session.flush()
         return link
+
+
+def link_configured_chats(session: Session, *, chat_ids: set[int] | frozenset[int]) -> int:
+    """Associate every project with configured chats without changing active selection."""
+
+    if session.in_transaction():
+        session.rollback()
+    with session.begin():
+        projects = session.scalars(select(Project).where(Project.conversation_id.is_not(None)).order_by(Project.created_at)).all()
+        count = 0
+        for chat_id in chat_ids:
+            links = session.scalars(select(TelegramLink).where(TelegramLink.chat_id == chat_id).with_for_update()).all()
+            by_project = {row.project_id: row for row in links}
+            active_exists = any(row.is_active for row in links)
+            for project in projects:
+                if project.id in by_project:
+                    continue
+                session.add(TelegramLink(
+                    chat_id=chat_id,
+                    project_id=project.id,
+                    conversation_id=project.conversation_id,
+                    is_active=not active_exists,
+                ))
+                active_exists = True
+                count += 1
+        session.flush()
+        return count
 
 
 def _linked_project(session: Session, chat_id: int) -> tuple[TelegramLink, Project] | None:
     row = session.execute(
         select(TelegramLink, Project)
         .join(Project, Project.id == TelegramLink.project_id)
-        .where(TelegramLink.chat_id == chat_id)
+        .where(TelegramLink.chat_id == chat_id, TelegramLink.is_active.is_(True))
     ).first()
     return row if row else None
 
 
 def _command(text: str) -> tuple[str, list[str]]:
+    if text.strip().lower().startswith("switch:"):
+        return "/switch", [text.strip().split(":", 1)[1]]
     if text.strip().lower().startswith("approve:"):
         return "/approve", text.strip().split(":", 1)[1].split(":")
     parts = text.strip().split()
@@ -188,13 +226,14 @@ def _command(text: str) -> tuple[str, list[str]]:
     return name, parts[1:]
 
 
-def _queue_response(session: Session, *, chat_id: int, update_id: int, text: str) -> UUID:
+def _queue_response(session: Session, *, chat_id: int, update_id: int, text: str, reply_markup: dict[str, Any] | None = None) -> UUID:
     if session.in_transaction():
         outbox = _queue_message(
             session,
             chat_id=chat_id,
             text=text,
             dedupe_key=f"telegram:{update_id}:response",
+            reply_markup=reply_markup,
         )
         session.commit()
         return outbox.id
@@ -204,6 +243,7 @@ def _queue_response(session: Session, *, chat_id: int, update_id: int, text: str
             chat_id=chat_id,
             text=text,
             dedupe_key=f"telegram:{update_id}:response",
+            reply_markup=reply_markup,
         )
         return outbox.id
 
@@ -238,7 +278,7 @@ def _lifecycle_response(session: Session, *, project_id: UUID, command: str) -> 
 def _response_for_command(session: Session, *, chat_id: int, update_id: int, text: str) -> UUID | None:
     session.rollback()
     command, args = _command(text)
-    if command == "/use":
+    if command in {"/use", "/switch"}:
         if len(args) != 1:
             raise ValueError("usage: /use PROJECT_ID")
         link_chat(session, chat_id=chat_id, project_id=UUID(args[0]))
@@ -255,6 +295,17 @@ def _response_for_command(session: Session, *, chat_id: int, update_id: int, tex
         )
         session.rollback()
         return _queue_response(session, chat_id=chat_id, update_id=update_id, text=text)
+
+    if command == "/help":
+        projects = session.scalars(select(Project).where(Project.conversation_id.is_not(None)).order_by(Project.updated_at.desc()).limit(20)).all()
+        keyboard = {"inline_keyboard": [[{"text": project.title[:64], "callback_data": f"switch:{project.id}"}] for project in projects]}
+        return _queue_response(
+            session,
+            chat_id=chat_id,
+            update_id=update_id,
+            text="Choose the active project:" if projects else "No projects yet.",
+            reply_markup=keyboard if projects else None,
+        )
 
     linked = _linked_project(session, chat_id)
     if linked is None:
@@ -317,6 +368,8 @@ def _response_for_command(session: Session, *, chat_id: int, update_id: int, tex
 def process_update(session: Session, *, config: TelegramConfig, update: dict[str, Any]) -> TelegramUpdateResult:
     """Persist, allowlist, route, and acknowledge one Telegram update."""
 
+    if session.in_transaction():
+        session.rollback()
     encoded_size = len(json.dumps(update, separators=(",", ":")).encode())
     if encoded_size > MAX_UPDATE_BYTES:
         raise ValueError("Telegram update exceeds size limit")
@@ -373,7 +426,7 @@ def claim_outbox(session: Session, *, now=None) -> OutboxDelivery | None:
         row.state = "sending"
         row.attempts += 1
         row.available_at = now + timedelta(minutes=5)
-        return OutboxDelivery(row.id, row.chat_id, row.text, row.attempts)
+        return OutboxDelivery(row.id, row.chat_id, row.text, row.attempts, row.reply_markup)
 
 
 def record_outbox_sent(session: Session, outbox_id: UUID, telegram_message_id: str) -> None:
@@ -428,6 +481,9 @@ class TelegramBotClient:
             {"offset": offset, "timeout": bounded_timeout, "allowed_updates": ["message", "callback_query"]},
         )
 
-    def send_message(self, *, chat_id: int, text: str) -> str:
-        result = self._call("sendMessage", {"chat_id": chat_id, "text": text[:MAX_MESSAGE_LENGTH]})
+    def send_message(self, *, chat_id: int, text: str, reply_markup: dict[str, Any] | None = None) -> str:
+        payload: dict[str, Any] = {"chat_id": chat_id, "text": text[:MAX_MESSAGE_LENGTH]}
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        result = self._call("sendMessage", payload)
         return str(result.get("message_id", "unknown"))
