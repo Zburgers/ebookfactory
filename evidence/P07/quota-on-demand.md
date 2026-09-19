@@ -10,8 +10,11 @@ Real service check on 2026-09-19 returned HTTP 200 with a current
 
 ```text
 source: codexctl status
-fetched_at: 2026-09-18T23:59:33.604113Z
-windows: 5-hour 47% used / 53% remaining; 7-day 37% used / 63% remaining
+fetched_at: 2026-09-19T00:06:16.978002Z
+windows: account 1 — 5-hour 48% used / 52% remaining; 7-day 38% used / 62% remaining
+
+The parser retains every valid CLI account as a redacted numeric account
+label; a multi-account result is no longer silently truncated.
 ```
 
 The dashboard calls `/quota/live` when Usage is opened or refreshed. It uses

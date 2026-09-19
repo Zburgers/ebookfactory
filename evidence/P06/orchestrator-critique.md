@@ -21,3 +21,25 @@ Re-review of revision `1354619` after service restart found no new critical,
 high, or medium findings. It directly confirmed the `sequence <=
 user_message.sequence` cutoff, active API/worker units, HTTP 200 live quota
 response, and the focused regression suite.
+## Latest independent hole audit
+
+- UTC: 2026-09-19T00:05Z; reviewed revision `3a029c7` and the live runtime.
+- Actual critic runtime reported itself as GPT-5 Codex despite the requested
+  Luna-high override; no Luna identity is claimed for this row.
+- Decision: NO-GO, confidence 97/100.
+- Verified: live quota invokes `codexctl status` without changing persisted
+  quota rows; the real art PNG is persisted with an `art_artifact_id`; API,
+  production worker and Telegram services are active; focused API/worker/
+  systemd checks pass.
+- High findings still open: no owner authentication; SSE is finite replay and
+  the browser polls instead of receiving token deltas; orchestrator failures
+  can remain indefinitely running; art calls are absent from usage accounting;
+  and the production path is still one short model call rather than a durable
+  50–150 page section workflow.
+- Medium findings: the dashboard does not yet render/download production
+  artifacts, Telegram same-conversation delivery is unproven until `/use`
+  plus free text is exercised, and the evidence was uncommitted at review time
+  (resolved by commit `a433983`). The quota parser's multi-account truncation
+  was also repaired in `a433983` with a redacted `account_index` and test.
+
+Earlier findings and repairs remain below.

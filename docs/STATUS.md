@@ -12,6 +12,11 @@ The affected focused checks pass, and `make verify` passes with 61 Python
 tests plus the worker, service, recovery, migration, containment and Telegram
 behavior checks. The live quota response continues to be fetched from
 `codexctl status` per request; its values are intentionally time-sensitive.
+Revision `a433983` additionally retains all valid live CLI accounts as
+redacted account indexes and labels multiple-account windows in the dashboard.
+The latest independent hole audit is NO-GO: its actual runtime was GPT-5
+Codex rather than the requested Luna-high override, so Luna identity is not
+claimed for that audit.
 
 2026-09-19: Revision `2ad955e` adds a durable dashboard-to-Pi orchestrator
 worker and an on-demand Codex quota adapter. `GET /quota/live` invokes the
