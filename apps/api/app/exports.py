@@ -52,6 +52,7 @@ MIME_TYPES = {
     "json": "application/json",
     "csv": "text/csv",
 }
+MAX_MARKETING_COVER_BYTES = 5 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -476,6 +477,7 @@ def _validate_files(files: dict[str, bytes], *, source_revision_count: int) -> d
     with Image.open(io.BytesIO(files["cover.jpg"])) as cover:
         checks["cover_rgb"] = cover.mode == "RGB"
         checks["cover_dimensions"] = cover.size == (1600, 2560)
+    checks["cover_file_size"] = len(files["cover.jpg"]) <= MAX_MARKETING_COVER_BYTES
     checks["manuscript_scope_complete"] = source_revision_count >= 1
     checks["all_structural_checks_pass"] = all(checks.values())
     return {"package_state": "structurally_validated" if checks["all_structural_checks_pass"] else "generated", "checks": checks, "kindle_preview": "pending"}

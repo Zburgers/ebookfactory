@@ -131,6 +131,8 @@ def test_export_package_generates_all_formats_and_is_idempotent(tmp_path: Path) 
     with Image.open(io.BytesIO((root / "cover.jpg").read_bytes())) as cover:
         assert cover.mode == "RGB"
         assert cover.size == (1600, 2560)
+    validation = json.loads((root / "validation.json").read_text())
+    assert validation["checks"]["cover_file_size"] is True
     fallback_metadata = json.loads((root / "metadata.json").read_text())
     assert fallback_metadata["ai_content_provenance"]["text"] == {
         "source": "revisioned-manuscript",

@@ -13,7 +13,10 @@ Nonfiction: source URLs, access dates, claim-to-source references and actual sup
 - `book.epub`: EPUB 3, ordered spine, navigation/TOC, language/title/author/identifier, embedded cover, semantic headings, accessible image alternatives, portable styles and no missing assets.
 - `book.pdf`: readable pagination, embedded/available fonts, intact images, no clipped/blank content; explicitly labelled reading copy.
 - `book.docx`, `book.md`: complete editable manuscript.
-- `cover.jpg`: RGB ebook cover; recommended 1600 wide x 2560 high, check current official acceptance limits. Preserve illustration and typography sources separately.
+- `cover.jpg`: RGB ebook cover; current KDP marketing-cover guidance recommends
+  1600 wide × 2560 high, 300 DPI/PPI and JPEG at 5 MB or less. The exporter
+  enforces the RGB geometry and 5 MB ceiling. Preserve illustration and
+  typography sources separately.
 - `metadata.json` and `metadata.csv`: title/subtitle/author/language/description/keywords/category suggestions and AI-content provenance. These are owner handoff data, not an asserted Amazon bulk-upload schema.
 - `sources.json`, `manifest.json`, `validation.json`: citations, exact revision/asset hashes and checks performed.
 
@@ -26,7 +29,10 @@ Packages created before this scope record was introduced are not silently
 treated as complete: a multi-section replay fails closed until a new immutable
 package is generated.
 
-Cover guidance snapshot: Amazon recommends 2560 high x 1600 wide and requires cover files under 50 MB. Re-read official requirements during implementation. Do not silently distort generated artwork to match a ratio; use deliberate crop/layout. Cover text must agree with metadata.
+Cover guidance snapshot: Amazon recommends 2560 high × 1600 wide, RGB and 5 MB
+or less for the marketing cover. Re-read official requirements during
+implementation. Do not silently distort generated artwork to match a ratio; use
+deliberate crop/layout. Cover text must agree with metadata.
 
 ## Validation levels
 
@@ -38,4 +44,4 @@ Package states: `generated`, `structurally_validated`, `kindle_preview_pending`,
 
 Current KDP guidelines require disclosure of AI-generated text/images/translations. Track provenance so the owner can answer the publishing form accurately. Do not auto-submit disclosures or claim medical/legal accuracy from an AI reviewer.
 
-Sources: [Kindle guidelines](https://kdp.amazon.com/en_US/help/topic/GU72M65VRFPH43L6), [cover criteria](https://kdp.amazon.com/en_US/help/topic/G200645690), [Previewer](https://kdp.amazon.com/en_US/help/topic/G202131170), [content quality](https://kdp.amazon.com/en_US/help/topic/G200952510), [AI content disclosure](https://kdp.amazon.com/en_US/help/topic/G200672390). Checked 2026-09-18; verify again before shipping.
+Sources: [Kindle guidelines](https://kdp.amazon.com/en_US/help/topic/GU72M65VRFPH43L6), [cover criteria](https://kdp.amazon.com/en_US/help/topic/G6GTK3T3NUHKLEFX), [Previewer](https://kdp.amazon.com/en_US/help/topic/G202131170), [online preview](https://kdp.amazon.com/en_US/help/topic/G200641240), [content quality](https://kdp.amazon.com/en_US/help/topic/G200952510), [AI content disclosure](https://kdp.amazon.com/en_US/help/topic/G200672390). Checked 2026-09-19; verify again before shipping.

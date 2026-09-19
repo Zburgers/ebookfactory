@@ -2,7 +2,8 @@
 
 ## Objective
 
-Review the deployed candidate `codex/ebook-factory-v2` at `bf8230b`, follow the
+Review the deployed candidate `codex/ebook-factory-v2` at `cbce23c` (runtime
+transport change `88f7680`), follow the
 actual ebook journey, close every defect that can be completed without owner
 credentials or paid external actions, and leave an evidence-backed handoff for
 the remaining gates.
@@ -29,13 +30,28 @@ the remaining gates.
 
 ### Kindle preview
 
-The package is structurally validated, but Kindle visual preview is a separate
-gate. The preferred options are:
+The package is structurally validated, and the exporter now also enforces the
+current 5 MiB marketing-cover limit alongside RGB/1600×2560 geometry. Kindle
+visual preview is still a separate gate. Amazon's current documentation says
+Kindle Previewer 4 is a free desktop app for Windows 10+ and macOS 12+, accepts
+EPUB, and can inspect devices, orientations, fonts, images, lists and a full
+auto-advance pass. KDP's Online Previewer is the best fit for this Linux host:
+it runs from an authorized KDP Bookshelf draft and previews tablet, phone and
+Kindle-reader modes, including a quality check.
 
-- Owner runs Kindle Previewer 4 on supported Windows/macOS and records the exact
-  EPUB hash, version, device/orientation checks and any defects.
-- Owner uses KDP's online preview surface with the authorized account and
-  records the same evidence.
+Recommended order:
+
+1. Owner opens `http://192.168.29.14:6969`, downloads the final `book.epub`,
+   records its SHA-256, and uploads it to a private/unpublished KDP draft only
+   for preview. Do not click publish.
+2. Run the Online Previewer on phone, tablet and Kindle-reader modes; inspect
+   cover/title page, TOC, opening/middle/end chapters, long headings, lists,
+   links, images and any citations. Run the quality check and record defects.
+3. If desktop access is easier, use Kindle Previewer 4 on Windows/macOS with
+   the same hash and record the version, device/orientation/font matrix and
+   auto-advance result.
+4. Fix any defects in Ebook Factory, regenerate a new immutable package, and
+   repeat. Record `kindle_preview_verified` only against the exact final hash.
 
 EPUBCheck and local reader rendering remain useful preflight checks but cannot
 be relabelled as Kindle certification. Do not upload or publish automatically.
@@ -43,9 +59,28 @@ be relabelled as Kindle certification. Do not upload or publish automatically.
 ### Live owner art review
 
 The generated image and durable review UI are present, but only the owner can
-decide `Approve` or `Request revision`. The selected source image must be
-reviewed by hash in the dashboard. Approval permits export; a revision request
-must preserve the old image and block stale package reuse.
+decide `Approve` or `Request revision`. The live source image is a valid PNG
+(1,385,196 bytes, SHA-256
+`51dc6b93c3fe9b3a83d91572b66b1419d9cde9c4bc59da8fef67bcb6b4bdb1f0`) and is
+visually an abstract blue horizon/star composition without cover typography;
+that is an agent observation, not an owner approval. The selected source image
+must be reviewed by hash in the dashboard. Approval permits export; a revision
+request preserves the old image and blocks stale package reuse.
+
+Recommended decision sequence:
+
+1. Open the dashboard over the LAN URL, select the art-bearing project and
+   inspect the source image at full size plus its intended cover layout.
+2. Choose `Approve` if the composition is acceptable as the illustration, then
+   create a new export so the package records the approved source and final
+   cover hash.
+3. Choose `Request revision` with a concrete note if the image, composition or
+   intended audience is not acceptable. The previous image remains immutable;
+   regenerate only after the note is recorded, then review the replacement.
+
+This action is intentionally not automated: it is the product's human quality
+and rights checkpoint, and the image's visual suitability cannot be inferred
+from PNG validity or a model-generated description.
 
 ### Usage, billing and quotas
 
@@ -55,6 +90,31 @@ and unsupported Copilot quota as `unknown`, never zero. The live Codex quota
 adapter may report account windows, but it is not a monetary billing source.
 Only add a provider billing integration when an official, authorized source is
 available.
+
+Best default for this personal installation: keep the current live Codex quota
+windows and per-call lineage, show token totals and `billing unknown`, and do
+not spend credits to chase an unsupported billing number. Copilot quota is an
+independent provider capability and should remain explicitly unavailable unless
+you choose to configure and authorize its official quota surface. If you want
+cost estimates later, add dated provider price tables as estimates only; never
+convert subscription usage into claimed billed money.
+
+The remaining usage evidence gap is not a missing UI feature: it is the lack of
+an authorized, official monetary-billing source and Copilot quota source. No
+safe local change can manufacture either observation.
+
+### Owner decisions that remain
+
+| Decision | Best option | What it closes |
+|---|---|---|
+| Kindle validation | KDP Online Previewer from an unpublished draft | Kindle visual-preview evidence for the exact EPUB hash |
+| Art quality | Owner approves or requests revision in the dashboard | Live owner-art decision; approval enables a final export |
+| Billing | Keep money as unknown; retain measured tokens and live Codex windows | Honest usage accounting without spending or fabricating billing |
+| Copilot quota | Leave unsupported unless separately authorized | No product need for a second provider's account integration |
+
+Only the first two rows require an owner action for this build. The latter two
+are policy choices; the current implementation already behaves safely under the
+recommended options.
 
 ### Custom provider
 
