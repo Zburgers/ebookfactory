@@ -716,6 +716,40 @@
         "title": "OrchestratorClaimRequest",
         "type": "object"
       },
+      "OrchestratorDeltaRequest": {
+        "properties": {
+          "delta": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Delta",
+            "type": "string"
+          },
+          "generation": {
+            "minimum": 1.0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          },
+          "worker_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "turn_id",
+          "worker_id",
+          "generation",
+          "delta"
+        ],
+        "title": "OrchestratorDeltaRequest",
+        "type": "object"
+      },
       "OrchestratorFailureRequest": {
         "properties": {
           "error": {
@@ -2512,6 +2546,22 @@
         "title": "WorkerLeaseResponse",
         "type": "object"
       }
+    },
+    "securitySchemes": {
+      "OwnerBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "ToolCapability": {
+        "in": "header",
+        "name": "X-Tool-Capability",
+        "type": "apiKey"
+      },
+      "WorkerToken": {
+        "in": "header",
+        "name": "X-Ebook-Worker-Token",
+        "type": "apiKey"
+      }
     }
   },
   "info": {
@@ -2555,6 +2605,7 @@
             "description": "Validation Error"
           }
         },
+        "security": [],
         "summary": "Owner Login",
         "tags": [
           "authentication"
@@ -2576,6 +2627,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Owner Verify",
         "tags": [
           "authentication"
@@ -2598,6 +2654,7 @@
             "description": "Successful Response"
           }
         },
+        "security": [],
         "summary": "Health",
         "tags": [
           "operations"
@@ -2659,7 +2716,74 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
         "summary": "Orchestrator Claim",
+        "tags": [
+          "private-worker"
+        ]
+      }
+    },
+    "/private/orchestrator/delta": {
+      "post": {
+        "operationId": "orchestrator_delta_private_orchestrator_delta_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Ebook-Worker-Token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Ebook-Worker-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrchestratorDeltaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Orchestrator Delta Private Orchestrator Delta Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
+        "summary": "Orchestrator Delta",
         "tags": [
           "private-worker"
         ]
@@ -2716,6 +2840,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
         "summary": "Orchestrator Failure",
         "tags": [
           "private-worker"
@@ -2774,6 +2903,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
         "summary": "Orchestrator Heartbeat",
         "tags": [
           "private-worker"
@@ -2839,6 +2973,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
         "summary": "Orchestrator Result",
         "tags": [
           "private-worker"
@@ -2912,6 +3051,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
         "summary": "Orchestrator Context",
         "tags": [
           "private-worker"
@@ -2968,6 +3112,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
         "summary": "Record Quota Snapshot Route",
         "tags": [
           "private-worker"
@@ -3035,6 +3184,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
         "summary": "Worker Cancel",
         "tags": [
           "private-worker"
@@ -3090,6 +3244,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
         "summary": "Telegram Update",
         "tags": [
           "private-worker"
@@ -3185,6 +3344,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "ToolCapability": []
+          }
+        ],
         "summary": "Scoped Tool",
         "tags": [
           "private-worker"
@@ -3238,6 +3402,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
         "summary": "Worker Capability",
         "tags": [
           "private-worker"
@@ -3284,6 +3453,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
         "summary": "Worker Checkpoint",
         "tags": [
           "private-worker"
@@ -3345,6 +3519,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
         "summary": "Worker Claim",
         "tags": [
           "private-worker"
@@ -3391,6 +3570,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
         "summary": "Worker Complete",
         "tags": [
           "private-worker"
@@ -3437,6 +3621,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
         "summary": "Worker Fail",
         "tags": [
           "private-worker"
@@ -3495,6 +3684,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
         "summary": "Worker Heartbeat",
         "tags": [
           "private-worker"
@@ -3568,6 +3762,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
         "summary": "Worker Job Context",
         "tags": [
           "private-worker"
@@ -3621,6 +3820,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
         "summary": "Worker Production Result",
         "tags": [
           "private-worker"
@@ -3668,6 +3872,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
         "summary": "List Worker Providers",
         "tags": [
           "private-worker"
@@ -3693,6 +3902,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "List Projects"
       },
       "post": {
@@ -3729,6 +3943,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Create Project Route"
       }
     },
@@ -3769,6 +3988,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Get Project"
       }
     },
@@ -3813,6 +4037,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "List Artifacts",
         "tags": [
           "publishing"
@@ -3866,6 +4095,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Create Brief Route"
       }
     },
@@ -3926,6 +4160,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Approve"
       }
     },
@@ -3991,12 +4230,17 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Events"
       }
     },
     "/projects/{project_id}/events/stream": {
       "get": {
-        "description": "Replay a bounded event cursor as SSE, then close for safe reconnect.",
+        "description": "Replay events and optionally follow new durable events for a short reconnect window.",
         "operationId": "events_stream_projects__project_id__events_stream_get",
         "parameters": [
           {
@@ -4028,6 +4272,16 @@
               "title": "Limit",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "follow",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Follow",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -4050,6 +4304,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Events Stream"
       }
     },
@@ -4100,6 +4359,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Create Export",
         "tags": [
           "publishing"
@@ -4160,6 +4424,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Download Export",
         "tags": [
           "publishing"
@@ -4217,6 +4486,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "List Messages"
       },
       "post": {
@@ -4265,6 +4539,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Post Message"
       }
     },
@@ -4309,6 +4588,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "List Reviews",
         "tags": [
           "documents"
@@ -4360,6 +4644,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Create Review Finding",
         "tags": [
           "documents"
@@ -4423,6 +4712,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Resolve Review Finding",
         "tags": [
           "documents"
@@ -4470,6 +4764,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "List Sections",
         "tags": [
           "documents"
@@ -4521,6 +4820,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Create Section Route"
       }
     },
@@ -4571,6 +4875,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Telegram Link",
         "tags": [
           "telegram"
@@ -4596,6 +4905,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "List Providers"
       }
     },
@@ -4614,6 +4928,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Provider Catalog"
       }
     },
@@ -4663,6 +4982,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Put Provider"
       }
     },
@@ -4712,6 +5036,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Test Provider Connection"
       }
     },
@@ -4764,6 +5093,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Get Quota",
         "tags": [
           "operations"
@@ -4785,6 +5119,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Get Live Quota",
         "tags": [
           "operations"
@@ -4807,6 +5146,7 @@
             "description": "Successful Response"
           }
         },
+        "security": [],
         "summary": "Ready",
         "tags": [
           "operations"
@@ -4860,6 +5200,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Save Section Route"
       }
     },
@@ -4878,6 +5223,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Telegram Status",
         "tags": [
           "telegram"
@@ -4930,6 +5280,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Get Usage"
       }
     },
@@ -4983,6 +5338,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
         "summary": "Get Usage Calls",
         "tags": [
           "usage"
@@ -5036,6 +5396,12 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": [],
+            "WorkerToken": []
+          }
+        ],
         "summary": "Record Usage"
       }
     },
@@ -5098,6 +5464,12 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OwnerBearer": [],
+            "WorkerToken": []
+          }
+        ],
         "summary": "Finalize Usage"
       }
     }

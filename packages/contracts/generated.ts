@@ -156,6 +156,13 @@ export interface OrchestratorClaimRequest {
   lease_seconds?: number;
 }
 
+export interface OrchestratorDeltaRequest {
+  turn_id: string;
+  worker_id: string;
+  generation: number;
+  delta: string;
+}
+
 export interface OrchestratorFailureRequest {
   turn_id: string;
   worker_id: string;
