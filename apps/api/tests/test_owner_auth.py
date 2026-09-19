@@ -21,7 +21,7 @@ def test_owner_token_is_not_worker_token_and_missing_configuration_fails_closed(
     with client() as http:
         assert http.get("/projects", headers={"X-Ebook-Worker-Token": "worker-secret"}).status_code == 401
         assert http.get("/private/worker/providers").status_code == 401
-    with TestClient(create_app(Settings(_env_file=None, database_url=None, worker_token="worker-secret"))) as http:
+    with TestClient(create_app(Settings(_env_file=None, database_url=None, worker_token="worker-secret", owner_token=None))) as http:
         assert http.get("/projects").status_code == 503
         assert http.post("/auth/login", json={"token": "owner-secret"}).status_code == 503
 
