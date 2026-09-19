@@ -69,7 +69,13 @@ test("production callback sends bounded adapter bytes only when art direction is
     await createProductionExecutor({ baseUrl: "http://api", token: "secret", workerId: "w", runProduction: async () => ({ text: "# book", callId: "c" }), runArt: async () => ({ savedPath: fixture, callId: "art-call", providerRequestId: "resp-art", usage: { input: 12, output: 3 } }) })({ job_id: "j", generation: 1 });
     assert.equal(calls.at(-1).body.art.mime_type, "image/png");
     assert.equal(calls.at(-1).body.art.call_id, "art-call");
-    assert.deepEqual(calls.at(-1).body.art.usage, { input: 12, output: 3 });
+    assert.deepEqual(calls.at(-1).body.art.usage, {
+      input_tokens: 12,
+      output_tokens: 3,
+      cache_read_tokens: null,
+      cache_write_tokens: null,
+      reasoning_tokens: null,
+    });
     assert.equal(Buffer.from(calls.at(-1).body.art.content_base64, "base64").toString(), "\x89PNG\r\n\x1a\nfixture");
   } finally { globalThis.fetch = originalFetch; await rm(dir, { recursive: true, force: true }); }
 });

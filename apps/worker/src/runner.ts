@@ -9,6 +9,17 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const MAX_ART_BYTES = 10 * 1024 * 1024;
 const ART_MIME_BY_EXTENSION = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
 
+function normalizeUsage(usage) {
+  if (!usage) return null;
+  return {
+    input_tokens: usage.input_tokens ?? usage.inputTokens ?? usage.input ?? null,
+    output_tokens: usage.output_tokens ?? usage.outputTokens ?? usage.output ?? null,
+    cache_read_tokens: usage.cache_read_tokens ?? usage.cacheReadTokens ?? usage.cacheRead ?? null,
+    cache_write_tokens: usage.cache_write_tokens ?? usage.cacheWriteTokens ?? usage.cacheWrite ?? null,
+    reasoning_tokens: usage.reasoning_tokens ?? usage.reasoningTokens ?? usage.reasoning ?? null,
+  };
+}
+
 /** Build the trusted executor that turns one leased job into a fenced production result. */
 export function createProductionExecutor({
   baseUrl,
@@ -87,7 +98,7 @@ async function readGeneratedArt(result, signal) {
     content_base64: bytes.toString("base64"),
     ...(result.callId ? { call_id: result.callId } : {}),
     ...(result.providerRequestId ? { provider_request_id: result.providerRequestId } : {}),
-    ...(result.usage ? { usage: result.usage } : {}),
+    ...(result.usage ? { usage: normalizeUsage(result.usage) } : {}),
   };
 }
 
