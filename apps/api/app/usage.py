@@ -33,6 +33,8 @@ def record_usage_call(
     run_id: UUID | None = None,
     task_id: UUID | None = None,
     attempt_id: UUID | None = None,
+    expected_attempt_id: UUID | None = None,
+    expected_purpose: str | None = None,
     input_tokens: int | None = None,
     output_tokens: int | None = None,
     cache_read_tokens: int | None = None,
@@ -46,6 +48,10 @@ def record_usage_call(
     with (session.begin() if manage_transaction else nullcontext()):
         usage = session.scalar(select(UsageCall).where(UsageCall.id == call_id).with_for_update())
         if usage is not None:
+            if expected_attempt_id is not None and usage.attempt_id != expected_attempt_id:
+                raise ValueError("usage call binding does not match expected attempt")
+            if expected_purpose is not None and usage.purpose != expected_purpose:
+                raise ValueError("usage call binding does not match expected purpose")
             return UsageResult(call_id=usage.id, outcome=usage.outcome, finalized=usage.ended_at is not None)
         usage = UsageCall(
             id=call_id,
