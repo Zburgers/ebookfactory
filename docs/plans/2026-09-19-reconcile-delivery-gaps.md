@@ -33,9 +33,9 @@ the remaining gates.
 The package is structurally validated, and the exporter now also enforces the
 current under-50 MB marketing-cover limit alongside RGB/1600×2560 geometry. Kindle
 visual preview is still a separate gate. Amazon's current documentation says
-Kindle Previewer 4 is a free desktop app for Windows 10+ and macOS 12+, accepts
-EPUB, and can inspect devices, orientations, fonts, images, lists and a full
-auto-advance pass. KDP's Online Previewer is the best fit for this Linux host:
+Kindle Previewer is a free desktop app for Windows 8.1+ and macOS 10.15+,
+accepts EPUB, and can inspect devices, orientations, fonts, images, lists and a
+full auto-advance pass. KDP's Online Previewer is the best fit for this Linux host:
 it runs from an authorized KDP Bookshelf draft and previews tablet, phone and
 Kindle-reader modes, including a quality check.
 
@@ -47,9 +47,9 @@ Recommended order:
 2. Run the Online Previewer on phone, tablet and Kindle-reader modes; inspect
    cover/title page, TOC, opening/middle/end chapters, long headings, lists,
    links, images and any citations. Run the quality check and record defects.
-3. If desktop access is easier, use Kindle Previewer 4 on Windows/macOS with
-   the same hash and record the version, device/orientation/font matrix and
-   auto-advance result.
+3. If desktop access is easier, use the current Kindle Previewer desktop app
+   on Windows or macOS with the same hash and record the version,
+   device/orientation/font matrix and auto-advance result.
 4. Fix any defects in Ebook Factory, regenerate a new immutable package, and
    repeat. Record `kindle_preview_verified` only against the exact final hash.
 
