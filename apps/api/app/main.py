@@ -414,6 +414,7 @@ class ArtifactView(BaseModel):
     byte_count: int
     sha256: str
     validation_state: str
+    download_path: str
 
 
 class ReviewFindingView(BaseModel):
@@ -1292,9 +1293,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     byte_count=artifact.byte_count,
                     sha256=artifact.sha256,
                     validation_state=artifact.validation_state,
+                    download_path=f"/projects/{project_id}/artifacts/{artifact.id}/download",
                 )
                 for artifact in rows
             ]
+        finally:
+            session.close()
+
+    @application.get("/projects/{project_id}/artifacts/{artifact_id}/download", tags=["publishing"])
+    def download_artifact(project_id: UUID, artifact_id: UUID) -> FileResponse:
+        session = database.session()
+        try:
+            artifact = session.scalar(
+                select(Artifact)
+                .where(
+                    Artifact.id == artifact_id,
+                    or_(
+                        Artifact.run_id.in_(select(ProductionRun.id).where(ProductionRun.project_id == project_id)),
+                        Artifact.revision_id.in_(
+                            select(SectionRevision.id)
+                            .join(Section, Section.id == SectionRevision.section_id)
+                            .where(Section.project_id == project_id)
+                        ),
+                    ),
+                )
+            )
+            if artifact is None:
+                raise HTTPException(status_code=404, detail="artifact not found")
+            path = safe_artifact_path(resolved_settings.artifact_root, artifact.relative_path)
+            if not path.is_file() or path.stat().st_size != artifact.byte_count:
+                raise HTTPException(status_code=409, detail="artifact is not available")
+            return FileResponse(path, media_type=artifact.mime_type, filename=Path(artifact.relative_path).name)
         finally:
             session.close()
 

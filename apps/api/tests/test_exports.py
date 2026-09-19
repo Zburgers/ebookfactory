@@ -1,4 +1,5 @@
 import io
+import hashlib
 import zipfile
 from pathlib import Path
 from uuid import uuid4
@@ -134,15 +135,22 @@ def test_project_artifacts_includes_production_run_outputs(tmp_path: Path) -> No
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)
     project_id, brief_id, run_id = uuid4(), uuid4(), uuid4()
+    artifact_root = tmp_path / "artifacts"
+    artifact_root.joinpath(str(run_id)).mkdir(parents=True)
+    content = b"\x89PNG\r\n\x1a\n"
+    artifact_root.joinpath(str(run_id), "cover.png").write_bytes(content)
     with Session(engine) as session:
         session.add(Project(id=project_id, title="Production Artifacts", profile="fiction", language="en"))
         session.add(BriefRevision(id=brief_id, project_id=project_id, revision=1, structured_brief={}, content_hash="b" * 64))
         session.add(ProductionRun(id=run_id, project_id=project_id, approved_brief_id=brief_id))
-        session.add(Artifact(run_id=run_id, relative_path=f"{run_id}/cover.png", mime_type="image/png", byte_count=8, sha256="c" * 64))
+        session.add(Artifact(run_id=run_id, relative_path=f"{run_id}/cover.png", mime_type="image/png", byte_count=8, sha256=hashlib.sha256(content).hexdigest()))
         session.commit()
 
-    with TestClient(create_app(Settings(database_url=database_url, owner_token="owner")), headers={"Authorization": "Bearer owner"}) as client:
+    with TestClient(create_app(Settings(database_url=database_url, owner_token="owner", artifact_root=artifact_root)), headers={"Authorization": "Bearer owner"}) as client:
         response = client.get(f"/projects/{project_id}/artifacts")
+        download = client.get(response.json()[0]["download_path"])
 
     assert response.status_code == 200
     assert response.json()[0]["relative_path"] == f"{run_id}/cover.png"
+    assert download.status_code == 200
+    assert download.content == content
