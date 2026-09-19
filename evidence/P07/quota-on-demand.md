@@ -29,3 +29,8 @@ responses with source `codexctl status` and distinct fetch timestamps
 the CLI values changed from the earlier observation, confirming that the panel
 is not replaying a stored snapshot. The PostgreSQL `quota_snapshots` count was
 unchanged at `2` before and after the request.
+
+Final post-restart check at `2026-09-19T01:29Z` repeated the same boundary:
+two responses both reported `codexctl status`, had distinct fetch timestamps
+(`01:29:21.570Z` and `01:29:23.112Z`), returned two windows, and left the
+`quota_snapshots` count at `2`.
