@@ -34,6 +34,13 @@ task usage rows (1 outline, 11 section-draft, 1 production assembly, 1
 review). The live quota snapshot row count remained 2; live quota reads are
 not used as durable book state.
 
+After the replay and service restart, two authenticated `/quota/live` reads
+again executed `codexctl status` live: `2026-09-19T04:09:30.392017Z` and
+`2026-09-19T04:09:34.057742Z`, with PostgreSQL `quota_snapshots` unchanged at
+`2 -> 2`. The current parsed response reported 5h `23% used / 77% remaining`
+and 7d `47% used / 53% remaining`; account identity remains redacted to
+`account_index`.
+
 This closes the real multi-section 50-page outline → section drafts → assembly
 → review evidence for H4's long-book portion. EPUBCheck/Kindle, art review,
 and the separate Telegram same-conversation gate remain open.
