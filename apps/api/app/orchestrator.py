@@ -19,7 +19,8 @@ def _sanitize_error(error: str) -> str:
 
     value = " ".join(error.split())
     value = re.sub(r"(?i)\bBearer\s+[^\s,;]+", "Bearer [redacted]", value)
-    value = re.sub(r"(?i)(\b(?:api[_-]?key|token|password|secret)\s*[:=]\s*)[^\s,;]+", r"\1[redacted]", value)
+    value = re.sub(r"(?i)(\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|token|password|secret)\s*[:=]\s*)[^\s,;]+", r"\1[redacted]", value)
+    value = re.sub(r"(?i)\b(?:sk|rk)-[A-Za-z0-9_-]{16,}", "[redacted]", value)
     value = re.sub(r"(?i)(://)[^\s/@:]+:[^\s/@]+@", r"\1[redacted]@", value)
     return value[:500] or "unknown orchestrator failure"
 
@@ -72,6 +73,21 @@ def heartbeat_turn(session: Session, *, turn_id: UUID, worker_id: str, generatio
         turn = locked_turn(session, turn_id=turn_id, worker_id=worker_id, generation=generation)
         turn.lease_until = utc_now() + timedelta(seconds=lease_seconds)
         return turn
+
+
+def append_delta(session: Session, *, turn_id: UUID, worker_id: str, generation: int, delta: str) -> None:
+    """Persist one fenced assistant text delta for live dashboard replay."""
+
+    if not delta:
+        raise ValueError("orchestrator delta is empty")
+    with session.begin():
+        turn = locked_turn(session, turn_id=turn_id, worker_id=worker_id, generation=generation)
+        append_event(
+            session,
+            project_id=turn.project_id,
+            kind="orchestrator.turn.delta",
+            payload={"turn_id": str(turn.id), "delta": delta},
+        )
 
 
 def fail_turn(session: Session, *, turn_id: UUID, worker_id: str, generation: int, error: str) -> OrchestratorTurn:

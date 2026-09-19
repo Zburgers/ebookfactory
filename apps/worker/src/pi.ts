@@ -22,6 +22,7 @@ export function parsePiEvent(line) {
   try {
     const event = JSON.parse(line);
     const message = event.message;
+    const assistantMessageEvent = event.assistantMessageEvent;
     const isFinalAssistantMessage = event.type === "message_end" && message?.role === "assistant";
     const content = isFinalAssistantMessage ? message.content : event.type === "text_end" ? event.content : event.text;
     return {
@@ -29,6 +30,7 @@ export function parsePiEvent(line) {
       provider: event.provider ?? message?.provider,
       model: event.model ?? message?.model,
       usage: event.usage ?? message?.usage,
+      delta: event.type === "message_update" && assistantMessageEvent?.type === "text_delta" ? assistantMessageEvent.delta : "",
       text: isFinalAssistantMessage || event.type === "text_end" ? piContentToText(content) : "",
     };
   } catch {

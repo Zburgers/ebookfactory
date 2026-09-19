@@ -14,7 +14,17 @@ export function createOrchestratorExecutor({ baseUrl, token, workerId, provider 
     if (!configured || configured.protocol !== "pi-native") throw new Error(`provider ${provider} is not a supported pi-native app provider`);
     const model = configured.orchestration_model;
     if (!model) throw new Error(`configured provider ${provider} has no orchestration model`);
-    const result = await runProduction({ context, model, signal });
+    const result = await runProduction({
+      context,
+      model,
+      signal,
+      onTextDelta: (delta) => requestJson(baseUrl, token, "/private/orchestrator/delta", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ turn_id: lease.turn_id, worker_id: workerId, generation: lease.generation, delta }),
+        signal,
+      }),
+    });
     const suffix = model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model;
     if ((result.provider && result.provider !== provider) || (result.model && result.model !== model && result.model !== suffix)) {
       throw new Error("Pi production provider or model conflicted with saved configuration");

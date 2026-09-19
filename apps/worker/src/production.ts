@@ -31,7 +31,7 @@ export function buildProductionPrompt(context) {
   ].join("\n\n");
 }
 
-export function runPiProduction({ context, model, command = "pi", signal, spawnProcess = spawn }) {
+export function runPiProduction({ context, model, command = "pi", signal, spawnProcess = spawn, onTextDelta }) {
   const callId = randomUUID();
   const args = buildPiArgs({ prompt: buildProductionPrompt(context), systemPrompt: SYSTEM_PROMPT, model, thinking: "low" });
   return new Promise((resolve, reject) => {
@@ -42,6 +42,8 @@ export function runPiProduction({ context, model, command = "pi", signal, spawnP
     let outputBytes = 0;
     let settled = false;
     let killTimer;
+    let deltaQueue = Promise.resolve();
+    let deltaError = null;
     const cleanup = () => {
       signal?.removeEventListener("abort", abort);
       if (killTimer) clearTimeout(killTimer);
@@ -76,27 +78,39 @@ export function runPiProduction({ context, model, command = "pi", signal, spawnP
       stdout += textChunk;
       for (const line of stdout.split("\n").slice(0, -1)) {
         const event = parsePiEvent(line);
-        if (event) events.push(event);
+        if (event) {
+          events.push(event);
+          if (event.delta && onTextDelta) {
+            deltaQueue = deltaQueue.then(() => onTextDelta(event.delta)).catch((error) => {
+              deltaError ||= error;
+            });
+          }
+        }
       }
       stdout = stdout.split("\n").at(-1) || "";
     };
     const onStderr = (chunk) => { if (!settled) stderr = `${stderr}${chunk}`.slice(-1000); };
     const onError = (error) => settleReject(error);
-    const onClose = (code) => {
+    const onClose = async (code) => {
       if (settled || signal?.aborted) return settleReject(new Error("Pi production aborted"));
       if (code !== 0) return settleReject(new Error(`Pi production exited with code ${code}: ${stderr.replaceAll(/\s+/g, " ").trim()}`));
-      const text = events.map((event) => event.text).filter(Boolean).join("\n").trim();
+      await deltaQueue;
+      if (deltaError) return settleReject(deltaError);
+      const finalEvent = [...events].reverse().find((event) => event.type === "message_end" && event.text);
+      const completedText = finalEvent?.text || [...events].reverse().find((event) => event.type === "text_end" && event.text)?.text;
+      const streamedText = events.map((event) => event.delta).filter(Boolean).join("");
+      const text = (completedText || streamedText).trim();
       if (!text) return settleReject(new Error("Pi production returned no manuscript text"));
       if (Buffer.byteLength(text) > MAX_OUTPUT_BYTES) return rejectOutputLimit();
-      const finalEvent = [...events].reverse().find((event) => event.usage || event.model || event.provider);
-      const usage = finalEvent?.usage;
+      const usageEvent = [...events].reverse().find((event) => event.usage || event.model || event.provider);
+      const usage = usageEvent?.usage;
       settled = true;
       cleanup();
       resolve({
         callId,
         text,
-        provider: finalEvent?.provider || null,
-        model: finalEvent?.model || model || null,
+        provider: usageEvent?.provider || null,
+        model: usageEvent?.model || model || null,
         usage: usage ? {
           input_tokens: usage.input ?? null,
           output_tokens: usage.output ?? null,

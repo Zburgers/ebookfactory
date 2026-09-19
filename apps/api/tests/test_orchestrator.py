@@ -184,7 +184,7 @@ def test_orchestrator_failure_requeues_then_terminally_publishes_owner_error(tmp
         terminal = client.post(
             "/private/orchestrator/failure",
             headers=headers,
-            json={**third, "error": "Bearer secret-value api_key=secret-value"},
+            json={**third, "error": "Bearer secret-value api_key=secret-value access_token: \"secret-value\" client_secret=secret-value sk-12345678901234567890"},
         )
         assert terminal.status_code == 200
         assert terminal.json()["state"] == "failed"
@@ -200,6 +200,8 @@ def test_orchestrator_failure_requeues_then_terminally_publishes_owner_error(tmp
         failure_events = [event for event in events if event.kind == "orchestrator.turn.failed"]
         assert "Bearer secret-value" not in str(failure_events[-1].data)
         assert "api_key=secret-value" not in str(failure_events[-1].data)
+        assert "secret-value" not in str(failure_events[-1].data)
+        assert "sk-12345678901234567890" not in str(failure_events[-1].data)
         assert "[redacted]" in str(failure_events[-1].data)
 
 
@@ -228,3 +230,32 @@ def test_orchestrator_failure_rejects_stale_fence_and_is_idempotent_after_termin
         assert replay.json()["state"] == "failed"
     with Session(engine) as session:
         assert len(session.scalars(select(Message).where(Message.conversation_id == conversation_id, Message.role == "assistant")).all()) == 1
+
+
+def test_orchestrator_delta_is_durable_and_fenced(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'orchestrator-delta.db'}"
+    engine = create_engine(database_url); Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        project = Project(id=uuid4(), title="Delta", profile="fiction", language="en")
+        conversation = Conversation(id=uuid4(), project_id=project.id, channel="dashboard"); project.conversation_id = conversation.id
+        project_id, conversation_id = project.id, conversation.id
+        session.add_all([project, conversation]); session.commit()
+
+    with TestClient(create_app(Settings(database_url=database_url, worker_token="worker", owner_token="owner")), headers={"Authorization": "Bearer owner"}) as client:
+        created = client.post(f"/projects/{project_id}/messages", json={"conversation_id": str(conversation_id), "content": "Stream this"}).json()
+        worker_headers = {"X-Ebook-Worker-Token": "worker"}
+        lease = client.post("/private/orchestrator/claim", json={"worker_id": "pi-1"}, headers=worker_headers).json()
+        delta = client.post("/private/orchestrator/delta", headers=worker_headers, json={**lease, "delta": "Hello "})
+        assert delta.status_code == 200
+        stream = client.get(f"/projects/{project_id}/events/stream?after=0")
+        assert stream.status_code == 200
+        assert "orchestrator.turn.delta" in stream.text
+        assert '"delta": "Hello "' in stream.text
+        stale = client.post("/private/orchestrator/delta", headers=worker_headers, json={**lease, "generation": lease["generation"] + 1, "delta": "bad"})
+        assert stale.status_code == 409
+
+    with Session(engine) as session:
+        events = session.scalars(select(Event).where(Event.project_id == project_id, Event.kind == "orchestrator.turn.delta")).all()
+        assert len(events) == 1
+        assert events[0].data["delta"] == "Hello "
+        assert events[0].data["turn_id"] == created["turn_id"]

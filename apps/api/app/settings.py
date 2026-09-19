@@ -30,6 +30,10 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("EBOOK_FACTORY_OWNER_TOKEN", "OWNER_TOKEN"),
     )
+    auth_rate_limit_file: Path | None = Field(
+        default=Path("var/auth-rate-limit.json"),
+        validation_alias=AliasChoices("EBOOK_FACTORY_AUTH_RATE_LIMIT_FILE", "AUTH_RATE_LIMIT_FILE"),
+    )
     telegram_bot_token: str | None = Field(
         default=None,
         validation_alias=AliasChoices("EBOOK_FACTORY_TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_TOKEN"),

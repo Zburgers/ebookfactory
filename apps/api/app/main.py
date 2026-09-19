@@ -6,6 +6,7 @@ from decimal import Decimal
 import json
 import hashlib
 import base64
+import fcntl
 import threading
 import time
 from pathlib import Path
@@ -23,7 +24,7 @@ from sqlalchemy.orm import aliased
 
 from app.database import Database
 from app.conversations import append_message, create_project
-from app.orchestrator import claim_turn, complete_turn, enqueue_turn, fail_turn, heartbeat_turn, locked_turn
+from app.orchestrator import append_delta, claim_turn, complete_turn, enqueue_turn, fail_turn, heartbeat_turn, locked_turn
 from app.documents import create_brief_revision, create_section, save_section_revision
 from app.exports import MIME_TYPES, PACKAGE_FILES, export_book
 from app.events import replay_events
@@ -264,6 +265,13 @@ class OrchestratorResultRequest(BaseModel):
     model: str = Field(min_length=1, max_length=128)
     call_id: UUID
     usage: dict[str, int | None] | None = None
+
+
+class OrchestratorDeltaRequest(BaseModel):
+    turn_id: UUID
+    worker_id: str = Field(min_length=1, max_length=128)
+    generation: int = Field(ge=1)
+    delta: str = Field(min_length=1, max_length=8192)
 
 
 class OrchestratorHeartbeatRequest(BaseModel):
@@ -570,6 +578,57 @@ LOGIN_WINDOW_SECONDS = 60.0
 LOGIN_MAX_FAILURES = 5
 
 
+def _update_login_attempts(application: FastAPI, client_host: str, now: float, *, outcome: str) -> tuple[int, int]:
+    """Update a short-lived host-wide login ledger shared by bound listeners."""
+
+    path = application.state.settings.auth_rate_limit_file
+    if path is None:
+        with application.state.login_attempts_lock:
+            attempts = application.state.login_attempts
+            for host, timestamps in list(attempts.items()):
+                attempts[host] = [timestamp for timestamp in timestamps if now - timestamp < LOGIN_WINDOW_SECONDS]
+                if not attempts[host]:
+                    del attempts[host]
+            recent = attempts.setdefault(client_host, [])
+            if outcome == "failure":
+                recent.append(now)
+            elif outcome == "success":
+                attempts.pop(client_host, None)
+            retry_after = max(1, int(LOGIN_WINDOW_SECONDS - (now - recent[0]))) if recent else 0
+            return len(recent), retry_after
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            handle.seek(0)
+            try:
+                attempts = json.load(handle)
+            except (json.JSONDecodeError, OSError):
+                attempts = {}
+            if not isinstance(attempts, dict):
+                attempts = {}
+            attempts = {
+                host: [float(timestamp) for timestamp in timestamps if now - float(timestamp) < LOGIN_WINDOW_SECONDS]
+                for host, timestamps in attempts.items()
+                if isinstance(timestamps, list)
+            }
+            recent = attempts.setdefault(client_host, [])
+            if outcome == "failure":
+                recent.append(now)
+            elif outcome == "success":
+                attempts.pop(client_host, None)
+                recent = []
+            handle.seek(0)
+            handle.truncate()
+            json.dump(attempts, handle, separators=(",", ":"))
+            handle.flush()
+            retry_after = max(1, int(LOGIN_WINDOW_SECONDS - (now - recent[0]))) if recent else 0
+            return len(recent), retry_after
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Create the API application with explicit settings for tests and workers."""
 
@@ -610,14 +669,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         schemes = schema.setdefault("components", {}).setdefault("securitySchemes", {})
         schemes["OwnerBearer"] = {"type": "http", "scheme": "bearer"}
         schemes["WorkerToken"] = {"type": "apiKey", "in": "header", "name": "X-Ebook-Worker-Token"}
+        schemes["ToolCapability"] = {"type": "apiKey", "in": "header", "name": "X-Tool-Capability"}
         for path, operations in schema.get("paths", {}).items():
-            if _worker_path(path):
-                security = [{"WorkerToken": []}]
-            elif _owner_exempt_path(path):
-                security = []
-            else:
-                security = [{"OwnerBearer": []}]
-            for operation in operations.values():
+            for method, operation in operations.items():
+                if path.startswith("/private/tools/"):
+                    security = [{"ToolCapability": []}]
+                elif path in {"/usage/calls", "/usage/calls/{call_id}/finalize"} and method == "post":
+                    security = [{"OwnerBearer": [], "WorkerToken": []}]
+                elif _worker_path(path):
+                    security = [{"WorkerToken": []}]
+                elif _owner_exempt_path(path):
+                    security = []
+                else:
+                    security = [{"OwnerBearer": []}]
                 if isinstance(operation, dict):
                     operation["security"] = security
         application.openapi_schema = schema
@@ -665,23 +729,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not resolved_settings.owner_token:
             raise HTTPException(status_code=503, detail="owner authentication is not configured")
         client_host = request.client.host if request.client else "unknown"
-        now = time.monotonic()
-        with application.state.login_attempts_lock:
-            attempts = application.state.login_attempts
-            for host, timestamps in list(attempts.items()):
-                attempts[host] = [timestamp for timestamp in timestamps if now - timestamp < LOGIN_WINDOW_SECONDS]
-                if not attempts[host]:
-                    del attempts[host]
-            recent_failures = attempts.get(client_host, [])
-            if len(recent_failures) >= LOGIN_MAX_FAILURES:
-                retry_after = max(1, int(LOGIN_WINDOW_SECONDS - (now - recent_failures[0])))
-                raise HTTPException(status_code=429, detail="too many invalid login attempts", headers={"Retry-After": str(retry_after)})
+        now = time.time()
+        recent_count, retry_after = _update_login_attempts(application, client_host, now, outcome="check")
+        if recent_count >= LOGIN_MAX_FAILURES:
+            raise HTTPException(status_code=429, detail="too many invalid login attempts", headers={"Retry-After": str(retry_after)})
         if not _owner_token_matches(resolved_settings, payload.token):
-            with application.state.login_attempts_lock:
-                application.state.login_attempts.setdefault(client_host, []).append(now)
+            _update_login_attempts(application, client_host, now, outcome="failure")
             raise HTTPException(status_code=401, detail="invalid owner token")
-        with application.state.login_attempts_lock:
-            application.state.login_attempts.pop(client_host, None)
+        _update_login_attempts(application, client_host, now, outcome="success")
         return OwnerAuthResponse(authenticated=True)
 
     @application.get("/auth/verify", response_model=OwnerAuthResponse, tags=["authentication"])
@@ -900,6 +955,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             turn = fail_turn(session, turn_id=payload.turn_id, worker_id=payload.worker_id, generation=payload.generation, error=payload.error)
             return {"state": turn.state}
+        except ValueError as exc:
+            session.rollback(); raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            session.close()
+
+    @application.post("/private/orchestrator/delta", tags=["private-worker"])
+    def orchestrator_delta(payload: OrchestratorDeltaRequest, x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token")) -> dict[str, bool]:
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
+        session = database.session()
+        try:
+            append_delta(session, turn_id=payload.turn_id, worker_id=payload.worker_id, generation=payload.generation, delta=payload.delta)
+            return {"accepted": True}
         except ValueError as exc:
             session.rollback(); raise HTTPException(status_code=409, detail=str(exc)) from exc
         finally:
@@ -1468,31 +1535,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             session.close()
 
     @application.get("/projects/{project_id}/events/stream")
-    def events_stream(project_id: UUID, after: int = 0, limit: int = 100) -> StreamingResponse:
-        """Replay a bounded event cursor as SSE, then close for safe reconnect."""
-
-        session = database.session()
-        try:
-            replay = replay_events(session, project_id=project_id, after_id=after, limit=limit)
-            envelopes = [
-                {
-                    "id": event.id,
-                    "version": 1,
-                    "timestamp": event.created_at,
-                    "project_id": event.project_id,
-                    "run_id": event.run_id,
-                    "task_id": event.task_id,
-                    "kind": event.kind,
-                    "payload": event.data,
-                }
-                for event in replay
-            ]
-        finally:
-            session.close()
+    def events_stream(project_id: UUID, after: int = 0, limit: int = 100, follow: bool = False) -> StreamingResponse:
+        """Replay events and optionally follow new durable events for a short reconnect window."""
 
         def stream():
-            for envelope in envelopes:
-                yield f"id: {envelope['id']}\nevent: {envelope['kind']}\ndata: {json.dumps(envelope, default=str)}\n\n"
+            cursor = after
+            deadline = time.monotonic() + 25 if follow else time.monotonic()
+            idle_ticks = 0
+            while True:
+                session = database.session()
+                try:
+                    replay = replay_events(session, project_id=project_id, after_id=cursor, limit=limit)
+                    envelopes = [
+                        {
+                            "id": event.id,
+                            "version": 1,
+                            "timestamp": event.created_at,
+                            "project_id": event.project_id,
+                            "run_id": event.run_id,
+                            "task_id": event.task_id,
+                            "kind": event.kind,
+                            "payload": event.data,
+                        }
+                        for event in replay
+                    ]
+                finally:
+                    session.close()
+                if envelopes:
+                    for envelope in envelopes:
+                        cursor = max(cursor, envelope["id"])
+                        yield f"id: {envelope['id']}\nevent: {envelope['kind']}\ndata: {json.dumps(envelope, default=str)}\n\n"
+                    idle_ticks = 0
+                    if not follow:
+                        break
+                    if time.monotonic() >= deadline:
+                        break
+                    continue
+                if not follow or time.monotonic() >= deadline:
+                    break
+                idle_ticks += 1
+                if idle_ticks % 10 == 0:
+                    yield ": keep-alive\n\n"
+                time.sleep(0.25)
 
         return StreamingResponse(
             stream(),
