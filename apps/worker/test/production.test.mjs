@@ -41,3 +41,16 @@ test("review prompt consumes bounded persisted section revisions", () => {
   assert.match(prompt, /rev1/);
   assert.match(prompt, /A persisted section/);
 });
+
+test("section-draft prompt carries only its bounded outline input", () => {
+  const prompt = buildProductionPrompt({ project_id: "p", run_id: "r", task_type: "section-draft", brief: { audience: "readers" }, budget: {}, section: { heading: "Opening", outline: "Establish the promise." } });
+  assert.match(prompt, /section draft/);
+  assert.match(prompt, /Establish the promise/);
+  assert.doesNotMatch(prompt, /review_sections/);
+});
+
+test("assembly task asks for server-side persisted section revisions", () => {
+  const prompt = buildProductionPrompt({ project_id: "p", run_id: "r", task_type: "production", assembly: true, brief: {}, budget: {} });
+  assert.match(prompt, /persisted section revisions/);
+  assert.doesNotMatch(prompt, /complete prose/);
+});

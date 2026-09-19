@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from app.conversations import append_message, create_project
 from app.documents import create_section, save_section_revision
+from app.production import assemble_section_revisions, expand_outline_sections, parse_production_sections
 from app.events import replay_events
 from app.jobs import (
     CancellationRejected,
@@ -34,6 +35,12 @@ from app.settings import Settings
 
 
 DATABASE_URL = os.environ.get("EBOOK_FACTORY_TEST_DATABASE_URL") or os.environ.get("EBOOK_FACTORY_DATABASE_URL")
+
+
+def test_non_page_one_section_outline_remains_compatible() -> None:
+    parsed = parse_production_sections("## Opening\nA single valid section.", page_target=False)
+    assert len(parsed) == 1
+    assert parsed[0].heading == "Opening"
 
 
 @pytest.fixture()
@@ -142,6 +149,93 @@ def test_production_claim_waits_for_outline_dependency(database_session: Session
     assert claim_job(database_session, worker_id="dependency-gate") is None
 
 
+def test_outline_result_expands_bounded_section_tasks_and_rewires_production(database_session: Session) -> None:
+    brief = database_session.scalar(select(BriefRevision).where(BriefRevision.project_id == database_session.info["fixture_project_id"]))
+    assert brief is not None
+    project_id, brief_id, content_hash = brief.project_id, brief.id, brief.content_hash
+    database_session.commit()
+    approval = approve_brief_and_enqueue(database_session, project_id=project_id, brief_id=brief_id, expected_content_hash=content_hash, budget={"max_turns": 8})
+    outline = database_session.scalar(select(Task).where(Task.run_id == approval.run_id, Task.task_type == "outline"))
+    production = database_session.get(Task, approval.task_id)
+    assert outline is not None and production is not None
+    sections = expand_outline_sections(database_session, outline_task=outline, production_task=production, outline_text="\n".join(f"## Section {i}\nNotes {i}" for i in range(1, 11)))
+    assert len(sections) == 10
+    assert len(production.dependencies) == 10
+    assert all(task.task_type == "section-draft" for task in sections)
+    assert len(database_session.scalars(select(Job).where(Job.task_id.in_([task.id for task in sections]))).all()) == 10
+
+
+def test_section_assembly_uses_only_persisted_revisions(database_session: Session) -> None:
+    project_id = database_session.info["fixture_project_id"]
+    database_session.commit()
+    first = create_section(database_session, project_id=project_id, order_no=1, heading="Opening")
+    second = create_section(database_session, project_id=project_id, order_no=2, heading="Close")
+    save_section_revision(database_session, section_id=first, content="First bounded prose.", summary="worker")
+    save_section_revision(database_session, section_id=second, content="Second bounded prose.", summary="worker")
+    database_session.commit()
+    run = ProductionRun(project_id=project_id, approved_brief_id=database_session.scalar(select(BriefRevision.id).where(BriefRevision.project_id == project_id)), budget={}, state="producing")
+    database_session.add(run)
+    database_session.flush()
+    first_task = Task(run_id=run.id, task_type="section-draft", status="succeeded", result_refs={"section_id": str(first)})
+    second_task = Task(run_id=run.id, task_type="section-draft", status="succeeded", result_refs={"section_id": str(second)})
+    database_session.add_all([first_task, second_task])
+    database_session.commit()
+    assert assemble_section_revisions(database_session, project_id=project_id, section_task_ids=[first_task.id, second_task.id]) == "## Opening\n\nFirst bounded prose.\n\n## Close\n\nSecond bounded prose."
+
+
+def test_section_assembly_uses_the_revision_fenced_to_each_task(database_session: Session) -> None:
+    project_id = database_session.info["fixture_project_id"]
+    database_session.commit()
+    section_id = create_section(database_session, project_id=project_id, order_no=1, heading="Opening")
+    first = save_section_revision(database_session, section_id=section_id, content="First draft.", summary="worker")
+    second = save_section_revision(database_session, section_id=section_id, content="Later unrelated draft.", summary="editor")
+    database_session.commit()
+    run = ProductionRun(
+        project_id=project_id,
+        approved_brief_id=database_session.scalar(select(BriefRevision.id).where(BriefRevision.project_id == project_id)),
+        budget={},
+        state="producing",
+    )
+    database_session.add(run)
+    database_session.flush()
+    task = Task(
+        run_id=run.id,
+        task_type="section-draft",
+        status="succeeded",
+        result_refs={"section_id": str(section_id), "revision_id": str(first.revision_id)},
+    )
+    database_session.add(task)
+    database_session.commit()
+    assert assemble_section_revisions(database_session, project_id=project_id, section_task_ids=[task.id]) == "## Opening\n\nFirst draft."
+
+
+def test_section_assembly_rejects_dependencies_from_another_run(database_session: Session) -> None:
+    project_id = database_session.info["fixture_project_id"]
+    brief_id = database_session.scalar(select(BriefRevision.id).where(BriefRevision.project_id == project_id))
+    database_session.commit()
+    section_id = create_section(database_session, project_id=project_id, order_no=1, heading="Opening")
+    revision = save_section_revision(database_session, section_id=section_id, content="Scoped draft.", summary="worker")
+    first_run = ProductionRun(project_id=project_id, approved_brief_id=brief_id, budget={}, state="producing")
+    second_run = ProductionRun(project_id=project_id, approved_brief_id=brief_id, budget={}, state="producing")
+    database_session.add_all([first_run, second_run])
+    database_session.flush()
+    other_run_task = Task(
+        run_id=second_run.id,
+        task_type="section-draft",
+        status="succeeded",
+        result_refs={"section_id": str(section_id), "revision_id": str(revision.revision_id)},
+    )
+    database_session.add(other_run_task)
+    database_session.commit()
+    with pytest.raises(ValueError, match="same production run"):
+        assemble_section_revisions(
+            database_session,
+            project_id=project_id,
+            run_id=first_run.id,
+            section_task_ids=[other_run_task.id],
+        )
+
+
 def test_terminal_outline_failure_fails_dependents_and_run(database_session: Session) -> None:
     brief = database_session.scalar(
         select(BriefRevision).where(BriefRevision.project_id == database_session.info["fixture_project_id"])
@@ -156,6 +250,19 @@ def test_terminal_outline_failure_fails_dependents_and_run(database_session: Ses
     database_session.commit()
     outline_lease = claim_job(database_session, worker_id="failing-outline", lease_seconds=60)
     assert outline_lease is not None
+    sibling_task = Task(run_id=approval.run_id, task_type="section-draft", dependencies=[], status="queued")
+    database_session.add(sibling_task)
+    database_session.flush()
+    database_session.add(Job(
+        task_id=sibling_task.id,
+        job_type="zzz-sibling.start",
+        payload={"run_id": str(approval.run_id), "cancellation_epoch": 0},
+        dedupe_key=f"test-sibling:{sibling_task.id}",
+        state="queued",
+    ))
+    database_session.commit()
+    sibling_lease = claim_job(database_session, worker_id="sibling-worker", lease_seconds=60)
+    assert sibling_lease is not None
     fail_job(
         database_session,
         job_id=outline_lease.job_id,
@@ -181,6 +288,8 @@ def test_terminal_outline_failure_fails_dependents_and_run(database_session: Ses
     ).all()
     assert {event.task_id for event in failure_events} >= {production.id, review.id}
     assert any(event.task_id == review.id and event.data.get("dependency_task_id") == str(production.id) for event in failure_events)
+    sibling_attempt = database_session.scalar(select(Attempt).where(Attempt.task_id == sibling_task.id))
+    assert sibling_attempt is not None and sibling_attempt.status == "failed" and sibling_attempt.finished_at is not None
     database_session.commit()
     assert claim_job(database_session, worker_id="after-outline-failure") is None
 
@@ -232,6 +341,67 @@ def test_outline_task_result_is_fenced_and_flows_into_production_context(databas
         )
         assert production_context.json()["task_type"] == "production"
         assert production_context.json()["outline"]["result"] == "## Opening\nA bounded outline."
+
+
+def test_task_result_budget_block_is_durable(database_session: Session) -> None:
+    """A rejected callback must commit the blocked state before returning 409."""
+
+    assert DATABASE_URL is not None
+    with TestClient(
+        create_app(Settings(database_url=DATABASE_URL, worker_token="budget-worker-token", owner_token="test-owner-token")),
+        headers={"Authorization": "Bearer test-owner-token"},
+    ) as client:
+        project_response = client.post("/projects", json={"title": "Budget callback", "profile": "nonfiction", "language": "en"})
+        assert project_response.status_code == 201
+        project_id = UUID(project_response.json()["project_id"])
+        database_session.info["cleanup_project_ids"].add(project_id)
+        brief_response = client.post(
+            f"/projects/{project_id}/briefs",
+            json={"structured_brief": {"promise_or_premise": "budget callback"}},
+        )
+        assert brief_response.status_code == 201
+        brief = brief_response.json()
+        approval = client.post(
+            f"/projects/{project_id}/briefs/{brief['brief_id']}/approve",
+            json={"expected_content_hash": brief["content_hash"], "budget": {"max_turns": 0}},
+        )
+        assert approval.status_code in {200, 201}
+        headers = {"X-Ebook-Worker-Token": "budget-worker-token"}
+        lease_response = client.post(
+            "/private/worker/claim",
+            json={"worker_id": "budget-worker"},
+            headers=headers,
+        )
+        assert lease_response.status_code == 200
+        lease = lease_response.json()
+        result = client.post(
+            "/private/worker/task-result",
+            headers=headers,
+            json={
+                "job_id": lease["job_id"],
+                "worker_id": "budget-worker",
+                "generation": lease["generation"],
+                "result": "## Opening\nA blocked outline.",
+                "provider": "test-provider",
+                "model": "test-model",
+                "call_id": str(uuid4()),
+                "usage": {"input_tokens": 2, "output_tokens": 3},
+            },
+        )
+        assert result.status_code == 409
+        assert "task budget blocked" in result.json()["detail"]
+
+    database_session.expire_all()
+    run_id = UUID(approval.json()["run_id"])
+    run = database_session.get(ProductionRun, run_id)
+    project = database_session.get(Project, project_id)
+    assert run is not None and run.state == "blocked"
+    assert project is not None and project.state == "blocked"
+    outline = database_session.scalar(select(Task).where(Task.run_id == run_id, Task.task_type == "outline"))
+    assert outline is not None and outline.status == "blocked"
+    job = database_session.scalar(select(Job).where(Job.task_id == outline.id))
+    assert job is not None and job.state == "blocked"
+    assert database_session.scalar(select(UsageCall).where(UsageCall.run_id == run_id)) is None
 
 
 def test_api_project_brief_and_approval_boundary(database_session: Session) -> None:
@@ -400,8 +570,30 @@ def test_review_stage_is_ordered_bounded_and_finalizes_run(database_session: Ses
         assert revision is not None
         revision.content = "C" * (64 * 1024)
         database_session.commit()
+        foreign_run = ProductionRun(project_id=project_id, approved_brief_id=UUID(brief["brief_id"]), budget={}, state="producing")
+        database_session.add(foreign_run)
+        database_session.flush()
+        foreign_task = Task(
+            run_id=foreign_run.id,
+            task_type="section-draft",
+            status="succeeded",
+            result_refs={"section_id": str(section.id), "revision_id": str(revision.id)},
+        )
+        database_session.add(foreign_task)
+        database_session.flush()
+        production_task = database_session.get(Task, UUID(production["task_id"]))
+        assert production_task is not None
+        production_task.dependencies = [str(foreign_task.id)]
+        database_session.commit()
         review = claim_for_run()
         assert review
+        invalid_review_context = client.get(
+            f"/private/worker/jobs/{review['job_id']}/context",
+            headers={**headers, "X-Worker-ID": "review-worker", "X-Generation": str(review["generation"])},
+        )
+        assert invalid_review_context.status_code == 409
+        production_task.dependencies = []
+        database_session.commit()
         review_context = client.get(f"/private/worker/jobs/{review['job_id']}/context", headers={**headers, "X-Worker-ID": "review-worker", "X-Generation": str(review["generation"])}).json()
         assert review_context["task_type"] == "review"
         assert len(review_context["review_sections"][0]["heading"].encode()) == 512

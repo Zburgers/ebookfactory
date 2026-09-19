@@ -30,6 +30,99 @@ class ParsedSection:
     content: str
 
 
+def expand_outline_sections(session: Session, *, outline_task: Task, production_task: Task, outline_text: str) -> list[Task]:
+    """Create stable section identities/jobs and gate production on every section."""
+    run = session.get(ProductionRun, outline_task.run_id)
+    if run is None:
+        raise ValueError("production run not found")
+    brief = session.get(BriefRevision, run.approved_brief_id)
+    page_target = bool(brief and brief.structured_brief.get("target_pages"))
+    parsed = parse_production_sections(outline_text, page_target=page_target)
+    minimum, maximum = (8, 15) if page_target else (1, 15)
+    if not minimum <= len(parsed) <= maximum:
+        raise ValueError(f"outline must contain {minimum} to {maximum} sections")
+    # Preserve the legacy single-section word-target path. Multi-section and
+    # all page-target runs use durable section tasks; a one-section outline
+    # remains directly producible for existing callers.
+    if not page_target and len(parsed) == 1:
+        production_task.dependencies = []
+        return []
+    existing = {task.id: task for task in session.scalars(select(Task).where(Task.run_id == run.id)).all()}
+    sections: list[Task] = []
+    for order_no, item in enumerate(parsed, start=1):
+        section = session.scalar(select(Section).where(Section.project_id == run.project_id, Section.order_no == order_no).with_for_update())
+        if section is None:
+            section = Section(project_id=run.project_id, order_no=order_no, heading=item.heading)
+            session.add(section)
+            session.flush()
+        else:
+            section.heading = item.heading
+        task = next((candidate for candidate in existing.values() if candidate.task_type == "section-draft" and candidate.result_refs.get("section_id") == str(section.id)), None)
+        if task is None:
+            task = Task(run_id=run.id, parent_task_id=outline_task.id, task_type="section-draft", dependencies=[str(outline_task.id)], input_revision_ids=outline_task.input_revision_ids, result_refs={"section_id": str(section.id), "heading": item.heading, "outline": item.content}, status="queued")
+            session.add(task)
+            session.flush()
+            session.add(Job(task_id=task.id, job_type="section-draft.start", payload={"run_id": str(run.id), "task_id": str(task.id), "cancellation_epoch": run.cancellation_epoch}, dedupe_key=f"section:{outline_task.id}:{order_no}", state="queued"))
+        else:
+            task.result_refs = {**task.result_refs, "heading": item.heading, "outline": item.content}
+        sections.append(task)
+    production_task.dependencies = [str(task.id) for task in sections]
+    return sections
+
+
+def assemble_section_revisions(
+    session: Session,
+    *,
+    project_id: UUID,
+    run_id: UUID | None = None,
+    section_task_ids: list[UUID] | None = None,
+) -> str:
+    """Assemble only the current run's successful section-task dependencies."""
+    if not section_task_ids:
+        raise ValueError("assembly requires section task dependencies")
+    tasks = session.scalars(select(Task).where(Task.id.in_(section_task_ids))).all()
+    if len(tasks) != len(set(section_task_ids)) or any(
+        task.task_type != "section-draft"
+        or task.status != "succeeded"
+        or (run_id is not None and task.run_id != run_id)
+        for task in tasks
+    ):
+        if run_id is not None and any(task.run_id != run_id for task in tasks):
+            raise ValueError("assembly dependencies are not from the same production run")
+        raise ValueError("assembly section dependencies are incomplete")
+    section_ids: list[UUID] = []
+    ordered: list[tuple[Section, SectionRevision]] = []
+    for task in tasks:
+        value = task.result_refs.get("section_id")
+        if not value:
+            raise ValueError("section task has no stable section")
+        section_id = UUID(value)
+        section = session.get(Section, section_id)
+        if section is None or section.project_id != project_id:
+            raise ValueError("assembly section is outside the project")
+        revision_value = task.result_refs.get("revision_id")
+        if revision_value:
+            revision = session.get(SectionRevision, UUID(revision_value))
+            if revision is None or revision.section_id != section_id:
+                raise ValueError("assembly revision is not fenced to its section")
+        else:
+            # Legacy section tasks may not carry a revision reference; use the
+            # latest immutable revision only for that compatibility path.
+            revision = session.scalar(
+                select(SectionRevision)
+                .where(SectionRevision.section_id == section_id)
+                .order_by(SectionRevision.revision.desc())
+                .limit(1)
+            )
+            if revision is None:
+                raise ValueError("assembly section revisions are incomplete")
+        section_ids.append(section_id)
+        ordered.append((section, revision))
+    if len(ordered) != len(set(section_ids)):
+        raise ValueError("assembly section revisions are incomplete")
+    return "\n\n".join(f"## {section.heading}\n\n{revision.content}" for section, revision in sorted(ordered, key=lambda pair: pair[0].order_no))
+
+
 def validate_production_text(content: str, *, page_target: bool, target_pages: dict | None = None) -> None:
     if not content.strip():
         raise ValueError("production output is empty")

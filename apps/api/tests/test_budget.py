@@ -52,3 +52,5 @@ def test_budget_exhaustion_blocks_the_fenced_job_before_publication(tmp_path: Pa
         assert session.get(Job, lease.job_id).state == "blocked"
         assert session.get(ProductionRun, run.id).state == "blocked"
         assert session.scalar(select(Event.kind).where(Event.run_id == run.id).order_by(Event.id.desc())) == "job.blocked"
+        session.commit()
+        assert claim_job(session, worker_id="after-budget-block") is None

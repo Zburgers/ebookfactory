@@ -106,3 +106,37 @@ test("task roles choose their preferred configured models before fallbacks", asy
   }
   assert.deepEqual(observed, ["orchestrator", "drafter", "reviewer"]);
 });
+
+test("section-draft jobs use the task-result route with bounded section context", async () => {
+  const originalFetch = globalThis.fetch;
+  const received = [];
+  globalThis.fetch = async (url, options = {}) => {
+    if (url.endsWith("/context")) return new Response(JSON.stringify({ task_type: "section-draft", project_id: "p", run_id: "r", task_id: "t", job_id: "j", brief: {}, budget: {}, section: { heading: "Opening", outline: "Promise." } }), { status: 200 });
+    if (url.endsWith("/providers")) return new Response(JSON.stringify([{ provider: "openai-codex", scope: "app", protocol: "pi-native", drafting_model: "drafter" }]), { status: 200 });
+    received.push(JSON.parse(options.body));
+    return new Response(JSON.stringify({ accepted: true }), { status: 200 });
+  };
+  try {
+    const { createProductionExecutor } = await import("../src/runner.ts");
+    await createProductionExecutor({ baseUrl: "http://api", token: "secret", workerId: "w", runProduction: async ({ context }) => { assert.equal(context.section.heading, "Opening"); return { text: "Draft", callId: "section-call", model: "drafter" }; } })({ job_id: "j", generation: 1 });
+  } finally { globalThis.fetch = originalFetch; }
+  assert.equal(received[0].result, "Draft");
+});
+
+test("assembly-ready production jobs call the server assembly route without book content", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, options = {}) => {
+    requests.push({ url, options });
+    if (url.endsWith("/context")) return new Response(JSON.stringify({ task_type: "production", assembly: true, project_id: "p", run_id: "r", task_id: "t", job_id: "j", brief: {}, budget: {} }), { status: 200 });
+    if (url.endsWith("/providers")) return new Response(JSON.stringify([{ provider: "openai-codex", scope: "app", protocol: "pi-native", drafting_model: "drafter" }]), { status: 200 });
+    return new Response(JSON.stringify({ accepted: true }), { status: 200 });
+  };
+  try {
+    const { createProductionExecutor } = await import("../src/runner.ts");
+    await createProductionExecutor({ baseUrl: "http://api", token: "secret", workerId: "w", runProduction: async () => { throw new Error("provider must not run for assembly"); } })({ job_id: "j", generation: 1 });
+  } finally { globalThis.fetch = originalFetch; }
+  const callback = requests.find(({ url }) => url.endsWith("/production-result"));
+  assert.ok(callback);
+  assert.equal(JSON.parse(callback.options.body).content, "__server_assembly__");
+});

@@ -52,6 +52,14 @@ export function createProductionExecutor({
         ? (configured?.orchestration_model || configured?.drafting_model || configured?.review_model)
         : (configured?.drafting_model || configured?.orchestration_model || configured?.review_model);
     if (!configured || !model) throw new Error(`configured provider ${provider} has no usable model`);
+    if (context.task_type === "production" && context.assembly) {
+      await requestJson(baseUrl, token, "/private/worker/production-result", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ job_id: lease.job_id, worker_id: workerId, generation: lease.generation, content: "__server_assembly__", provider, model }),
+        signal, requestTimeoutMs,
+      });
+      return { terminal: true };
+    }
     const result = await runProduction({ context, model, thinking: "low", taskType: context.task_type, signal });
     if (!result?.text || !result.callId) {
       throw new Error("Pi production returned an incomplete result");
@@ -61,7 +69,7 @@ export function createProductionExecutor({
     if ((result.provider && result.provider !== provider) || !modelMatches) {
       throw new Error("Pi production provider or model conflicted with saved configuration");
     }
-    if (context.task_type === "outline" || context.task_type === "review") {
+    if (context.task_type === "outline" || context.task_type === "review" || context.task_type === "section-draft") {
       await requestJson(baseUrl, token, "/private/worker/task-result", {
         method: "POST",
         headers: { "content-type": "application/json" },

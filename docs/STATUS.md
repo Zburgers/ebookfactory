@@ -1,5 +1,15 @@
 # Build status
 
+2026-09-19: The sectioned production repair is now closed by red/green tests
+and an independent Luna-high GO review. Page-target approvals allocate 24
+turns for the outline, 8–15 section drafts, server assembly and review;
+blocked/failed runs are no longer claimable, sibling attempts close on
+terminal failure, review context is fenced to the current run, and assembly
+uses the exact section revision recorded by each task. The dashboard still
+does not claim a real 50–150-page provider run, so H4 and the score remain
+conservative. API evidence: 66 unit tests plus 21 PostgreSQL recovery tests;
+worker 28/28 and dashboard syntax checks pass.
+
 2026-09-19: The editorial graph now includes a durable review task after
 production, with role-specific configured models, bounded persisted section
 context, typed task-result responses, and transitive dependency failure events.

@@ -62,7 +62,7 @@ from app.models import (
 from app.providers import connection_test, save_provider_setting
 from app import model_catalog
 from app import codex_quota
-from app.production import accept_production_output
+from app.production import accept_production_output, assemble_section_revisions, expand_outline_sections
 from app.reviews import record_finding
 from app.artifacts import reconcile_pending_artifacts, safe_artifact_path, write_artifact
 from app.budget import enforce_budget
@@ -186,6 +186,12 @@ class WorkerReviewSection(BaseModel):
     content: str
 
 
+class WorkerSectionContext(BaseModel):
+    section_id: UUID
+    heading: str
+    outline: str
+
+
 # Keep review material well below the worker's 64 KiB context-response limit.
 # The remaining 16 KiB covers the response envelope, brief/budget, and JSON
 # escaping overhead; headings and bodies both consume this budget.
@@ -205,6 +211,8 @@ class WorkerJobContextResponse(BaseModel):
     brief: dict[str, Any]
     budget: dict[str, Any]
     outline: WorkerOutlineContext | None = None
+    section: WorkerSectionContext | None = None
+    assembly: bool = False
     review_sections: list[WorkerReviewSection] = Field(default_factory=list)
 
 
@@ -1857,18 +1865,49 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if run.state == "cancelled":
                 raise HTTPException(status_code=409, detail="run is cancelled")
             review_sections: list[dict[str, Any]] = []
+            section_context: dict[str, str] | None = None
+            assembly_ready = False
+            if task.task_type == "section-draft":
+                section_context = {
+                    "section_id": str(task.result_refs.get("section_id", "")),
+                    "heading": str(task.result_refs.get("heading", ""))[:512],
+                    "outline": str(task.result_refs.get("outline", ""))[:8192],
+                }
+            if task.task_type == "production":
+                dependencies = [UUID(value) for value in (task.dependencies or [])]
+                assembly_ready = bool(dependencies) and all(
+                    (dependency := session.get(Task, dependency_id)) is not None
+                    and dependency.task_type == "section-draft"
+                    and dependency.status == "succeeded"
+                    for dependency_id in dependencies
+                )
             if task.task_type == "review":
-                section_rows = session.execute(
-                    select(Section, SectionRevision)
-                    .join(SectionRevision, SectionRevision.section_id == Section.id)
-                    .where(Section.project_id == project.id)
-                    .order_by(Section.order_no, SectionRevision.revision.desc())
-                ).all()
-                latest_by_section: dict[UUID, tuple[Section, SectionRevision]] = {}
+                production_task = session.scalar(
+                    select(Task).where(Task.run_id == run.id, Task.task_type == "production")
+                )
+                section_rows: list[tuple[Section, SectionRevision]] = []
+                if production_task is not None:
+                    for dependency_value in production_task.dependencies or []:
+                        section_task = session.get(Task, UUID(dependency_value))
+                        if section_task is None or section_task.run_id != run.id:
+                            raise HTTPException(status_code=409, detail="review dependency is outside the current production run")
+                        if section_task.task_type != "section-draft" or section_task.status != "succeeded":
+                            continue
+                        section_id = section_task.result_refs.get("section_id")
+                        revision_id = section_task.result_refs.get("revision_id")
+                        section = session.get(Section, UUID(section_id)) if section_id else None
+                        revision = session.get(SectionRevision, UUID(revision_id)) if revision_id else None
+                        if section is not None and revision is not None and revision.section_id == section.id and section.project_id == project.id:
+                            section_rows.append((section, revision))
+                    if not section_rows:
+                        revision_id = production_task.result_refs.get("revision_id")
+                        revision = session.get(SectionRevision, UUID(revision_id)) if revision_id else None
+                        section = session.get(Section, revision.section_id) if revision is not None else None
+                        if revision is not None and section is not None and section.project_id == project.id:
+                            section_rows.append((section, revision))
+                    section_rows.sort(key=lambda pair: pair[0].order_no)
                 total_bytes = 0
                 for section, revision in section_rows:
-                    if section.id in latest_by_section:
-                        continue
                     remaining = REVIEW_SECTION_BUDGET_BYTES - total_bytes
                     if remaining <= 0:
                         break
@@ -1883,7 +1922,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         "content": content,
                     })
                     total_bytes += len(content.encode())
-                    latest_by_section[section.id] = (section, revision)
             response = {
                 "project_id": project.id,
                 "run_id": run.id,
@@ -1903,6 +1941,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     else None
                 ),
                 "review_sections": review_sections,
+                "section": section_context,
+                "assembly": assembly_ready,
             }
             # Assert the actual serialized response remains inside the worker
             # contract even when the persisted brief/budget contains JSON.
@@ -1936,31 +1976,63 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 if row is None:
                     raise HTTPException(status_code=409, detail="task result lease is no longer current")
                 _, task, run, attempt = row
-                task.provider = payload.provider
-                task.model = payload.model
-                attempt.provider = payload.provider
-                attempt.model = payload.model
-                usage_call_id = None
-                if payload.call_id is not None:
-                    usage_result = record_usage_call(
-                        session, call_id=payload.call_id, provider=payload.provider, model=payload.model,
-                        purpose=task.task_type, outcome="succeeded", started_at=utc_now(), ended_at=utc_now(),
-                        provider_request_id=payload.provider_request_id, project_id=run.project_id, run_id=run.id,
-                        task_id=task.id, attempt_id=attempt.id,
-                        input_tokens=payload.usage.input_tokens if payload.usage else None,
-                        output_tokens=payload.usage.output_tokens if payload.usage else None,
-                        cache_read_tokens=payload.usage.cache_read_tokens if payload.usage else None,
-                        cache_write_tokens=payload.usage.cache_write_tokens if payload.usage else None,
-                        reasoning_tokens=payload.usage.reasoning_tokens if payload.usage else None,
-                        source_metadata={"source": "pi-task-result"}, manage_transaction=False,
-                    )
-                    usage_call_id = str(usage_result.call_id)
-                complete_task_result(
+                budget_allowed, budget_reason = enforce_budget(
                     session, job_id=payload.job_id, worker_id=payload.worker_id,
                     generation=payload.generation,
-                    result_refs={"result": payload.result, "provider": payload.provider, "model": payload.model, **({"usage_call_id": usage_call_id} if usage_call_id else {})},
+                    input_tokens=payload.usage.input_tokens if payload.usage else None,
+                    output_tokens=payload.usage.output_tokens if payload.usage else None,
+                    reasoning_tokens=payload.usage.reasoning_tokens if payload.usage else None,
                     manage_transaction=False,
                 )
+                if budget_allowed:
+                    task.provider = payload.provider
+                    task.model = payload.model
+                    attempt.provider = payload.provider
+                    attempt.model = payload.model
+                    usage_call_id = None
+                    if payload.call_id is not None:
+                        usage_result = record_usage_call(
+                            session, call_id=payload.call_id, provider=payload.provider, model=payload.model,
+                            purpose=task.task_type, outcome="succeeded", started_at=utc_now(), ended_at=utc_now(),
+                            provider_request_id=payload.provider_request_id, project_id=run.project_id, run_id=run.id,
+                            task_id=task.id, attempt_id=attempt.id,
+                            input_tokens=payload.usage.input_tokens if payload.usage else None,
+                            output_tokens=payload.usage.output_tokens if payload.usage else None,
+                            cache_read_tokens=payload.usage.cache_read_tokens if payload.usage else None,
+                            cache_write_tokens=payload.usage.cache_write_tokens if payload.usage else None,
+                            reasoning_tokens=payload.usage.reasoning_tokens if payload.usage else None,
+                            source_metadata={"source": "pi-task-result"}, manage_transaction=False,
+                        )
+                        usage_call_id = str(usage_result.call_id)
+                    if task.task_type == "outline":
+                        production_task = session.scalar(select(Task).where(Task.run_id == run.id, Task.task_type == "production").with_for_update())
+                        if production_task is None:
+                            raise HTTPException(status_code=409, detail="production task is missing")
+                        expand_outline_sections(session, outline_task=task, production_task=production_task, outline_text=payload.result)
+                    elif task.task_type == "section-draft":
+                        section_id = task.result_refs.get("section_id")
+                        section = session.get(Section, UUID(section_id)) if section_id else None
+                        if section is None:
+                            raise HTTPException(status_code=409, detail="section task has no stable section")
+                        section_revision = SectionRevision(
+                            section_id=section.id,
+                            revision=(session.scalar(select(SectionRevision.revision).where(SectionRevision.section_id == section.id).order_by(SectionRevision.revision.desc()).limit(1)) or 0) + 1,
+                            content=payload.result,
+                            summary="Pi section-draft output",
+                            source_refs=[f"task:{task.id}", f"provider:{payload.provider}", f"model:{payload.model}"] + ([f"usage:{usage_call_id}"] if usage_call_id else []),
+                            knowledge_refs=[], approval_status="draft", content_hash=hashlib.sha256(payload.result.encode()).hexdigest(),
+                        )
+                        session.add(section_revision)
+                        session.flush()
+                        task.result_refs = {**task.result_refs, "revision_id": str(section_revision.id), "usage_call_id": usage_call_id}
+                    complete_task_result(
+                        session, job_id=payload.job_id, worker_id=payload.worker_id,
+                        generation=payload.generation,
+                        result_refs={**task.result_refs, "result": payload.result, "provider": payload.provider, "model": payload.model, **({"usage_call_id": usage_call_id} if usage_call_id else {})},
+                        manage_transaction=False,
+                    )
+            if not budget_allowed:
+                raise HTTPException(status_code=409, detail=f"task budget blocked: {budget_reason}")
             return TaskResultResponse(accepted=True)
         except (StaleLease, CancellationRejected, ValueError) as exc:
             session.rollback()
@@ -1989,6 +2061,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     manage_transaction=False,
                 )
                 if budget_allowed:
+                    production_row = session.execute(
+                        select(Task, ProductionRun).join(ProductionRun, ProductionRun.id == Task.run_id)
+                        .join(Job, Job.task_id == Task.id).where(Job.id == payload.job_id).with_for_update()
+                    ).first()
+                    if production_row is None or production_row[0].task_type != "production":
+                        raise HTTPException(status_code=409, detail="production result is only valid for production tasks")
+                    if payload.content == "__server_assembly__":
+                        assembly_row = production_row
+                        dependencies = [UUID(value) for value in (assembly_row[0].dependencies or [])]
+                        payload.content = assemble_section_revisions(
+                            session,
+                            project_id=assembly_row[1].project_id,
+                            run_id=assembly_row[1].id,
+                            section_task_ids=dependencies,
+                        )
                     output = accept_production_output(
                         session,
                         job_id=payload.job_id,

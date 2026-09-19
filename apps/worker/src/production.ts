@@ -34,6 +34,20 @@ export function buildProductionPrompt(context) {
       JSON.stringify({ project_id: context.project_id, run_id: context.run_id, brief: context.brief, review_sections: context.review_sections }),
     ].join("\n\n");
   }
+  if (context.task_type === "section-draft") {
+    return [
+      "Create one bounded section draft for the approved ebook.",
+      "Write only the requested section, using its heading and outline input. Do not summarize the entire book or invoke tools.",
+      JSON.stringify({ project_id: context.project_id, run_id: context.run_id, section: context.section }),
+    ].join("\n\n");
+  }
+  if (context.task_type === "production" && context.assembly) {
+    return [
+      "The server will assemble the final manuscript from persisted section revisions.",
+      "Do not regenerate prose, invoke tools, or return manuscript content.",
+      JSON.stringify({ project_id: context.project_id, run_id: context.run_id, assembly: true }),
+    ].join("\n\n");
+  }
   const pages = context.brief.target_pages;
   const pageInstruction = pages
     ? `Target ${pages.minimum}-${pages.maximum} pages, using a bounded estimate of 100-180 words per page (${(pages.minimum * 100).toLocaleString()}-${(pages.maximum * 180).toLocaleString()} words). Write an 8-15 sectioned manuscript with one ## heading per section.`

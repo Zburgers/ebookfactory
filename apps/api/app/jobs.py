@@ -207,7 +207,7 @@ def claim_job(session: Session, *, worker_id: str, lease_seconds: int = 60) -> J
         row = None
         for candidate in rows:
             candidate_job, candidate_task, candidate_run = candidate
-            if candidate_run.state == "cancelled" or candidate_job.state == "cancelled":
+            if candidate_run.state in {"cancelled", "failed", "blocked"} or candidate_job.state == "cancelled":
                 continue
             dependency_ids = [UUID(value) for value in (candidate_task.dependencies or [])]
             if dependency_ids:
@@ -426,6 +426,21 @@ def complete_task_result(
     )
 
 
+def _fail_running_attempts(session: Session, *, task_id: UUID, error_class: str) -> None:
+    """Close active attempts when a run-level failure fences their jobs."""
+
+    now = utc_now()
+    attempts = session.scalars(
+        select(Attempt).where(Attempt.task_id == task_id, Attempt.status == "running").with_for_update()
+    ).all()
+    for attempt in attempts:
+        attempt.status = "failed"
+        attempt.error_class = f"run_failed:{error_class}"[:128]
+        attempt.finished_at = now
+        attempt.lease_owner = None
+        attempt.lease_until = None
+
+
 def _fail_dependent_tasks(session: Session, *, failed_task: Task, run: ProductionRun, error_class: str) -> None:
     """Propagate a terminal task failure through every queued descendant."""
 
@@ -450,6 +465,7 @@ def _fail_dependent_tasks(session: Session, *, failed_task: Task, run: Productio
                 dependent_job.error_class = f"dependency_failed:{error_class}"[:128]
                 dependent_job.lease_owner = None
                 dependent_job.lease_until = None
+            _fail_running_attempts(session, task_id=dependent.id, error_class=error_class)
             append_event(
                 session,
                 project_id=run.project_id,
@@ -462,6 +478,24 @@ def _fail_dependent_tasks(session: Session, *, failed_task: Task, run: Productio
                     "dependency_task_id": dependency_id,
                 },
             )
+    # A terminal failure closes the run as a unit: no sibling or remaining
+    # task may become claimable while the failed run is being inspected.
+    for remaining in tasks:
+        if remaining.id == failed_task.id or remaining.status in {"succeeded", "failed", "cancelled"}:
+            continue
+        remaining.status = "failed"
+        remaining_job = session.scalar(select(Job).where(Job.task_id == remaining.id).with_for_update())
+        if remaining_job is not None and remaining_job.state not in {"succeeded", "failed", "cancelled"}:
+            remaining_job.state = "failed"
+            remaining_job.error_class = f"run_failed:{error_class}"[:128]
+            remaining_job.lease_owner = None
+            remaining_job.lease_until = None
+        _fail_running_attempts(session, task_id=remaining.id, error_class=error_class)
+        append_event(
+            session, project_id=run.project_id, run_id=run.id, task_id=remaining.id,
+            kind="job.failed", payload={"job_id": str(remaining_job.id) if remaining_job else None,
+                                         "error_class": "run_failed", "failed_task_id": str(failed_task.id)},
+        )
 
 
 def fail_job(

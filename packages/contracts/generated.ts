@@ -480,6 +480,8 @@ export interface WorkerJobContextResponse {
   brief: Record<string, unknown>;
   budget: Record<string, unknown>;
   outline?: WorkerOutlineContext | null;
+  section?: WorkerSectionContext | null;
+  assembly?: boolean;
   review_sections?: Array<WorkerReviewSection>;
 }
 
@@ -503,4 +505,10 @@ export interface WorkerReviewSection {
   revision_id: string;
   heading: string;
   content: string;
+}
+
+export interface WorkerSectionContext {
+  section_id: string;
+  heading: string;
+  outline: string;
 }

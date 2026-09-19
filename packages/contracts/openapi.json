@@ -2634,6 +2634,11 @@
       },
       "WorkerJobContextResponse": {
         "properties": {
+          "assembly": {
+            "default": false,
+            "title": "Assembly",
+            "type": "boolean"
+          },
           "brief": {
             "additionalProperties": true,
             "title": "Brief",
@@ -2687,6 +2692,16 @@
             "format": "uuid",
             "title": "Run Id",
             "type": "string"
+          },
+          "section": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkerSectionContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "task_id": {
             "format": "uuid",
@@ -2808,6 +2823,30 @@
           "content"
         ],
         "title": "WorkerReviewSection",
+        "type": "object"
+      },
+      "WorkerSectionContext": {
+        "properties": {
+          "heading": {
+            "title": "Heading",
+            "type": "string"
+          },
+          "outline": {
+            "title": "Outline",
+            "type": "string"
+          },
+          "section_id": {
+            "format": "uuid",
+            "title": "Section Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "section_id",
+          "heading",
+          "outline"
+        ],
+        "title": "WorkerSectionContext",
         "type": "object"
       }
     },
