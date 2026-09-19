@@ -1,10 +1,12 @@
 import io
 import hashlib
+import json
 import zipfile
 from pathlib import Path
 from uuid import uuid4
 
 from PIL import Image
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -64,6 +66,20 @@ def test_export_package_generates_all_formats_and_is_idempotent(tmp_path: Path) 
         }
         assert len(session.scalars(select(Artifact)).all()) == len(PACKAGE_FILES)
 
+        epub_path = tmp_path / "artifacts" / f"exports/{revision_id}/book.epub"
+        original_epub = epub_path.read_bytes()
+        epub_path.write_bytes(b"tampered")
+        with pytest.raises(ValueError, match="export artifact integrity"):
+            export_book(
+                session,
+                root=tmp_path / "artifacts",
+                project_id=project_id,
+                revision_id=revision_id,
+                language="en",
+                profile="fiction",
+            )
+        epub_path.write_bytes(original_epub)
+
     root = tmp_path / "artifacts" / f"exports/{revision_id}"
     assert (root / "book.md").read_text().startswith("# The Morning Book")
     assert (root / "book.pdf").read_bytes().startswith(b"%PDF-")
@@ -72,6 +88,15 @@ def test_export_package_generates_all_formats_and_is_idempotent(tmp_path: Path) 
     with Image.open(io.BytesIO((root / "cover.jpg").read_bytes())) as cover:
         assert cover.mode == "RGB"
         assert cover.size == (1600, 2560)
+    fallback_metadata = json.loads((root / "metadata.json").read_text())
+    assert fallback_metadata["ai_content_provenance"]["image"]["source_artifact_id"] is None
+    assert fallback_metadata["ai_content_provenance"]["image"]["source_sha256"] is None
+    assert fallback_metadata["ai_content_provenance"]["image"]["layout"] == "deterministic-local-cover-1600x2560-title-overlay"
+    assert fallback_metadata["ai_content_provenance"]["image"]["source"] == "deterministic-fallback"
+    assert fallback_metadata["ai_content_provenance"]["image"]["final_cover_filename"] == "cover.jpg"
+    assert fallback_metadata["ai_content_provenance"]["image"]["final_cover_sha256"] == hashlib.sha256(
+        (root / "cover.jpg").read_bytes()
+    ).hexdigest()
 
 
 def test_review_artifacts_are_project_scoped_and_resolvable(tmp_path: Path) -> None:
@@ -128,6 +153,135 @@ def test_review_artifacts_are_project_scoped_and_resolvable(tmp_path: Path) -> N
     assert findings.status_code == 200
     assert len(findings.json()) == 1
     assert resolved.status_code == 200
+
+
+def test_export_uses_persisted_codex_art_and_records_layout_provenance(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'art-export.db'}")
+    Base.metadata.create_all(engine)
+    project_id, revision_id = uuid4(), uuid4()
+    source_root = tmp_path / "artifacts"
+    source_relative_path = f"{uuid4()}/generated.png"
+    source_path = source_root / source_relative_path
+    source_path.parent.mkdir(parents=True)
+    source_bytes = io.BytesIO()
+    Image.new("RGB", (900, 1400), "#ad3d65").save(source_bytes, format="PNG")
+    source_content = source_bytes.getvalue()
+    source_path.write_bytes(source_content)
+    second_relative_path = f"{uuid4()}/alternate.png"
+    second_path = source_root / second_relative_path
+    second_path.parent.mkdir(parents=True)
+    second_bytes = io.BytesIO()
+    Image.new("RGB", (1000, 1000), "#2c78ad").save(second_bytes, format="PNG")
+    second_content = second_bytes.getvalue()
+    second_path.write_bytes(second_content)
+
+    with Session(engine) as session:
+        project = Project(id=project_id, title="Art Export Fixture", profile="fiction", language="en")
+        section = Section(project_id=project_id, order_no=1, heading="Opening")
+        session.add_all([project, section])
+        session.flush()
+        revision = SectionRevision(
+            id=revision_id,
+            section_id=section.id,
+            revision=1,
+            content="# The Art Book\n\n## Chapter One\n\nA story with a cover.",
+            summary="fixture",
+            source_refs=[],
+            knowledge_refs=[],
+            approval_status="draft",
+            content_hash="c" * 64,
+        )
+        source_artifact = Artifact(
+            revision_id=revision_id,
+            relative_path=source_relative_path,
+            mime_type="image/png",
+            byte_count=len(source_content),
+            sha256=hashlib.sha256(source_content).hexdigest(),
+            validation_state="generated",
+        )
+        second_artifact = Artifact(
+            revision_id=revision_id,
+            relative_path=second_relative_path,
+            mime_type="image/png",
+            byte_count=len(second_content),
+            sha256=hashlib.sha256(second_content).hexdigest(),
+            validation_state="generated",
+        )
+        session.add_all([revision, source_artifact, second_artifact])
+        session.commit()
+        second_artifact_id = second_artifact.id
+
+        result = export_book(
+            session,
+            root=source_root,
+            project_id=project_id,
+            revision_id=revision_id,
+            language="en",
+            profile="fiction",
+            art_artifact_id=second_artifact_id,
+        )
+
+    metadata = json.loads((source_root / f"exports/{revision_id}/metadata.json").read_text())
+    provenance = metadata["ai_content_provenance"]["image"]
+    assert result.package_state == "structurally_validated"
+    assert provenance["source_artifact_id"] == str(second_artifact_id)
+    assert provenance["source_sha256"] == hashlib.sha256(second_content).hexdigest()
+    assert provenance["source_mime_type"] == "image/png"
+    assert provenance["source_dimensions"] == [1000, 1000]
+    assert provenance["layout"] == "fit-1600x2560-title-overlay"
+    assert provenance["final_cover_filename"] == "cover.jpg"
+    assert provenance["final_cover_sha256"] == hashlib.sha256(
+        (source_root / f"exports/{revision_id}/cover.jpg").read_bytes()
+    ).hexdigest()
+    assert (source_root / source_relative_path).read_bytes() == source_content
+    assert (source_root / second_relative_path).read_bytes() == second_content
+    with Image.open(io.BytesIO((source_root / f"exports/{revision_id}/cover.jpg").read_bytes())) as cover:
+        assert cover.getpixel((0, 0))[0] < 100
+        assert cover.getpixel((0, 0))[1] > 80
+        assert cover.getpixel((0, 0))[2] > 120
+
+
+def test_export_fails_closed_for_corrupt_persisted_image(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'corrupt-art.db'}")
+    Base.metadata.create_all(engine)
+    project_id, revision_id = uuid4(), uuid4()
+    root = tmp_path / "artifacts"
+    relative_path = f"{uuid4()}/generated.png"
+    path = root / relative_path
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"not-the-recorded-image")
+
+    with Session(engine) as session:
+        project = Project(id=project_id, title="Corrupt Art", profile="fiction", language="en")
+        section = Section(project_id=project_id, order_no=1, heading="Opening")
+        revision = SectionRevision(
+            id=revision_id,
+            section_id=section.id,
+            revision=1,
+            content="# Corrupt Art\n\nA story.",
+            content_hash="d" * 64,
+        )
+        session.add_all([project, section])
+        session.flush()
+        revision.section_id = section.id
+        session.add(revision)
+        session.add(
+            Artifact(
+                revision_id=revision_id,
+                relative_path=relative_path,
+                mime_type="image/png",
+                byte_count=10,
+                sha256=hashlib.sha256(b"recorded-image").hexdigest(),
+            )
+        )
+        session.commit()
+
+        try:
+            export_book(session, root=root, project_id=project_id, revision_id=revision_id, language="en", profile="fiction")
+        except ValueError as exc:
+            assert "immutable hash verification" in str(exc)
+        else:
+            raise AssertionError("corrupt persisted art must block export")
 
 
 def test_project_artifacts_includes_production_run_outputs(tmp_path: Path) -> None:

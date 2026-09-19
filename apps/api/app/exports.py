@@ -17,7 +17,7 @@ from uuid import UUID
 
 from docx import Document
 from ebooklib import epub
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -26,8 +26,8 @@ from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.artifacts import write_artifact
-from app.models import Artifact, Project, Section, SectionRevision
+from app.artifacts import safe_artifact_path, write_artifact
+from app.models import Artifact, Project, Section, SectionRevision, UsageCall
 
 
 PACKAGE_FILES = (
@@ -117,8 +117,12 @@ def _canonical_markdown(title: str, content: str) -> str:
     return f"# {title}\n\n{content.strip()}\n"
 
 
-def _make_cover(title: str) -> bytes:
-    image = Image.new("RGB", (1600, 2560), "#273b3a")
+def _make_cover(title: str, source: bytes | None = None) -> bytes:
+    if source is None:
+        image = Image.new("RGB", (1600, 2560), "#273b3a")
+    else:
+        with Image.open(io.BytesIO(source)) as source_image:
+            image = ImageOps.fit(source_image.convert("RGB"), (1600, 2560), method=Image.Resampling.LANCZOS)
     draw = ImageDraw.Draw(image)
     font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
     try:
@@ -140,6 +144,79 @@ def _make_cover(title: str) -> bytes:
     output = io.BytesIO()
     image.save(output, format="JPEG", quality=90, optimize=True)
     return output.getvalue()
+
+
+def _cover_source(
+    session: Session,
+    *,
+    root: Path,
+    revision_id: UUID,
+    project_id: UUID,
+    art_artifact_id: UUID | None = None,
+) -> tuple[bytes | None, dict[str, object]]:
+    """Resolve and verify the immutable image for this exact revision."""
+
+    candidates = session.scalars(
+        select(Artifact)
+        .join(SectionRevision, SectionRevision.id == Artifact.revision_id)
+        .join(Section, Section.id == SectionRevision.section_id)
+        .where(
+            Artifact.revision_id == revision_id,
+            Section.project_id == project_id,
+            Artifact.mime_type.like("image/%"),
+            ~Artifact.relative_path.startswith("exports/"),
+        )
+        .order_by(Artifact.created_at.desc(), Artifact.id.desc())
+    ).all()
+    if art_artifact_id is not None:
+        candidates = [artifact for artifact in candidates if artifact.id == art_artifact_id]
+        if not candidates:
+            raise ValueError("requested art artifact is not an eligible image for this revision")
+    for artifact in candidates:
+        recorded_path = root / artifact.relative_path
+        if recorded_path.is_symlink():
+            raise ValueError("source image artifact path must not be a symlink")
+        path = safe_artifact_path(root, artifact.relative_path)
+        if not path.is_file():
+            raise ValueError("source image artifact is missing")
+        content = path.read_bytes()
+        if len(content) != artifact.byte_count or hashlib.sha256(content).hexdigest() != artifact.sha256:
+            raise ValueError("source image artifact failed immutable hash verification")
+        try:
+            with Image.open(io.BytesIO(content)) as image:
+                image.verify()
+            with Image.open(io.BytesIO(content)) as image:
+                dimensions = list(image.size)
+        except Exception as exc:
+            raise ValueError("source image artifact is not a valid image") from exc
+        provenance: dict[str, object] = {
+            "source_artifact_id": str(artifact.id),
+            "source_sha256": artifact.sha256,
+            "source_mime_type": artifact.mime_type,
+            "source_dimensions": dimensions,
+            "layout": "fit-1600x2560-title-overlay",
+        }
+        usage = session.scalar(
+            select(UsageCall)
+            .where(UsageCall.run_id == artifact.run_id, UsageCall.purpose == "art")
+            .order_by(UsageCall.ended_at.desc(), UsageCall.id.desc())
+        ) if artifact.run_id else None
+        if usage is not None:
+            provenance["source_generation"] = {
+                "call_id": str(usage.id),
+                "provider": usage.provider,
+                "model": usage.model,
+                "provider_request_id": usage.provider_request_id,
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+            }
+        return content, provenance
+    return None, {
+        "source_artifact_id": None,
+        "source_sha256": None,
+        "layout": "deterministic-local-cover-1600x2560-title-overlay",
+        "source": "deterministic-fallback",
+    }
 
 
 def _make_epub(title: str, language: str, markdown: str, cover: bytes, revision_id: UUID) -> bytes:
@@ -201,7 +278,13 @@ def _make_pdf(title: str, markdown: str) -> bytes:
     return output.getvalue()
 
 
-def _metadata(title: str, language: str, profile: str, revision_id: UUID) -> dict[str, object]:
+def _metadata(
+    title: str,
+    language: str,
+    profile: str,
+    revision_id: UUID,
+    image_provenance: dict[str, object],
+) -> dict[str, object]:
     return {
         "title": title,
         "subtitle": None,
@@ -212,7 +295,7 @@ def _metadata(title: str, language: str, profile: str, revision_id: UUID) -> dic
         "keywords": [],
         "categories": [],
         "revision_id": str(revision_id),
-        "ai_content_provenance": {"text": "Pi provider output", "image": "deterministic local cover; Codex image route pending"},
+        "ai_content_provenance": {"text": "Pi provider output", "image": image_provenance},
         "kindle_preview": "pending",
     }
 
@@ -244,6 +327,27 @@ def _validate_files(files: dict[str, bytes]) -> dict[str, object]:
     return {"package_state": "structurally_validated" if checks["all_structural_checks_pass"] else "generated", "checks": checks, "kindle_preview": "pending"}
 
 
+def verify_export_members(
+    session: Session,
+    *,
+    root: Path,
+    revision_id: UUID,
+) -> list[Artifact]:
+    """Verify every registered member before exposing an immutable export."""
+    prefix = f"exports/{revision_id}/"
+    members = session.scalars(select(Artifact).where(Artifact.relative_path.like(f"{prefix}%"))).all()
+    if len(members) != len(PACKAGE_FILES) or {Path(item.relative_path).name for item in members} != set(PACKAGE_FILES):
+        raise ValueError("export package is partially registered")
+    for artifact in members:
+        path = safe_artifact_path(root, artifact.relative_path)
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("export artifact integrity verification failed")
+        content = path.read_bytes()
+        if len(content) != artifact.byte_count or hashlib.sha256(content).hexdigest() != artifact.sha256:
+            raise ValueError("export artifact integrity verification failed")
+    return members
+
+
 def export_book(
     session: Session,
     *,
@@ -252,6 +356,7 @@ def export_book(
     revision_id: UUID,
     language: str,
     profile: str,
+    art_artifact_id: UUID | None = None,
 ) -> ExportResult:
     """Generate or replay one immutable package for an exact section revision."""
 
@@ -265,9 +370,28 @@ def export_book(
         raise ValueError("revision does not belong to project")
     project, _, revision = row
     title, body = _title_and_body(revision.content, project.title)
+    existing = session.scalars(
+        select(Artifact).where(Artifact.relative_path.like(f"exports/{revision_id}/%"))
+    ).all()
+    if existing:
+        verified = verify_export_members(session, root=root, revision_id=revision_id)
+        return ExportResult(
+            revision_id=revision_id,
+            title=title,
+            package_state="structurally_validated",
+            artifacts=tuple(
+                ExportArtifact(a.id, Path(a.relative_path).name, a.sha256, a.byte_count)
+                for a in sorted(verified, key=lambda item: item.relative_path)
+            ),
+        )
     markdown = _canonical_markdown(title, revision.content)
-    metadata = _metadata(title, language, profile, revision_id)
-    cover = _make_cover(title)
+    cover_source, image_provenance = _cover_source(
+        session, root=root, revision_id=revision_id, project_id=project_id, art_artifact_id=art_artifact_id
+    )
+    image_provenance["final_cover_filename"] = "cover.jpg"
+    cover = _make_cover(title, cover_source)
+    image_provenance["final_cover_sha256"] = hashlib.sha256(cover).hexdigest()
+    metadata = _metadata(title, language, profile, revision_id, image_provenance)
     files = {
         "book.md": markdown.encode(),
         "cover.jpg": cover,
@@ -287,21 +411,6 @@ def export_book(
     files["manifest.json"] = (json.dumps(manifest, indent=2) + "\n").encode()
     files["validation.json"] = (json.dumps(validation, indent=2) + "\n").encode()
     package_prefix = f"exports/{revision_id}"
-    existing = session.scalars(
-        select(Artifact).where(Artifact.relative_path.in_([f"{package_prefix}/{name}" for name in PACKAGE_FILES]))
-    ).all()
-    if existing:
-        if len(existing) != len(PACKAGE_FILES):
-            raise ValueError("export package is partially registered")
-        return ExportResult(
-            revision_id=revision_id,
-            title=title,
-            package_state=validation["package_state"],
-            artifacts=tuple(
-                ExportArtifact(a.id, Path(a.relative_path).name, a.sha256, a.byte_count)
-                for a in sorted(existing, key=lambda item: item.relative_path)
-            ),
-        )
     session.rollback()
     artifacts: list[ExportArtifact] = []
     for filename, content in files.items():

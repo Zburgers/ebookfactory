@@ -314,6 +314,24 @@
         "title": "ExportArtifactResponse",
         "type": "object"
       },
+      "ExportRequest": {
+        "properties": {
+          "art_artifact_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Art Artifact Id"
+          }
+        },
+        "title": "ExportRequest",
+        "type": "object"
+      },
       "ExportResponse": {
         "properties": {
           "artifacts": {
@@ -4752,6 +4770,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ExportRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {

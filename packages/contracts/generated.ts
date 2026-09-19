@@ -70,6 +70,10 @@ export interface ExportArtifactResponse {
   download_path: string;
 }
 
+export interface ExportRequest {
+  art_artifact_id?: string | null;
+}
+
 export interface ExportResponse {
   revision_id: string;
   title: string;

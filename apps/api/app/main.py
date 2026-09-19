@@ -26,7 +26,7 @@ from app.database import Database
 from app.conversations import append_message, create_project
 from app.orchestrator import append_delta, claim_turn, complete_turn, enqueue_turn, fail_turn, heartbeat_turn, locked_turn
 from app.documents import create_brief_revision, create_section, save_section_revision
-from app.exports import MIME_TYPES, PACKAGE_FILES, export_book
+from app.exports import MIME_TYPES, PACKAGE_FILES, export_book, verify_export_members
 from app.events import replay_events
 from app.jobs import (
     ApprovalConflict,
@@ -617,6 +617,10 @@ class ExportResponse(BaseModel):
     title: str
     package_state: str
     artifacts: list[ExportArtifactResponse]
+
+
+class ExportRequest(BaseModel):
+    art_artifact_id: UUID | None = None
 
 
 def _require_worker_token(settings: Settings, supplied: str) -> None:
@@ -1225,7 +1229,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             session.close()
 
     @application.post("/projects/{project_id}/exports/{revision_id}", response_model=ExportResponse, tags=["publishing"])
-    def create_export(project_id: UUID, revision_id: UUID) -> ExportResponse:
+    def create_export(project_id: UUID, revision_id: UUID, payload: ExportRequest | None = None) -> ExportResponse:
         session = database.session()
         try:
             project = session.get(Project, project_id)
@@ -1239,6 +1243,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 revision_id=revision_id,
                 language=project.language,
                 profile=project.profile,
+                art_artifact_id=payload.art_artifact_id if payload else None,
             )
             return ExportResponse(
                 revision_id=result.revision_id,
@@ -1279,9 +1284,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
             if artifact is None:
                 raise HTTPException(status_code=404, detail="export member not found")
+            try:
+                members = verify_export_members(
+                    session, root=resolved_settings.artifact_root, revision_id=revision_id
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            artifact = next(member for member in members if member.id == artifact.id)
             path = safe_artifact_path(resolved_settings.artifact_root, artifact.relative_path)
-            if not path.is_file():
-                raise HTTPException(status_code=503, detail="export file is unavailable")
             media_type = MIME_TYPES[filename.rsplit(".", 1)[-1]]
             return FileResponse(path, media_type=media_type, filename=filename)
         finally:
