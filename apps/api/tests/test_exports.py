@@ -13,7 +13,19 @@ from sqlalchemy.orm import Session
 
 from app.exports import PACKAGE_FILES, export_book
 from app.main import create_app
-from app.models import Artifact, Base, BriefRevision, ProductionRun, Project, Section, SectionRevision
+from app.models import (
+    Artifact,
+    Attempt,
+    Base,
+    BriefRevision,
+    ProductionRun,
+    Project,
+    Section,
+    SectionRevision,
+    Task,
+    UsageCall,
+    utc_now,
+)
 from app.settings import Settings
 
 
@@ -66,6 +78,17 @@ def test_export_package_generates_all_formats_and_is_idempotent(tmp_path: Path) 
         }
         assert len(session.scalars(select(Artifact)).all()) == len(PACKAGE_FILES)
 
+        with pytest.raises(ValueError, match="art artifact"):
+            export_book(
+                session,
+                root=tmp_path / "artifacts",
+                project_id=project_id,
+                revision_id=revision_id,
+                language="en",
+                profile="fiction",
+                art_artifact_id=uuid4(),
+            )
+
         epub_path = tmp_path / "artifacts" / f"exports/{revision_id}/book.epub"
         original_epub = epub_path.read_bytes()
         epub_path.write_bytes(b"tampered")
@@ -80,6 +103,25 @@ def test_export_package_generates_all_formats_and_is_idempotent(tmp_path: Path) 
             )
         epub_path.write_bytes(original_epub)
 
+        markdown_artifact = session.scalar(
+            select(Artifact).where(Artifact.relative_path == f"exports/{revision_id}/book.md")
+        )
+        assert markdown_artifact is not None
+        nested_path = tmp_path / "artifacts" / f"exports/{revision_id}/nested/book.md"
+        nested_path.parent.mkdir(parents=True)
+        nested_path.write_bytes((tmp_path / "artifacts" / markdown_artifact.relative_path).read_bytes())
+        markdown_artifact.relative_path = f"exports/{revision_id}/nested/book.md"
+        session.commit()
+        with pytest.raises(ValueError, match="canonical export"):
+            export_book(
+                session,
+                root=tmp_path / "artifacts",
+                project_id=project_id,
+                revision_id=revision_id,
+                language="en",
+                profile="fiction",
+            )
+
     root = tmp_path / "artifacts" / f"exports/{revision_id}"
     assert (root / "book.md").read_text().startswith("# The Morning Book")
     assert (root / "book.pdf").read_bytes().startswith(b"%PDF-")
@@ -89,6 +131,11 @@ def test_export_package_generates_all_formats_and_is_idempotent(tmp_path: Path) 
         assert cover.mode == "RGB"
         assert cover.size == (1600, 2560)
     fallback_metadata = json.loads((root / "metadata.json").read_text())
+    assert fallback_metadata["ai_content_provenance"]["text"] == {
+        "source": "revisioned-manuscript",
+        "revision_id": str(revision_id),
+        "owner_review_required": True,
+    }
     assert fallback_metadata["ai_content_provenance"]["image"]["source_artifact_id"] is None
     assert fallback_metadata["ai_content_provenance"]["image"]["source_sha256"] is None
     assert fallback_metadata["ai_content_provenance"]["image"]["layout"] == "deterministic-local-cover-1600x2560-title-overlay"
@@ -180,6 +227,17 @@ def test_export_uses_persisted_codex_art_and_records_layout_provenance(tmp_path:
         section = Section(project_id=project_id, order_no=1, heading="Opening")
         session.add_all([project, section])
         session.flush()
+        brief = BriefRevision(id=uuid4(), project_id=project_id, revision=1, structured_brief={}, content_hash="b" * 64)
+        run_id, task_id = uuid4(), uuid4()
+        selected_attempt_id, other_attempt_id = uuid4(), uuid4()
+        run = ProductionRun(id=run_id, project_id=project_id, approved_brief_id=brief.id)
+        task = Task(id=task_id, run_id=run_id, task_type="production", input_revision_ids=[str(revision_id)])
+        selected_attempt = Attempt(
+            id=selected_attempt_id, task_id=task_id, attempt_no=1, input_revision_ids=[str(revision_id)], status="succeeded"
+        )
+        other_attempt = Attempt(
+            id=other_attempt_id, task_id=task_id, attempt_no=2, input_revision_ids=[str(revision_id)], status="succeeded"
+        )
         revision = SectionRevision(
             id=revision_id,
             section_id=section.id,
@@ -200,6 +258,8 @@ def test_export_uses_persisted_codex_art_and_records_layout_provenance(tmp_path:
             validation_state="generated",
         )
         second_artifact = Artifact(
+            run_id=run_id,
+            attempt_id=selected_attempt_id,
             revision_id=revision_id,
             relative_path=second_relative_path,
             mime_type="image/png",
@@ -207,7 +267,41 @@ def test_export_uses_persisted_codex_art_and_records_layout_provenance(tmp_path:
             sha256=hashlib.sha256(second_content).hexdigest(),
             validation_state="generated",
         )
-        session.add_all([revision, source_artifact, second_artifact])
+        selected_usage_id = uuid4()
+        session.add_all([
+            brief,
+            run,
+            task,
+            selected_attempt,
+            other_attempt,
+            revision,
+            source_artifact,
+            second_artifact,
+            UsageCall(
+                id=uuid4(),
+                run_id=run_id,
+                attempt_id=other_attempt_id,
+                purpose="art",
+                provider="wrong-provider",
+                model="wrong-model",
+                started_at=utc_now(),
+                ended_at=utc_now(),
+                outcome="succeeded",
+                normalization_version="v1",
+            ),
+            UsageCall(
+                id=selected_usage_id,
+                run_id=run_id,
+                attempt_id=selected_attempt_id,
+                purpose="art",
+                provider="selected-provider",
+                model="selected-model",
+                started_at=utc_now(),
+                ended_at=utc_now(),
+                outcome="succeeded",
+                normalization_version="v1",
+            ),
+        ])
         session.commit()
         second_artifact_id = second_artifact.id
 
@@ -220,6 +314,16 @@ def test_export_uses_persisted_codex_art_and_records_layout_provenance(tmp_path:
             profile="fiction",
             art_artifact_id=second_artifact_id,
         )
+        with pytest.raises(ValueError, match="immutable export art selection"):
+            export_book(
+                session,
+                root=source_root,
+                project_id=project_id,
+                revision_id=revision_id,
+                language="en",
+                profile="fiction",
+                art_artifact_id=source_artifact.id,
+            )
 
     metadata = json.loads((source_root / f"exports/{revision_id}/metadata.json").read_text())
     provenance = metadata["ai_content_provenance"]["image"]
@@ -233,6 +337,14 @@ def test_export_uses_persisted_codex_art_and_records_layout_provenance(tmp_path:
     assert provenance["final_cover_sha256"] == hashlib.sha256(
         (source_root / f"exports/{revision_id}/cover.jpg").read_bytes()
     ).hexdigest()
+    assert provenance["source_generation"] == {
+        "call_id": str(selected_usage_id),
+        "provider": "selected-provider",
+        "model": "selected-model",
+        "provider_request_id": None,
+        "input_tokens": None,
+        "output_tokens": None,
+    }
     assert (source_root / source_relative_path).read_bytes() == source_content
     assert (source_root / second_relative_path).read_bytes() == second_content
     with Image.open(io.BytesIO((source_root / f"exports/{revision_id}/cover.jpg").read_bytes())) as cover:
@@ -311,3 +423,63 @@ def test_project_artifacts_includes_production_run_outputs(tmp_path: Path) -> No
     artifact_root.joinpath(str(run_id), "cover.png").write_bytes(b"tampered!")
     tampered = client.get(response.json()[0]["download_path"])
     assert tampered.status_code == 409
+
+
+def test_export_api_enforces_art_selection_and_member_integrity(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'export-api.db'}"
+    engine = create_engine(database_url)
+    Base.metadata.create_all(engine)
+    project_id, revision_id = uuid4(), uuid4()
+    root = tmp_path / "artifacts"
+    source_relative_path = f"{uuid4()}/generated.png"
+    source_path = root / source_relative_path
+    source_path.parent.mkdir(parents=True)
+    source_bytes = io.BytesIO()
+    Image.new("RGB", (500, 700), "#8b4d2e").save(source_bytes, format="PNG")
+    source_content = source_bytes.getvalue()
+    source_path.write_bytes(source_content)
+
+    with Session(engine) as session:
+        project = Project(id=project_id, title="API Export", profile="fiction", language="en")
+        section = Section(project_id=project_id, order_no=1, heading="Opening")
+        session.add_all([project, section])
+        session.flush()
+        revision = SectionRevision(
+            id=revision_id,
+            section_id=section.id,
+            revision=1,
+            content="# API Export\n\nA durable export.",
+            content_hash="e" * 64,
+        )
+        source_artifact = Artifact(
+            revision_id=revision_id,
+            relative_path=source_relative_path,
+            mime_type="image/png",
+            byte_count=len(source_content),
+            sha256=hashlib.sha256(source_content).hexdigest(),
+        )
+        session.add_all([revision, source_artifact])
+        session.commit()
+        source_artifact_id = source_artifact.id
+
+    with TestClient(
+        create_app(Settings(database_url=database_url, owner_token="owner", artifact_root=root)),
+        headers={"Authorization": "Bearer owner"},
+    ) as client:
+        created = client.post(
+            f"/projects/{project_id}/exports/{revision_id}",
+            json={"art_artifact_id": str(source_artifact_id)},
+        )
+        assert created.status_code == 200
+        assert len(created.json()["artifacts"]) == len(PACKAGE_FILES)
+        rejected = client.post(
+            f"/projects/{project_id}/exports/{revision_id}",
+            json={"art_artifact_id": str(uuid4())},
+        )
+        assert rejected.status_code == 409
+        download_path = f"/projects/{project_id}/exports/{revision_id}/book.md"
+        downloaded = client.get(download_path)
+        assert downloaded.status_code == 200
+        (root / f"exports/{revision_id}/book.md").write_bytes(b"tampered")
+        tampered = client.get(download_path)
+        assert tampered.status_code == 409

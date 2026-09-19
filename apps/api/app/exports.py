@@ -196,11 +196,13 @@ def _cover_source(
             "source_dimensions": dimensions,
             "layout": "fit-1600x2560-title-overlay",
         }
-        usage = session.scalar(
-            select(UsageCall)
-            .where(UsageCall.run_id == artifact.run_id, UsageCall.purpose == "art")
-            .order_by(UsageCall.ended_at.desc(), UsageCall.id.desc())
-        ) if artifact.run_id else None
+        usage = None
+        if artifact.attempt_id is not None:
+            usage = session.scalar(
+                select(UsageCall)
+                .where(UsageCall.attempt_id == artifact.attempt_id, UsageCall.purpose == "art")
+                .order_by(UsageCall.ended_at.desc(), UsageCall.id.desc())
+            )
         if usage is not None:
             provenance["source_generation"] = {
                 "call_id": str(usage.id),
@@ -295,7 +297,14 @@ def _metadata(
         "keywords": [],
         "categories": [],
         "revision_id": str(revision_id),
-        "ai_content_provenance": {"text": "Pi provider output", "image": image_provenance},
+        "ai_content_provenance": {
+            "text": {
+                "source": "revisioned-manuscript",
+                "revision_id": str(revision_id),
+                "owner_review_required": True,
+            },
+            "image": image_provenance,
+        },
         "kindle_preview": "pending",
     }
 
@@ -335,9 +344,14 @@ def verify_export_members(
 ) -> list[Artifact]:
     """Verify every registered member before exposing an immutable export."""
     prefix = f"exports/{revision_id}/"
+    expected_paths = {f"{prefix}{filename}" for filename in PACKAGE_FILES}
     members = session.scalars(select(Artifact).where(Artifact.relative_path.like(f"{prefix}%"))).all()
-    if len(members) != len(PACKAGE_FILES) or {Path(item.relative_path).name for item in members} != set(PACKAGE_FILES):
-        raise ValueError("export package is partially registered")
+    if (
+        len(members) != len(PACKAGE_FILES)
+        or {item.relative_path for item in members} != expected_paths
+        or any(item.revision_id != revision_id for item in members)
+    ):
+        raise ValueError("canonical export package paths or revision ownership are invalid")
     for artifact in members:
         path = safe_artifact_path(root, artifact.relative_path)
         if path.is_symlink() or not path.is_file():
@@ -374,7 +388,32 @@ def export_book(
         select(Artifact).where(Artifact.relative_path.like(f"exports/{revision_id}/%"))
     ).all()
     if existing:
+        if art_artifact_id is not None:
+            requested_art = session.scalar(
+                select(Artifact)
+                .join(SectionRevision, SectionRevision.id == Artifact.revision_id)
+                .join(Section, Section.id == SectionRevision.section_id)
+                .where(
+                    Artifact.id == art_artifact_id,
+                    Artifact.revision_id == revision_id,
+                    Section.project_id == project_id,
+                    Artifact.mime_type.like("image/%"),
+                    ~Artifact.relative_path.startswith("exports/"),
+                )
+            )
+            if requested_art is None:
+                raise ValueError("requested art artifact is not an eligible image for this revision")
         verified = verify_export_members(session, root=root, revision_id=revision_id)
+        if art_artifact_id is not None:
+            metadata_artifact = next(item for item in verified if Path(item.relative_path).name == "metadata.json")
+            metadata_path = safe_artifact_path(root, metadata_artifact.relative_path)
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                recorded_artifact_id = metadata["ai_content_provenance"]["image"]["source_artifact_id"]
+            except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+                raise ValueError("immutable export art selection cannot be verified") from exc
+            if recorded_artifact_id != str(art_artifact_id):
+                raise ValueError("immutable export art selection is bound to a different artifact")
         return ExportResult(
             revision_id=revision_id,
             title=title,
