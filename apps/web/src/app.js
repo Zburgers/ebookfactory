@@ -37,7 +37,7 @@ async function loadSections() {
   });
 }
 function renderExports(packageResult) { const box = $("#exports"); box.replaceChildren(); const heading = document.createElement("h4"); heading.textContent = `Export: ${packageResult.title} · ${packageResult.package_state}`; box.append(heading); packageResult.artifacts.forEach((artifact) => { const link = document.createElement("a"); link.href = artifact.download_path; link.textContent = `${artifact.filename} (${artifact.byte_count} bytes)`; link.download = artifact.filename; box.append(link, document.createElement("br")); }); }
-function reviewStateLabel(state) { return ({ approved: "Approved", request_revision: "Revision requested", pending: "Review pending" })[state] || "Review pending"; }
+function reviewStateLabel(state) { return ({ approved: "Approved", revision_requested: "Revision requested", pending: "Review pending" })[state] || "Review pending"; }
 function appendArtifactReview(item, artifact) {
   const review = document.createElement("div"); review.className = "artifact-review";
   const heading = document.createElement("strong"); heading.textContent = `Owner review: ${reviewStateLabel(artifact.owner_review_state)}`; review.append(heading);
