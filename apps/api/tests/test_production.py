@@ -1,12 +1,14 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 
 from app.production import parse_production_sections, validate_production_text
 from app.main import BriefCreateRequest, create_app
-from app.models import Base
+from app.models import Base, Event
 from app.settings import Settings
 
 
@@ -150,3 +152,53 @@ def test_sqlite_production_result_accepts_persisted_lease(tmp_path) -> None:
 
     assert result.status_code == 200, result.text
     assert result.json()["run_id"] == approval["run_id"]
+
+
+def test_generic_worker_activity_is_fenced_and_redacted(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'worker-activity.db'}"
+    engine = create_engine(database_url)
+    Base.metadata.create_all(engine)
+    settings = Settings(database_url=database_url, owner_token="owner", worker_token="worker", artifact_root=tmp_path / "artifacts")
+
+    with TestClient(create_app(settings), headers={"Authorization": "Bearer owner"}) as client:
+        project = client.post("/projects", json={"title": "Activity", "profile": "fiction", "language": "en"}).json()
+        brief = client.post(f"/projects/{project['project_id']}/briefs", json={"structured_brief": {"promise_or_premise": "A trace"}}).json()
+        client.post(
+            f"/projects/{project['project_id']}/briefs/{brief['brief_id']}/approve",
+            json={"expected_content_hash": brief["content_hash"], "budget": {}},
+        )
+        headers = {"X-Ebook-Worker-Token": "worker"}
+        lease = client.post("/private/worker/claim", json={"worker_id": "trace-worker"}, headers=headers).json()
+        response = client.post(
+            "/private/worker/activity",
+            headers=headers,
+            json={
+                "job_id": lease["job_id"],
+                "worker_id": lease["worker_id"] if "worker_id" in lease else "trace-worker",
+                "generation": lease["generation"],
+                "activity_type": "tool.started",
+                "payload": {
+                    "tool_name": "factory_read_state",
+                    "arguments": {"api_token": "do-not-store"},
+                    "result": "Bearer do-not-store",
+                },
+            },
+        )
+        stale = client.post(
+            "/private/worker/activity",
+            headers=headers,
+            json={
+                "job_id": lease["job_id"],
+                "worker_id": "trace-worker",
+                "generation": lease["generation"] + 1,
+                "activity_type": "tool.completed",
+                "payload": {},
+            },
+        )
+
+    assert response.status_code == 204, response.text
+    assert stale.status_code == 409
+    with Session(engine) as session:
+        events = session.scalars(select(Event).where(Event.project_id == UUID(project["project_id"]), Event.kind == "agent.tool.started")).all()
+        assert len(events) == 1
+        assert events[0].data["arguments"]["api_token"] == "[redacted]"

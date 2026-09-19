@@ -24,7 +24,7 @@ from sqlalchemy.orm import aliased
 
 from app.database import Database
 from app.conversations import append_message, create_project
-from app.orchestrator import append_delta, claim_turn, complete_turn, enqueue_turn, fail_turn, heartbeat_turn, locked_turn
+from app.orchestrator import append_delta, claim_turn, complete_turn, enqueue_turn, fail_turn, heartbeat_turn, locked_turn, record_activity, record_gate
 from app.documents import create_brief_revision, create_section, save_section_revision
 from app.exports import MIME_TYPES, PACKAGE_FILES, _resolve_manuscript_scope, _verify_export_provenance, _verify_source_artifact_review, export_book, verify_export_members
 from app.events import append_event, replay_events
@@ -42,6 +42,8 @@ from app.jobs import (
     fail_job,
     heartbeat_job,
     enqueue_art_revision,
+    enqueue_orchestrator_agent,
+    record_worker_activity,
 )
 from app.models import (
     Artifact,
@@ -65,12 +67,13 @@ from app.models import (
 from app.providers import connection_test, save_provider_setting
 from app import model_catalog
 from app import codex_quota
+from app.github_billing import fetch_github_billing
 from app.production import accept_production_output, assemble_section_revisions, expand_outline_sections
 from app.reviews import record_finding
 from app.artifacts import reconcile_pending_artifacts, safe_artifact_path, write_artifact
 from app.budget import enforce_budget
 from app.tools import InvalidCapability, issue_capability, verify_capability
-from app.usage import finalize_usage_call, list_usage_calls, record_usage_call, usage_totals
+from app.usage import finalize_usage_call, list_usage_calls, record_usage_call, usage_overview
 from app.quota import list_quota_snapshots, record_quota_snapshot
 from app.settings import Settings
 from app.telegram import config_from_values, link_chat, link_configured_chats, process_update
@@ -215,11 +218,18 @@ class WorkerJobContextResponse(BaseModel):
     language: str
     brief: dict[str, Any]
     budget: dict[str, Any]
+    instruction: str | None = None
+    agent_context: dict[str, Any] = Field(default_factory=dict)
     outline: WorkerOutlineContext | None = None
     section: WorkerSectionContext | None = None
     art_revision: dict[str, str] | None = None
     assembly: bool = False
     review_sections: list[WorkerReviewSection] = Field(default_factory=list)
+
+
+class WorkerActivityRequest(WorkerMutationRequest):
+    activity_type: str = Field(min_length=1, max_length=64)
+    payload: dict[str, Any] = Field(default_factory=dict)
 
 
 class HeartbeatRequest(WorkerMutationRequest):
@@ -366,6 +376,33 @@ class OrchestratorFailureRequest(BaseModel):
     error: str = Field(min_length=1, max_length=2000)
 
 
+class OrchestratorActivityRequest(BaseModel):
+    turn_id: UUID
+    worker_id: str = Field(min_length=1, max_length=128)
+    generation: int = Field(ge=1)
+    activity_type: str = Field(min_length=1, max_length=64)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class OrchestratorGateRequest(BaseModel):
+    turn_id: UUID
+    worker_id: str = Field(min_length=1, max_length=128)
+    generation: int = Field(ge=1)
+    gate: str = Field(min_length=1, max_length=64)
+    status: str = Field(min_length=1, max_length=32)
+    note: str | None = Field(default=None, max_length=4_000)
+    evidence: list[str] = Field(default_factory=list, max_length=20)
+
+
+class OrchestratorSpawnRequest(BaseModel):
+    turn_id: UUID
+    worker_id: str = Field(min_length=1, max_length=128)
+    generation: int = Field(ge=1)
+    role: str = Field(min_length=1, max_length=64)
+    instruction: str = Field(min_length=1, max_length=8_000)
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
 class ProviderSettingRequest(BaseModel):
     scope: str = Field(default="app", min_length=1, max_length=32)
     endpoint: str | None = Field(default=None, max_length=2048)
@@ -417,6 +454,7 @@ class ModelCatalogEntry(BaseModel):
     max_output: str
     thinking: bool
     images: bool
+    pricing: dict[str, Any] | None = None
 
 
 class ProviderCatalogResponse(BaseModel):
@@ -436,6 +474,8 @@ class UsageCallRequest(BaseModel):
     task_id: UUID | None = None
     attempt_id: UUID | None = None
     input_tokens: int | None = Field(default=None, ge=0)
+    cache_read_tokens: int | None = Field(default=None, ge=0)
+    cache_write_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
     reasoning_tokens: int | None = Field(default=None, ge=0)
     provider_request_id: str | None = Field(default=None, max_length=255)
@@ -444,6 +484,8 @@ class UsageCallRequest(BaseModel):
 class UsageFinalizeRequest(BaseModel):
     outcome: str | None = Field(default=None, max_length=32)
     input_tokens: int | None = Field(default=None, ge=0)
+    cache_read_tokens: int | None = Field(default=None, ge=0)
+    cache_write_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
     reasoning_tokens: int | None = Field(default=None, ge=0)
 
@@ -1216,6 +1258,116 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             session.close()
 
+    @application.post("/private/orchestrator/activity", tags=["private-worker"])
+    def orchestrator_activity(
+        payload: OrchestratorActivityRequest,
+        x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token"),
+    ) -> dict[str, bool]:
+        """Persist one fenced, redacted orchestrator trace event."""
+
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
+        session = database.session()
+        try:
+            record_activity(
+                session,
+                turn_id=payload.turn_id,
+                worker_id=payload.worker_id,
+                generation=payload.generation,
+                activity_type=payload.activity_type,
+                payload=payload.payload,
+            )
+            return {"accepted": True}
+        except ValueError as exc:
+            session.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            session.close()
+
+    @application.post("/private/orchestrator/gate", tags=["private-worker"])
+    def orchestrator_gate(
+        payload: OrchestratorGateRequest,
+        x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token"),
+    ) -> dict[str, bool]:
+        """Persist one bounded gate decision without silently mutating source state."""
+
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
+        session = database.session()
+        try:
+            record_gate(
+                session,
+                turn_id=payload.turn_id,
+                worker_id=payload.worker_id,
+                generation=payload.generation,
+                gate=payload.gate,
+                status=payload.status,
+                note=payload.note,
+                evidence=payload.evidence,
+            )
+            return {"accepted": True}
+        except ValueError as exc:
+            session.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            session.close()
+
+    @application.get("/private/orchestrator/{turn_id}/state", tags=["private-worker"])
+    def orchestrator_state(
+        turn_id: UUID,
+        x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token"),
+        x_worker_id: str = Header(alias="X-Worker-ID"),
+        x_generation: int = Header(alias="X-Generation"),
+    ) -> dict[str, Any]:
+        """Return the same bounded durable project snapshot used by the owner UI."""
+
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
+        session = database.session()
+        try:
+            with session.begin():
+                turn = locked_turn(session, turn_id=turn_id, worker_id=x_worker_id, generation=x_generation)
+                return build_execution_snapshot(session, project_id=turn.project_id, after_event_id=0, limit=150)
+        except (ValueError, LookupError) as exc:
+            session.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            session.close()
+
+    @application.post("/private/orchestrator/spawn", tags=["private-worker"])
+    def orchestrator_spawn(
+        payload: OrchestratorSpawnRequest,
+        x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token"),
+    ) -> dict[str, UUID | str]:
+        """Enqueue one allowlisted durable child task under the current production run."""
+
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
+        session = database.session()
+        try:
+            turn = session.get(OrchestratorTurn, payload.turn_id)
+            if turn is None:
+                raise ValueError("orchestrator turn not found")
+            project_id = turn.project_id
+            session.rollback()
+            result = enqueue_orchestrator_agent(
+                session,
+                project_id=project_id,
+                turn_id=payload.turn_id,
+                worker_id=payload.worker_id,
+                generation=payload.generation,
+                role=payload.role,
+                instruction=payload.instruction,
+                context=payload.context,
+            )
+            return {
+                "run_id": result.run_id,
+                "task_id": result.task_id,
+                "job_id": result.job_id,
+                "task_type": result.task_type,
+            }
+        except (ValueError, ApprovalConflict) as exc:
+            session.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            session.close()
+
     @application.post("/private/orchestrator/result", tags=["private-worker"])
     def orchestrator_result(payload: OrchestratorResultRequest, x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token")) -> dict[str, UUID | bool]:
         _require_worker_token(resolved_settings, x_ebook_worker_token)
@@ -1335,9 +1487,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_usage(project_id: UUID | None = None) -> dict[str, Any]:
         session = database.session()
         try:
-            return usage_totals(session, project_id=project_id)
+            return usage_overview(session, project_id=project_id)
         finally:
             session.close()
+
+    @application.get("/usage/github-billing", response_model=dict[str, Any], tags=["usage"])
+    def get_github_billing() -> dict[str, Any]:
+        """Read current-month account billing live from GitHub when configured."""
+
+        return fetch_github_billing(resolved_settings)
 
     @application.get("/usage/calls", response_model=list[dict[str, Any]], tags=["usage"])
     def get_usage_calls(project_id: UUID | None = None) -> list[dict[str, Any]]:
@@ -2146,6 +2304,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             session.close()
 
+    @application.post("/private/worker/activity", status_code=204, tags=["private-worker"])
+    def worker_activity(
+        payload: WorkerActivityRequest,
+        x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token"),
+    ) -> None:
+        """Persist a fenced, redacted trace event from a generic production agent."""
+
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
+        session = database.session()
+        try:
+            record_worker_activity(
+                session,
+                job_id=payload.job_id,
+                worker_id=payload.worker_id,
+                generation=payload.generation,
+                activity_type=payload.activity_type,
+                payload=payload.payload,
+            )
+        except (StaleLease, CancellationRejected, ValueError) as exc:
+            session.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            session.close()
+
     @application.post("/private/worker/capability", response_model=CapabilityResponse, tags=["private-worker"])
     def worker_capability(
         payload: CapabilityRequest,
@@ -2286,6 +2468,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "language": project.language,
                 "brief": brief.structured_brief,
                 "budget": run.budget,
+                "instruction": str(task.result_refs.get("instruction", ""))[:8_000] or None,
+                "agent_context": task.result_refs.get("context", {}) if isinstance(task.result_refs.get("context", {}), dict) else {},
                 "outline": (
                     {"task_id": parent.id, "result": parent.result_refs.get("result", "")}
                     if task.parent_task_id

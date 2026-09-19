@@ -7,6 +7,8 @@ import subprocess
 import time
 import re
 
+from app.pricing import price_card_summary
+
 COMMAND = (
     "pi", "--no-extensions", "--no-skills", "--no-prompt-templates",
     "--no-tools", "--no-session", "--list-models",
@@ -17,6 +19,17 @@ MAX_OUTPUT_BYTES = 256 * 1024
 
 class ModelCatalogError(RuntimeError):
     """Raised when Pi cannot provide a bounded model catalog."""
+
+
+def enrich_model_pricing(models: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Attach a source-attributed reference card without changing model identity."""
+
+    enriched: list[dict[str, object]] = []
+    for model in models:
+        row = dict(model)
+        row["pricing"] = price_card_summary(str(row["provider"]), str(row["model"]))
+        enriched.append(row)
+    return enriched
 
 
 def parse_model_table(output: str) -> list[dict[str, object]]:
@@ -97,8 +110,9 @@ def fetch_model_catalog() -> dict[str, object]:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
+    parsed_models = enrich_model_pricing(parse_model_table(stdout))
     return {
         "fetched_at": datetime.now(timezone.utc).isoformat(),
         "source": "pi --list-models",
-        "models": parse_model_table(stdout),
+        "models": parsed_models,
     }

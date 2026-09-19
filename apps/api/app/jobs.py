@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 import hashlib
+import re
 from typing import Any
 from uuid import UUID
 
@@ -50,6 +51,16 @@ class ArtRevisionResult:
 
 
 @dataclass(frozen=True)
+class OrchestratorAgentResult:
+    """Stable identifiers for a bounded agent task spawned from owner chat."""
+
+    run_id: UUID
+    task_id: UUID
+    job_id: UUID
+    task_type: str
+
+
+@dataclass(frozen=True)
 class JobLease:
     """The committed lease identity a worker must echo on every mutation."""
 
@@ -69,6 +80,31 @@ class HeartbeatResult:
     lease_until: datetime
 
 
+WORKER_ACTIVITY_TYPES = {
+    "session.started",
+    "session.completed",
+    "message.started",
+    "message.delta",
+    "message.completed",
+    "tool.started",
+    "tool.updated",
+    "tool.completed",
+    "tool.failed",
+}
+_WORKER_ACTIVITY_SENSITIVE_KEYS = ("token", "secret", "password", "credential", "authorization", "private_key")
+
+
+def _sanitize_activity_text(value: str) -> str:
+    value = re.sub(r"(?i)\bBearer\s+[^\s,;]+", "Bearer [redacted]", value)
+    value = re.sub(
+        r"(?i)(\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|token|password|secret)\s*[:=]\s*)[^\s,;]+",
+        r"\1[redacted]",
+        value,
+    )
+    value = re.sub(r"(?i)\b(?:sk|rk)-[A-Za-z0-9_-]{16,}", "[redacted]", value)
+    return value[:8_000]
+
+
 def _bounded_result_refs(result_refs: dict[str, Any], *, max_text: int = 2_000) -> dict[str, Any]:
     """Keep lifecycle events useful without copying unbounded worker output."""
 
@@ -85,6 +121,64 @@ def _bounded_result_refs(result_refs: dict[str, Any], *, max_text: int = 2_000) 
         else:
             bounded[key] = str(value)[:256]
     return bounded
+
+
+def _sanitize_worker_activity(value: Any, *, depth: int = 0) -> Any:
+    """Bound worker trace payloads before writing owner-visible replay events."""
+
+    if depth > 4:
+        return "[nested value omitted]"
+    if isinstance(value, dict):
+        result: dict[str, Any] = {}
+        for key, child in list(value.items())[:40]:
+            name = str(key)
+            if any(part in name.lower() for part in _WORKER_ACTIVITY_SENSITIVE_KEYS):
+                result[name] = "[redacted]"
+            else:
+                result[name] = _sanitize_worker_activity(child, depth=depth + 1)
+        return result
+    if isinstance(value, (list, tuple)):
+        return [_sanitize_worker_activity(child, depth=depth + 1) for child in list(value)[:40]]
+    if isinstance(value, str):
+        return _sanitize_activity_text(value)
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return _sanitize_activity_text(str(value))
+
+
+def record_worker_activity(
+    session: Session,
+    *,
+    job_id: UUID,
+    worker_id: str,
+    generation: int,
+    activity_type: str,
+    payload: dict[str, Any],
+) -> None:
+    """Append a fenced generic-agent trace event for the owner replay view."""
+
+    if activity_type not in WORKER_ACTIVITY_TYPES:
+        raise ValueError("unsupported worker activity type")
+    bounded_payload = _sanitize_worker_activity(payload)
+    if not isinstance(bounded_payload, dict):
+        raise ValueError("worker activity payload must be an object")
+    with session.begin():
+        job, task, run, attempt = _locked_lease_context(
+            session, job_id=job_id, worker_id=worker_id, generation=generation
+        )
+        append_event(
+            session,
+            project_id=run.project_id,
+            run_id=run.id,
+            task_id=task.id,
+            kind=f"agent.{activity_type}",
+            payload={
+                **bounded_payload,
+                "job_id": str(job.id),
+                "attempt_id": str(attempt.id),
+                "generation": generation,
+            },
+        )
 
 
 def _existing_approval(session: Session, *, project_id: UUID, brief_id: UUID) -> ApprovalResult | None:
@@ -236,6 +330,123 @@ def approve_brief_and_enqueue(
             },
         )
         return ApprovalResult(run_id=run.id, task_id=task.id, job_id=job.id)
+
+
+def enqueue_orchestrator_agent(
+    session: Session,
+    *,
+    project_id: UUID,
+    turn_id: UUID,
+    worker_id: str,
+    generation: int,
+    role: str,
+    instruction: str,
+    context: dict[str, Any] | None = None,
+) -> OrchestratorAgentResult:
+    """Queue one allowlisted child task under the project's active production run."""
+
+    task_type_by_role = {
+        "research": "orchestrator-research",
+        "review": "review",
+        "section-draft": "section-draft",
+    }
+    task_type = task_type_by_role.get(role)
+    cleaned_instruction = instruction.strip()
+    if task_type is None:
+        raise ValueError("unsupported orchestrator agent role")
+    if not cleaned_instruction:
+        raise ValueError("agent instruction is required")
+    if len(cleaned_instruction) > 8_000:
+        raise ValueError("agent instruction is too long")
+    instruction_hash = hashlib.sha256(cleaned_instruction.encode()).hexdigest()
+    dedupe_key = f"orchestrator-agent:{turn_id}:{role}:{instruction_hash}"
+    with session.begin():
+        from app.orchestrator import locked_turn
+
+        turn = locked_turn(session, turn_id=turn_id, worker_id=worker_id, generation=generation)
+        if turn.project_id != project_id:
+            raise ValueError("orchestrator turn is outside the project")
+        existing_job = session.scalar(select(Job).where(Job.dedupe_key == dedupe_key).with_for_update())
+        if existing_job is not None:
+            existing_task = session.get(Task, existing_job.task_id)
+            if existing_task is None:
+                raise ValueError("spawned agent job has no task")
+            return OrchestratorAgentResult(
+                run_id=existing_task.run_id,
+                task_id=existing_task.id,
+                job_id=existing_job.id,
+                task_type=existing_task.task_type,
+            )
+        project = session.scalar(select(Project).where(Project.id == project_id).with_for_update())
+        active_states = {"queued", "running", "paused", "producing", "draft_review", "art_review", "packaging"}
+        run = session.scalar(
+            select(ProductionRun)
+            .where(ProductionRun.project_id == project_id, ProductionRun.state.in_(active_states))
+            .order_by(ProductionRun.created_at.desc())
+            .with_for_update()
+        )
+        if project is None or run is None:
+            raise ValueError("an approved active production run is required before spawning an agent")
+        result_refs: dict[str, Any] = {
+            "instruction": cleaned_instruction,
+            "role": role,
+            "spawned_by_turn_id": str(turn_id),
+            "instruction_hash": instruction_hash,
+        }
+        if context:
+            result_refs["context"] = _bounded_result_refs(context, max_text=4_000)
+        task = Task(
+            run_id=run.id,
+            task_type=task_type,
+            dependencies=[],
+            input_revision_ids=[],
+            result_refs=result_refs,
+            status="queued",
+        )
+        session.add(task)
+        session.flush()
+        job = Job(
+            task_id=task.id,
+            job_type=f"{task_type}.start",
+            payload={"run_id": str(run.id), "task_id": str(task.id), "cancellation_epoch": run.cancellation_epoch},
+            dedupe_key=dedupe_key,
+            state="queued",
+        )
+        session.add(job)
+        session.flush()
+        run.state = "producing"
+        project.state = "producing"
+        append_event(
+            session,
+            project_id=project_id,
+            run_id=run.id,
+            task_id=task.id,
+            kind="orchestrator.subagent.queued",
+            payload={
+                "turn_id": str(turn_id),
+                "job_id": str(job.id),
+                "task_id": str(task.id),
+                "role": role,
+                "task_type": task_type,
+                "instruction": cleaned_instruction,
+            },
+        )
+        append_event(
+            session,
+            project_id=project_id,
+            run_id=run.id,
+            task_id=task.id,
+            kind="task.enqueued",
+            payload={
+                "job_id": str(job.id),
+                "task_id": str(task.id),
+                "task_type": task_type,
+                "parent_task_id": None,
+                "input_revision_ids": [],
+                "dedupe_key": dedupe_key,
+            },
+        )
+        return OrchestratorAgentResult(run_id=run.id, task_id=task.id, job_id=job.id, task_type=task_type)
 
 
 def enqueue_art_revision(

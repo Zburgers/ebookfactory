@@ -1086,6 +1086,18 @@
             "title": "Model",
             "type": "string"
           },
+          "pricing": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pricing"
+          },
           "provider": {
             "title": "Provider",
             "type": "string"
@@ -1109,6 +1121,45 @@
           "images"
         ],
         "title": "ModelCatalogEntry",
+        "type": "object"
+      },
+      "OrchestratorActivityRequest": {
+        "properties": {
+          "activity_type": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Activity Type",
+            "type": "string"
+          },
+          "generation": {
+            "minimum": 1.0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          },
+          "worker_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "turn_id",
+          "worker_id",
+          "generation",
+          "activity_type"
+        ],
+        "title": "OrchestratorActivityRequest",
         "type": "object"
       },
       "OrchestratorClaimRequest": {
@@ -1199,6 +1250,67 @@
           "error"
         ],
         "title": "OrchestratorFailureRequest",
+        "type": "object"
+      },
+      "OrchestratorGateRequest": {
+        "properties": {
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "gate": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Gate",
+            "type": "string"
+          },
+          "generation": {
+            "minimum": 1.0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "status": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          },
+          "worker_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "turn_id",
+          "worker_id",
+          "generation",
+          "gate",
+          "status"
+        ],
+        "title": "OrchestratorGateRequest",
         "type": "object"
       },
       "OrchestratorHeartbeatRequest": {
@@ -1338,6 +1450,52 @@
           "call_id"
         ],
         "title": "OrchestratorResultRequest",
+        "type": "object"
+      },
+      "OrchestratorSpawnRequest": {
+        "properties": {
+          "context": {
+            "additionalProperties": true,
+            "title": "Context",
+            "type": "object"
+          },
+          "generation": {
+            "minimum": 1.0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "instruction": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Instruction",
+            "type": "string"
+          },
+          "role": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Role",
+            "type": "string"
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          },
+          "worker_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "turn_id",
+          "worker_id",
+          "generation",
+          "role",
+          "instruction"
+        ],
+        "title": "OrchestratorSpawnRequest",
         "type": "object"
       },
       "OwnerAuthResponse": {
@@ -2958,6 +3116,30 @@
             ],
             "title": "Attempt Id"
           },
+          "cache_read_tokens": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Tokens"
+          },
+          "cache_write_tokens": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write Tokens"
+          },
           "call_id": {
             "format": "uuid",
             "title": "Call Id",
@@ -3084,6 +3266,30 @@
       },
       "UsageFinalizeRequest": {
         "properties": {
+          "cache_read_tokens": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Tokens"
+          },
+          "cache_write_tokens": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write Tokens"
+          },
           "input_tokens": {
             "anyOf": [
               {
@@ -3176,6 +3382,45 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "WorkerActivityRequest": {
+        "properties": {
+          "activity_type": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Activity Type",
+            "type": "string"
+          },
+          "generation": {
+            "minimum": 1.0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "worker_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "worker_id",
+          "generation",
+          "activity_type"
+        ],
+        "title": "WorkerActivityRequest",
+        "type": "object"
+      },
       "WorkerClaimRequest": {
         "properties": {
           "lease_seconds": {
@@ -3200,6 +3445,11 @@
       },
       "WorkerJobContextResponse": {
         "properties": {
+          "agent_context": {
+            "additionalProperties": true,
+            "title": "Agent Context",
+            "type": "object"
+          },
           "art_revision": {
             "anyOf": [
               {
@@ -3232,6 +3482,17 @@
           "cancellation_epoch": {
             "title": "Cancellation Epoch",
             "type": "integer"
+          },
+          "instruction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction"
           },
           "job_id": {
             "format": "uuid",
@@ -3544,6 +3805,69 @@
         ]
       }
     },
+    "/private/orchestrator/activity": {
+      "post": {
+        "description": "Persist one fenced, redacted orchestrator trace event.",
+        "operationId": "orchestrator_activity_private_orchestrator_activity_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Ebook-Worker-Token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Ebook-Worker-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrchestratorActivityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Orchestrator Activity Private Orchestrator Activity Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
+        "summary": "Orchestrator Activity",
+        "tags": [
+          "private-worker"
+        ]
+      }
+    },
     "/private/orchestrator/claim": {
       "post": {
         "operationId": "orchestrator_claim_private_orchestrator_claim_post",
@@ -3734,6 +4058,69 @@
         ]
       }
     },
+    "/private/orchestrator/gate": {
+      "post": {
+        "description": "Persist one bounded gate decision without silently mutating source state.",
+        "operationId": "orchestrator_gate_private_orchestrator_gate_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Ebook-Worker-Token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Ebook-Worker-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrchestratorGateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Orchestrator Gate Private Orchestrator Gate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
+        "summary": "Orchestrator Gate",
+        "tags": [
+          "private-worker"
+        ]
+      }
+    },
     "/private/orchestrator/heartbeat": {
       "post": {
         "operationId": "orchestrator_heartbeat_private_orchestrator_heartbeat_post",
@@ -3867,6 +4254,77 @@
         ]
       }
     },
+    "/private/orchestrator/spawn": {
+      "post": {
+        "description": "Enqueue one allowlisted durable child task under the current production run.",
+        "operationId": "orchestrator_spawn_private_orchestrator_spawn_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Ebook-Worker-Token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Ebook-Worker-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrchestratorSpawnRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "format": "uuid",
+                        "type": "string"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "title": "Response Orchestrator Spawn Private Orchestrator Spawn Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
+        "summary": "Orchestrator Spawn",
+        "tags": [
+          "private-worker"
+        ]
+      }
+    },
     "/private/orchestrator/{turn_id}/context": {
       "get": {
         "operationId": "orchestrator_context_private_orchestrator__turn_id__context_get",
@@ -3940,6 +4398,85 @@
           }
         ],
         "summary": "Orchestrator Context",
+        "tags": [
+          "private-worker"
+        ]
+      }
+    },
+    "/private/orchestrator/{turn_id}/state": {
+      "get": {
+        "description": "Return the same bounded durable project snapshot used by the owner UI.",
+        "operationId": "orchestrator_state_private_orchestrator__turn_id__state_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "turn_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Ebook-Worker-Token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Ebook-Worker-Token",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Worker-ID",
+            "required": true,
+            "schema": {
+              "title": "X-Worker-Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Generation",
+            "required": true,
+            "schema": {
+              "title": "X-Generation",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Orchestrator State Private Orchestrator  Turn Id  State Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
+        "summary": "Orchestrator State",
         "tags": [
           "private-worker"
         ]
@@ -4233,6 +4770,58 @@
           }
         ],
         "summary": "Scoped Tool",
+        "tags": [
+          "private-worker"
+        ]
+      }
+    },
+    "/private/worker/activity": {
+      "post": {
+        "description": "Persist a fenced, redacted trace event from a generic production agent.",
+        "operationId": "worker_activity_private_worker_activity_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Ebook-Worker-Token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Ebook-Worker-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkerActivityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
+        "summary": "Worker Activity",
         "tags": [
           "private-worker"
         ]
@@ -6751,6 +7340,35 @@
           }
         ],
         "summary": "Finalize Usage"
+      }
+    },
+    "/usage/github-billing": {
+      "get": {
+        "description": "Read current-month account billing live from GitHub when configured.",
+        "operationId": "get_github_billing_usage_github_billing_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Github Billing Usage Github Billing Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
+        "summary": "Get Github Billing",
+        "tags": [
+          "usage"
+        ]
       }
     }
   }

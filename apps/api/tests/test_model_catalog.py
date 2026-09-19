@@ -47,6 +47,16 @@ def test_parse_model_table_skips_malformed_rows_and_rejects_invalid_table() -> N
         model_catalog.parse_model_table("provider model context max-out thinking images\nwrong row\n")
 
 
+def test_model_catalog_attaches_reference_pricing_without_changing_identity() -> None:
+    models = model_catalog.enrich_model_pricing(model_catalog.parse_model_table(TABLE))
+    assert models[0]["qualified_model"] == "openai-codex/gpt-5.6-luna"
+    assert models[0]["pricing"]["pricing_basis"] == "api_equivalent"
+    assert models[0]["pricing"]["input_per_million"] == 0.2
+    assert models[1]["pricing"]["pricing_basis"] == "github_ai_credits"
+    unknown = model_catalog.enrich_model_pricing([{"provider": "unknown", "model": "unpriced", "qualified_model": "unknown/unpriced"}])
+    assert unknown[0]["pricing"] is None
+
+
 def test_catalog_subprocess_failure_timeout_and_output_bound(monkeypatch) -> None:
     def fail_run(*_args, **_kwargs):
         raise OSError("private failure")

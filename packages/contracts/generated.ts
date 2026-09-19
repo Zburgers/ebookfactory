@@ -206,6 +206,15 @@ export interface ModelCatalogEntry {
   max_output: string;
   thinking: boolean;
   images: boolean;
+  pricing?: Record<string, unknown> | null;
+}
+
+export interface OrchestratorActivityRequest {
+  turn_id: string;
+  worker_id: string;
+  generation: number;
+  activity_type: string;
+  payload?: Record<string, unknown>;
 }
 
 export interface OrchestratorClaimRequest {
@@ -225,6 +234,16 @@ export interface OrchestratorFailureRequest {
   worker_id: string;
   generation: number;
   error: string;
+}
+
+export interface OrchestratorGateRequest {
+  turn_id: string;
+  worker_id: string;
+  generation: number;
+  gate: string;
+  status: string;
+  note?: string | null;
+  evidence?: Array<string>;
 }
 
 export interface OrchestratorHeartbeatRequest {
@@ -250,6 +269,15 @@ export interface OrchestratorResultRequest {
   model: string;
   call_id: string;
   usage?: Record<string, number | null> | null;
+}
+
+export interface OrchestratorSpawnRequest {
+  turn_id: string;
+  worker_id: string;
+  generation: number;
+  role: string;
+  instruction: string;
+  context?: Record<string, unknown>;
 }
 
 export interface OwnerAuthResponse {
@@ -523,6 +551,8 @@ export interface UsageCallRequest {
   task_id?: string | null;
   attempt_id?: string | null;
   input_tokens?: number | null;
+  cache_read_tokens?: number | null;
+  cache_write_tokens?: number | null;
   output_tokens?: number | null;
   reasoning_tokens?: number | null;
   provider_request_id?: string | null;
@@ -531,6 +561,8 @@ export interface UsageCallRequest {
 export interface UsageFinalizeRequest {
   outcome?: string | null;
   input_tokens?: number | null;
+  cache_read_tokens?: number | null;
+  cache_write_tokens?: number | null;
   output_tokens?: number | null;
   reasoning_tokens?: number | null;
 }
@@ -541,6 +573,14 @@ export interface ValidationError {
   type: string;
   input?: Record<string, unknown>;
   ctx?: Record<string, unknown>;
+}
+
+export interface WorkerActivityRequest {
+  job_id: string;
+  worker_id: string;
+  generation: number;
+  activity_type: string;
+  payload?: Record<string, unknown>;
 }
 
 export interface WorkerClaimRequest {
@@ -559,6 +599,8 @@ export interface WorkerJobContextResponse {
   language: string;
   brief: Record<string, unknown>;
   budget: Record<string, unknown>;
+  instruction?: string | null;
+  agent_context?: Record<string, unknown>;
   outline?: WorkerOutlineContext | null;
   section?: WorkerSectionContext | null;
   art_revision?: Record<string, string> | null;

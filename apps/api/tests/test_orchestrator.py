@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.main import create_app
-from app.models import Base, Conversation, Event, Message, OrchestratorTurn, Project, TelegramOutbox
+from app.models import Base, BriefRevision, Conversation, Event, Job, Message, OrchestratorTurn, ProductionRun, Project, Task, TelegramOutbox
 from app.telegram import link_chat
 from app.settings import Settings
 
@@ -259,3 +259,81 @@ def test_orchestrator_delta_is_durable_and_fenced(tmp_path) -> None:
         assert len(events) == 1
         assert events[0].data["delta"] == "Hello "
         assert events[0].data["turn_id"] == created["turn_id"]
+
+
+def test_orchestrator_activity_and_gate_updates_are_durable_and_redacted(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'orchestrator-activity.db'}"
+    engine = create_engine(database_url); Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        project = Project(id=uuid4(), title="Activity", profile="fiction", language="en")
+        conversation = Conversation(id=uuid4(), project_id=project.id, channel="dashboard"); project.conversation_id = conversation.id
+        project_id, conversation_id = project.id, conversation.id
+        session.add_all([project, conversation]); session.commit()
+
+    with TestClient(create_app(Settings(database_url=database_url, worker_token="worker", owner_token="owner")), headers={"Authorization": "Bearer owner"}) as client:
+        created = client.post(f"/projects/{project_id}/messages", json={"conversation_id": str(conversation_id), "content": "Trace this"}).json()
+        worker_headers = {"X-Ebook-Worker-Token": "worker"}
+        lease = client.post("/private/orchestrator/claim", json={"worker_id": "pi-1"}, headers=worker_headers).json()
+        activity = client.post("/private/orchestrator/activity", headers=worker_headers, json={
+            **lease,
+            "activity_type": "tool.started",
+            "payload": {
+                "tool_name": "factory_read_state",
+                "arguments": {"token": "never-store-this"},
+                "result": "Bearer never-store-this",
+            },
+        })
+        gate = client.post("/private/orchestrator/gate", headers=worker_headers, json={
+            **lease, "gate": "brief", "status": "complete", "note": "Brief is exact.", "evidence": ["message:1"],
+        })
+        state = client.get(
+            f"/private/orchestrator/{lease['turn_id']}/state",
+            headers={**worker_headers, "X-Worker-ID": "pi-1", "X-Generation": str(lease["generation"])},
+        )
+
+    assert activity.status_code == 200
+    assert gate.status_code == 200
+    assert state.status_code == 200
+    assert state.json()["project"]["project_id"] == str(project_id)
+    with Session(engine) as session:
+        events = session.scalars(select(Event).where(Event.project_id == project_id)).all()
+        activity_event = next(event for event in events if event.kind == "orchestrator.tool.started")
+        gate_event = next(event for event in events if event.kind == "orchestrator.gate.updated")
+        assert activity_event.data["turn_id"] == created["turn_id"]
+        assert "never-store-this" not in str(activity_event.data)
+        assert activity_event.data["arguments"]["token"] == "[redacted]"
+        assert gate_event.data["gate"] == "brief"
+
+
+def test_orchestrator_can_spawn_a_durable_bounded_research_agent(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'orchestrator-spawn.db'}"
+    engine = create_engine(database_url); Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        project = Project(id=uuid4(), title="Spawn", profile="fiction", language="en")
+        conversation = Conversation(id=uuid4(), project_id=project.id, channel="dashboard"); project.conversation_id = conversation.id
+        brief = BriefRevision(id=uuid4(), project_id=project.id, revision=1, structured_brief={"title": "Spawn"}, content_hash="a" * 64)
+        run = ProductionRun(id=uuid4(), project_id=project.id, approved_brief_id=brief.id, state="queued", budget={})
+        project.active_brief_id = brief.id
+        project.state = "producing"
+        project_id, conversation_id = project.id, conversation.id
+        session.add_all([project, conversation, brief, run]); session.commit()
+
+    with TestClient(create_app(Settings(database_url=database_url, worker_token="worker", owner_token="owner")), headers={"Authorization": "Bearer owner"}) as client:
+        created = client.post(f"/projects/{project_id}/messages", json={"conversation_id": str(conversation_id), "content": "Research the audience."}).json()
+        worker_headers = {"X-Ebook-Worker-Token": "worker"}
+        lease = client.post("/private/orchestrator/claim", json={"worker_id": "pi-1"}, headers=worker_headers).json()
+        response = client.post("/private/orchestrator/spawn", headers=worker_headers, json={
+            **lease, "role": "research", "instruction": "Find the audience risks and return a short evidence plan.",
+        })
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["task_type"] == "orchestrator-research"
+    with Session(engine) as session:
+        task = session.get(Task, UUID(body["task_id"]))
+        job = session.get(Job, UUID(body["job_id"]))
+        events = session.scalars(select(Event).where(Event.project_id == project_id)).all()
+        assert task is not None and task.result_refs["instruction"].startswith("Find the audience")
+        assert job is not None and job.state == "queued"
+        assert {event.kind for event in events} >= {"orchestrator.subagent.queued", "task.enqueued"}
+        assert any(event.data.get("turn_id") == created["turn_id"] for event in events if event.kind == "orchestrator.subagent.queued")

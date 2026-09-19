@@ -12,6 +12,20 @@ from app.models import Conversation, Message, OrchestratorTurn, Project, Telegra
 from app.usage import record_usage_call
 
 MAX_ORCHESTRATOR_ATTEMPTS = 3
+ORCHESTRATOR_ACTIVITY_TYPES = {
+    "session.started",
+    "session.completed",
+    "message.started",
+    "message.delta",
+    "message.completed",
+    "tool.started",
+    "tool.updated",
+    "tool.completed",
+    "tool.failed",
+}
+ORCHESTRATOR_GATES = {"brief", "outline", "draft", "review", "art", "export", "kindle_preview", "owner"}
+ORCHESTRATOR_GATE_STATUSES = {"pending", "in_progress", "complete", "blocked", "needs_review"}
+_SENSITIVE_ACTIVITY_KEY_PARTS = ("token", "secret", "password", "credential", "authorization", "private_key")
 
 
 def _sanitize_error(error: str) -> str:
@@ -23,6 +37,93 @@ def _sanitize_error(error: str) -> str:
     value = re.sub(r"(?i)\b(?:sk|rk)-[A-Za-z0-9_-]{16,}", "[redacted]", value)
     value = re.sub(r"(?i)(://)[^\s/@:]+:[^\s/@]+@", r"\1[redacted]@", value)
     return value[:500] or "unknown orchestrator failure"
+
+
+def sanitize_activity_payload(value: object, *, depth: int = 0) -> object:
+    """Bound and redact provider activity before it becomes a public replay event."""
+
+    if depth > 4:
+        return "[nested value omitted]"
+    if isinstance(value, dict):
+        result: dict[str, object] = {}
+        for key, child in list(value.items())[:40]:
+            name = str(key)
+            if any(part in name.lower() for part in _SENSITIVE_ACTIVITY_KEY_PARTS):
+                result[name] = "[redacted]"
+                continue
+            result[name] = sanitize_activity_payload(child, depth=depth + 1)
+        return result
+    if isinstance(value, (list, tuple)):
+        return [sanitize_activity_payload(child, depth=depth + 1) for child in list(value)[:40]]
+    if isinstance(value, str):
+        return _sanitize_error(value)[:8_000]
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return _sanitize_error(str(value))[:8_000]
+
+
+def record_activity(
+    session: Session,
+    *,
+    turn_id: UUID,
+    worker_id: str,
+    generation: int,
+    activity_type: str,
+    payload: dict[str, object],
+) -> None:
+    """Append one fenced, redacted orchestrator activity event."""
+
+    if activity_type not in ORCHESTRATOR_ACTIVITY_TYPES:
+        raise ValueError("unsupported orchestrator activity type")
+    with session.begin():
+        turn = locked_turn(session, turn_id=turn_id, worker_id=worker_id, generation=generation)
+        bounded_payload = sanitize_activity_payload(payload)
+        if not isinstance(bounded_payload, dict):
+            raise ValueError("orchestrator activity payload must be an object")
+        append_event(
+            session,
+            project_id=turn.project_id,
+            kind=f"orchestrator.{activity_type}",
+            payload={
+                **bounded_payload,
+                "turn_id": str(turn.id),
+                "generation": generation,
+            },
+        )
+
+
+def record_gate(
+    session: Session,
+    *,
+    turn_id: UUID,
+    worker_id: str,
+    generation: int,
+    gate: str,
+    status: str,
+    note: str | None = None,
+    evidence: list[str] | None = None,
+) -> None:
+    """Record the orchestrator's bounded gate decision without changing source state."""
+
+    if gate not in ORCHESTRATOR_GATES:
+        raise ValueError("unsupported orchestrator gate")
+    if status not in ORCHESTRATOR_GATE_STATUSES:
+        raise ValueError("unsupported orchestrator gate status")
+    with session.begin():
+        turn = locked_turn(session, turn_id=turn_id, worker_id=worker_id, generation=generation)
+        append_event(
+            session,
+            project_id=turn.project_id,
+            kind="orchestrator.gate.updated",
+            payload={
+                "turn_id": str(turn.id),
+                "generation": generation,
+                "gate": gate,
+                "status": status,
+                "note": (note or "")[:4_000] or None,
+                "evidence": [str(item)[:512] for item in (evidence or [])[:20]],
+            },
+        )
 
 
 def enqueue_turn(session: Session, *, project_id: UUID, conversation_id: UUID, message_id: UUID, dedupe_key: str) -> OrchestratorTurn:
@@ -146,7 +247,7 @@ def complete_turn(session: Session, *, turn_id: UUID, worker_id: str, generation
         message = Message(project_id=turn.project_id, conversation_id=turn.conversation_id, sequence=next_sequence, channel=conversation.channel, role="assistant", content=content, turn_state="completed")
         session.add(message)
         session.flush()
-        record_usage_call(session, call_id=call_id, provider=provider, model=model, purpose="orchestration", outcome="succeeded", project_id=turn.project_id, started_at=utc_now(), ended_at=utc_now(), input_tokens=(usage or {}).get("input_tokens"), output_tokens=(usage or {}).get("output_tokens"), source_metadata={"source": "pi-orchestrator"}, manage_transaction=False)
+        record_usage_call(session, call_id=call_id, provider=provider, model=model, purpose="orchestration", outcome="succeeded", project_id=turn.project_id, started_at=utc_now(), ended_at=utc_now(), input_tokens=(usage or {}).get("input_tokens"), output_tokens=(usage or {}).get("output_tokens"), cache_read_tokens=(usage or {}).get("cache_read_tokens"), cache_write_tokens=(usage or {}).get("cache_write_tokens"), reasoning_tokens=(usage or {}).get("reasoning_tokens"), source_metadata={"source": "pi-orchestrator"}, manage_transaction=False)
         turn.assistant_message_id = message.id
         turn.provider, turn.model, turn.state, turn.lease_owner, turn.lease_until = provider, model, "succeeded", None, None
         if user_message is not None and user_message.channel == "telegram":
