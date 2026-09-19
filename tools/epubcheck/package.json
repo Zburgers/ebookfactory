@@ -1,0 +1,8 @@
+{
+  "name": "ebook-factory-epubcheck",
+  "private": true,
+  "description": "Pinned local EPUB validation tool for Ebook Factory",
+  "dependencies": {
+    "epubcheck-standalone-cli": "5.4.0-build2"
+  }
+}
