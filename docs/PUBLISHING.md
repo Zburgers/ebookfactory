@@ -13,10 +13,12 @@ Nonfiction: source URLs, access dates, claim-to-source references and actual sup
 - `book.epub`: EPUB 3, ordered spine, navigation/TOC, language/title/author/identifier, embedded cover, semantic headings, accessible image alternatives, portable styles and no missing assets.
 - `book.pdf`: readable pagination, embedded/available fonts, intact images, no clipped/blank content; explicitly labelled reading copy.
 - `book.docx`, `book.md`: complete editable manuscript.
-- `cover.jpg`: RGB ebook cover; current KDP marketing-cover guidance recommends
-  1600 wide × 2560 high, 300 DPI/PPI and JPEG at 5 MB or less. The exporter
-  enforces the RGB geometry and 5 MB ceiling. Preserve illustration and
-  typography sources separately.
+- `cover.jpg`: RGB ebook cover; current KDP guidance gives 1600 wide × 2560
+  high as the ideal dimensions, requires JPEG/TIFF-compatible image data under
+  50 MB, and recommends high-resolution source artwork. The exporter enforces
+  RGB, 1600×2560 geometry and the 50 MB KDP ceiling, and records 300 DPI
+  metadata for generated covers. Preserve illustration and typography sources
+  separately.
 - `metadata.json` and `metadata.csv`: title/subtitle/author/language/description/keywords/category suggestions and AI-content provenance. These are owner handoff data, not an asserted Amazon bulk-upload schema.
 - `sources.json`, `manifest.json`, `validation.json`: citations, exact revision/asset hashes and checks performed.
 
@@ -29,14 +31,19 @@ Packages created before this scope record was introduced are not silently
 treated as complete: a multi-section replay fails closed until a new immutable
 package is generated.
 
-Cover guidance snapshot: Amazon recommends 2560 high × 1600 wide, RGB and 5 MB
-or less for the marketing cover. Re-read official requirements during
-implementation. Do not silently distort generated artwork to match a ratio; use
-deliberate crop/layout. Cover text must agree with metadata.
+Cover guidance snapshot: Amazon's current page says the ideal size is 2560 high
+× 1600 wide, the file must be under 50 MB, and the color profile should be RGB.
+Re-read official requirements during implementation. Do not silently distort
+generated artwork to match a ratio; use deliberate crop/layout. Cover text must
+agree with metadata.
 
 ## Validation levels
 
-1. Structural: run EPUBCheck; no errors, warnings reviewed. Open DOCX with a parser. Parse PDF and inspect rendered pages. Check image decoding, dimensions and color mode. Compare section counts and representative text across all formats.
+1. Structural: run EPUBCheck; no errors, warnings reviewed. Verify that the
+   EPUB navigation links to every manuscript heading. Open DOCX with a parser.
+   Parse PDF and inspect rendered pages and document metadata. Check image
+   decoding, dimensions and color mode. Compare section counts and
+   representative text across all formats.
 2. Reader review: render opening/middle/end, TOC, chapter breaks, long headings, lists, links, illustrations and citations. Verify no missing or repeated content. Retain redacted screenshots and tool/version output.
 3. Kindle review: use Kindle Previewer or KDP's preview surface with owner-authorized access. Record exact artifact hash and observed result. On Linux where Previewer is unavailable, retain status `kindle_preview_pending`; never relabel EPUBCheck as Kindle certification.
 

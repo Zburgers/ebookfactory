@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.exports import PACKAGE_FILES, export_book
+from app.exports import MAX_MARKETING_COVER_BYTES, PACKAGE_FILES, _make_epub, _make_pdf, export_book
 from app.main import create_app
 from app.models import (
     Artifact,
@@ -28,6 +28,38 @@ from app.models import (
     utc_now,
 )
 from app.settings import Settings
+
+
+def test_epub_navigation_lists_manuscript_headings(tmp_path: Path) -> None:
+    cover = io.BytesIO()
+    Image.new("RGB", (1600, 2560), "#273b3a").save(cover, format="JPEG")
+
+    package = _make_epub(
+        "A Small Book",
+        "en",
+        "## First chapter\n\nFirst body.\n\n## Second chapter\n\nSecond body.",
+        cover.getvalue(),
+        uuid4(),
+    )
+
+    with zipfile.ZipFile(io.BytesIO(package)) as archive:
+        navigation = archive.read("EPUB/nav.xhtml").decode()
+
+    assert "chapter-1.xhtml#section-1" in navigation
+    assert "First chapter" in navigation
+    assert "chapter-1.xhtml#section-2" in navigation
+    assert "Second chapter" in navigation
+
+
+def test_pdf_embeds_package_identity() -> None:
+    pdf = _make_pdf("QA Title", "## Chapter\n\nBody")
+
+    assert b"/Title (QA Title)" in pdf
+    assert b"/Author (Ebook Factory)" in pdf
+
+
+def test_cover_size_gate_matches_current_kdp_ceiling() -> None:
+    assert MAX_MARKETING_COVER_BYTES == 50 * 1024 * 1024
 
 
 def test_export_package_generates_all_formats_and_is_idempotent(tmp_path: Path) -> None:
@@ -131,8 +163,11 @@ def test_export_package_generates_all_formats_and_is_idempotent(tmp_path: Path) 
     with Image.open(io.BytesIO((root / "cover.jpg").read_bytes())) as cover:
         assert cover.mode == "RGB"
         assert cover.size == (1600, 2560)
+        assert cover.info["dpi"] == (300, 300)
     validation = json.loads((root / "validation.json").read_text())
     assert validation["checks"]["cover_file_size"] is True
+    assert validation["checks"]["pdf_metadata"] is True
+    assert validation["checks"]["epub_toc_headings"] is True
     fallback_metadata = json.loads((root / "metadata.json").read_text())
     assert fallback_metadata["ai_content_provenance"]["text"] == {
         "source": "revisioned-manuscript",

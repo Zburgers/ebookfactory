@@ -52,7 +52,7 @@ MIME_TYPES = {
     "json": "application/json",
     "csv": "text/csv",
 }
-MAX_MARKETING_COVER_BYTES = 5 * 1024 * 1024
+MAX_MARKETING_COVER_BYTES = 50 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -281,7 +281,7 @@ def _make_cover(title: str, source: bytes | None = None) -> bytes:
     box = draw.textbbox((0, 0), label, font=small)
     draw.text(((1600 - (box[2] - box[0])) / 2, 2180), label, fill="#b8d1ca", font=small)
     output = io.BytesIO()
-    image.save(output, format="JPEG", quality=90, optimize=True)
+    image.save(output, format="JPEG", quality=90, optimize=True, dpi=(300, 300))
     return output.getvalue()
 
 
@@ -373,8 +373,17 @@ def _make_epub(title: str, language: str, markdown: str, cover: bytes, revision_
     book.add_metadata("DC", "description", "AI-assisted manuscript; owner review required.")
     book.set_cover("cover.jpg", cover)
     chapter = epub.EpubHtml(title=title, file_name="chapter-1.xhtml", lang=language)
-    body = [f"<h1>{html.escape(title)}</h1>"]
-    body.extend(f"<{kind}>{_inline_html(value)}</{kind}>" for kind, value in _markdown_blocks(markdown))
+    body = [f'<h1 id="book-title">{html.escape(title)}</h1>']
+    toc = [epub.Link("chapter-1.xhtml#book-title", title, "book-title")]
+    section_number = 0
+    for kind, value in _markdown_blocks(markdown):
+        if kind.startswith("h"):
+            section_number += 1
+            anchor = f"section-{section_number}"
+            body.append(f'<{kind} id="{anchor}">{_inline_html(value)}</{kind}>')
+            toc.append(epub.Link(f"chapter-1.xhtml#{anchor}", value, anchor))
+        else:
+            body.append(f"<{kind}>{_inline_html(value)}</{kind}>")
     chapter.content = (
         "<!DOCTYPE html><html xmlns=\"http://www.w3.org/1999/xhtml\"><head>"
         f"<title>{html.escape(title)}</title><style>body{{font-family:serif;line-height:1.5}}"
@@ -383,7 +392,7 @@ def _make_epub(title: str, language: str, markdown: str, cover: bytes, revision_
         + "</body></html>"
     )
     book.add_item(chapter)
-    book.toc = (epub.Link("chapter-1.xhtml", title, "chapter-1"),)
+    book.toc = tuple(toc)
     book.spine = ["nav", chapter]
     book.add_item(epub.EpubNcx())
     book.add_item(epub.EpubNav())
@@ -419,7 +428,13 @@ def _make_pdf(title: str, markdown: str) -> bytes:
         else:
             story.append(Paragraph(_inline_html(value), body_style))
     document = SimpleDocTemplate(output, pagesize=LETTER, rightMargin=0.8 * inch, leftMargin=0.8 * inch)
-    document.build(story)
+
+    def set_metadata(canvas, _document) -> None:
+        canvas.setTitle(title)
+        canvas.setAuthor("Ebook Factory")
+        canvas.setSubject("AI-assisted manuscript; owner review required.")
+
+    document.build(story, onFirstPage=set_metadata, onLaterPages=set_metadata)
     return output.getvalue()
 
 
@@ -463,17 +478,27 @@ def _metadata_csv(metadata: dict[str, object]) -> bytes:
     return output.getvalue().encode()
 
 
-def _validate_files(files: dict[str, bytes], *, source_revision_count: int) -> dict[str, object]:
+def _validate_files(
+    files: dict[str, bytes], *, source_revision_count: int, manuscript_heading_count: int
+) -> dict[str, object]:
     checks: dict[str, bool] = {}
     checks["markdown_nonempty"] = bool(files["book.md"].strip())
     checks["pdf_signature"] = files["book.pdf"].startswith(b"%PDF-")
+    checks["pdf_metadata"] = b"/Title" in files["book.pdf"] and b"/Author" in files["book.pdf"]
     checks["docx_structure"] = all(marker in files["book.docx"] for marker in (b"word/document.xml", b"[Content_Types].xml"))
     with zipfile.ZipFile(io.BytesIO(files["book.epub"])) as archive:
         checks["epub_archive"] = archive.testzip() is None
         names = set(archive.namelist())
-        checks["epub_navigation"] = any(name.endswith("nav.xhtml") for name in names) and any(
-            name.endswith("chapter-1.xhtml") for name in names
+        nav_name = next((name for name in names if name.endswith("nav.xhtml")), None)
+        chapter_name = next((name for name in names if name.endswith("chapter-1.xhtml")), None)
+        navigation = archive.read(nav_name) if nav_name else b""
+        checks["epub_navigation"] = bool(
+            nav_name
+            and chapter_name
+            and b'epub:type="toc"' in navigation
+            and b'chapter-1.xhtml' in navigation
         )
+        checks["epub_toc_headings"] = len(re.findall(rb'chapter-1\.xhtml#section-\d+', navigation)) >= manuscript_heading_count
     with Image.open(io.BytesIO(files["cover.jpg"])) as cover:
         checks["cover_rgb"] = cover.mode == "RGB"
         checks["cover_dimensions"] = cover.size == (1600, 2560)
@@ -651,7 +676,11 @@ def export_book(
         "metadata.csv": _metadata_csv(metadata),
         "sources.json": b"[]\n",
     }
-    validation = _validate_files(files, source_revision_count=len(scope.revision_ids))
+    validation = _validate_files(
+        files,
+        source_revision_count=len(scope.revision_ids),
+        manuscript_heading_count=sum(kind.startswith("h") for kind, _ in _markdown_blocks(body)),
+    )
     manifest_files = [
         {"filename": name, "byte_count": len(content), "sha256": hashlib.sha256(content).hexdigest()}
         for name, content in files.items()
