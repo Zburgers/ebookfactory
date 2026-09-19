@@ -1,7 +1,7 @@
 # Build status
 
-2026-09-20: The usage/observability reconciliation is integrated and being
-verified against the live LAN service. The Usage page now keeps workspace
+2026-09-20: Revision `9809cca` delivers the usage/observability reconciliation
+and is verified against the live LAN service. The Usage page now keeps workspace
 totals visible even when a book is selected, while the selected project's
 call ledger remains available for drill-down. The live workspace audit returned
 60 durable calls, 121,310 tracked tokens and a `~$0.0552` API-equivalent
