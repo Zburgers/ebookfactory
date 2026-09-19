@@ -209,6 +209,9 @@ export interface ProductionArtRequest {
   mime_type: string;
   byte_count: number;
   content_base64: string;
+  call_id?: string | null;
+  provider_request_id?: string | null;
+  usage?: ProductionUsageRequest | null;
 }
 
 export interface ProductionOutputRequest {

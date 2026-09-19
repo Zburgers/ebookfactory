@@ -488,6 +488,9 @@ class ProductionArtRequest(BaseModel):
     mime_type: str = Field(min_length=1, max_length=64)
     byte_count: int = Field(ge=1, le=10 * 1024 * 1024)
     content_base64: str = Field(min_length=4, max_length=14_000_000)
+    call_id: UUID | None = None
+    provider_request_id: str | None = Field(default=None, max_length=255)
+    usage: "ProductionUsageRequest | None" = None
 
 
 class ProductionUsageRequest(BaseModel):
@@ -1913,6 +1916,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             manage_transaction=False,
                         )
                         usage_call_id = usage_result.call_id
+                    art_usage_call_id = None
+                    if payload.art and payload.art.call_id and payload.provider and payload.model:
+                        art_usage = payload.art.usage
+                        art_usage_result = record_usage_call(
+                            session,
+                            call_id=payload.art.call_id,
+                            provider=payload.provider,
+                            model=payload.model,
+                            purpose="art",
+                            outcome="succeeded",
+                            started_at=utc_now(),
+                            ended_at=utc_now(),
+                            provider_request_id=payload.art.provider_request_id,
+                            project_id=output.project_id,
+                            run_id=output.run_id,
+                            task_id=output.task_id,
+                            attempt_id=attempt.id if attempt else None,
+                            input_tokens=art_usage.input_tokens if art_usage else None,
+                            output_tokens=art_usage.output_tokens if art_usage else None,
+                            cache_read_tokens=art_usage.cache_read_tokens if art_usage else None,
+                            cache_write_tokens=art_usage.cache_write_tokens if art_usage else None,
+                            reasoning_tokens=art_usage.reasoning_tokens if art_usage else None,
+                            source_metadata={"source": "codex-app-server-image", "reported_usage": art_usage.model_dump() if art_usage else None},
+                            manage_transaction=False,
+                        )
+                        art_usage_call_id = art_usage_result.call_id
                     complete_job(
                         session,
                         job_id=payload.job_id,
@@ -1923,6 +1952,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             "artifact_id": str(artifact.id),
                             **({"art_artifact_id": str(art_artifact.id)} if art_artifact else {}),
                             **({"usage_call_id": str(usage_call_id)} if usage_call_id else {}),
+                            **({"art_usage_call_id": str(art_usage_call_id)} if art_usage_call_id else {}),
                         },
                         manage_transaction=False,
                     )

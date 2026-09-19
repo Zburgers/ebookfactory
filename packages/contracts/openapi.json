@@ -964,6 +964,18 @@
             "title": "Byte Count",
             "type": "integer"
           },
+          "call_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Id"
+          },
           "content_base64": {
             "maxLength": 14000000,
             "minLength": 4,
@@ -981,6 +993,28 @@
             "minLength": 1,
             "title": "Mime Type",
             "type": "string"
+          },
+          "provider_request_id": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Request Id"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductionUsageRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [

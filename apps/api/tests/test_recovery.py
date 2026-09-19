@@ -1,4 +1,5 @@
 import os
+import base64
 from collections.abc import Iterator
 from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
@@ -158,6 +159,15 @@ def test_api_project_brief_and_approval_boundary(database_session: Session) -> N
                 "model": "test-model",
                 "call_id": str(uuid4()),
                 "usage": {"input_tokens": 4, "output_tokens": 6},
+                "art": {
+                    "filename": "cover.png",
+                    "mime_type": "image/png",
+                    "byte_count": 11,
+                    "content_base64": base64.b64encode(b"\x89PNG\r\n\x1a\nart").decode(),
+                    "call_id": str(uuid4()),
+                    "provider_request_id": "art-response",
+                    "usage": {"input_tokens": 12, "output_tokens": 3},
+                },
             },
         )
         sse_response = client.get(f"/projects/{project_id}/events/stream?after=0")
@@ -179,6 +189,11 @@ def test_api_project_brief_and_approval_boundary(database_session: Session) -> N
     assert usage_call.output_tokens == 6
     assert usage_call.ended_at is not None
     assert usage_call.started_at <= usage_call.ended_at
+    usage_calls = database_session.scalars(select(UsageCall).where(UsageCall.project_id == UUID(project_id))).all()
+    assert {call.purpose for call in usage_calls} == {"production", "art"}
+    art_usage = next(call for call in usage_calls if call.purpose == "art")
+    assert art_usage.input_tokens == 12
+    assert art_usage.output_tokens == 3
     assert sse_response.status_code == 200
     assert sse_response.headers["content-type"].startswith("text/event-stream")
     assert "run.approved" in sse_response.text

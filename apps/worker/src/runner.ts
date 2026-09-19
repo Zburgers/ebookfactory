@@ -80,7 +80,15 @@ async function readGeneratedArt(result, signal) {
   if (signal?.aborted) throw new Error("Codex art aborted");
   const bytes = await readFile(result.savedPath);
   if (bytes.length > MAX_ART_BYTES) throw new Error("Codex art output exceeded the bounded file limit");
-  return { filename: path.basename(result.savedPath), mime_type: mimeType, byte_count: bytes.length, content_base64: bytes.toString("base64") };
+  return {
+    filename: path.basename(result.savedPath),
+    mime_type: mimeType,
+    byte_count: bytes.length,
+    content_base64: bytes.toString("base64"),
+    ...(result.callId ? { call_id: result.callId } : {}),
+    ...(result.providerRequestId ? { provider_request_id: result.providerRequestId } : {}),
+    ...(result.usage ? { usage: result.usage } : {}),
+  };
 }
 
 export async function requestJson(baseUrl, token, path, options) {

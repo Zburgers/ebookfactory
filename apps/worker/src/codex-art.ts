@@ -1,6 +1,7 @@
 /** Trusted host adapter for the installed Codex app-server image-generation route. */
 
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 
 const CLIENT_INFO = { name: "ebook-factory-art", title: "Ebook Factory", version: "0.1.0" };
 
@@ -43,11 +44,14 @@ export function parseCodexArtEvent(line) {
 }
 
 export function runCodexArt({ prompt, model = "gpt-5.6-luna", command = "codex", commandArgs = ["app-server"], cwd }) {
+  const callId = randomUUID();
   const child = spawn(command, commandArgs, { cwd, shell: false, stdio: ["pipe", "pipe", "pipe"] });
   return new Promise((resolve, reject) => {
     let stderr = "";
     let buffer = "";
     let threadId = null;
+    let usage = null;
+    let providerRequestId = null;
     let settled = false;
     const finish = (error, value) => {
       if (settled) return;
@@ -69,8 +73,12 @@ export function runCodexArt({ prompt, model = "gpt-5.6-luna", command = "codex",
         if (event.id === 0 && event.result) { send({ method: "initialized", params: {} }); send(buildCodexThreadStart(model)); }
         else if (event.id === 1 && event.result?.thread?.id) { threadId = event.result.thread.id; send(buildCodexArtTurn(threadId, prompt)); }
         else if (event.error) finish(new Error(`Codex app-server error: ${event.error.message || "unknown"}`));
+        if (event.method === "rawResponse/completed") {
+          providerRequestId = event.params?.responseId || providerRequestId;
+          usage = event.params?.usage || usage;
+        }
         const art = parseCodexArtEvent(line);
-        if (art?.status === "completed" && art.savedPath) finish(null, art);
+        if (art?.status === "completed" && art.savedPath) finish(null, { ...art, callId, providerRequestId, usage });
         if (art?.status === "failed" || art?.failure) finish(new Error(`Codex image generation failed: ${JSON.stringify(art.failure || art.result)}`));
       }
     });
