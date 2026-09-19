@@ -11,6 +11,21 @@ export interface ApprovalResponse {
   job_id: string;
 }
 
+export interface ArtRevisionResultRequest {
+  job_id: string;
+  worker_id: string;
+  generation: number;
+  provider: string;
+  model: string;
+  art: ProductionArtRequest;
+}
+
+export interface ArtRevisionResultResponse {
+  accepted: boolean;
+  artifact_id: string;
+  usage_call_id?: string | null;
+}
+
 export interface ArtifactReviewRequest {
   decision: string;
   note?: string | null;
@@ -29,6 +44,8 @@ export interface ArtifactReviewResponse {
   owner_review_note: string | null;
   owner_reviewed_at: string | null;
   download_path: string;
+  revision_job_id?: string | null;
+  revision_task_id?: string | null;
 }
 
 export interface ArtifactView {
@@ -510,6 +527,7 @@ export interface WorkerJobContextResponse {
   budget: Record<string, unknown>;
   outline?: WorkerOutlineContext | null;
   section?: WorkerSectionContext | null;
+  art_revision?: Record<string, string> | null;
   assembly?: boolean;
   review_sections?: Array<WorkerReviewSection>;
 }

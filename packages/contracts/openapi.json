@@ -49,6 +49,82 @@
         "title": "ApprovalResponse",
         "type": "object"
       },
+      "ArtRevisionResultRequest": {
+        "properties": {
+          "art": {
+            "$ref": "#/components/schemas/ProductionArtRequest"
+          },
+          "generation": {
+            "minimum": 1.0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Provider",
+            "type": "string"
+          },
+          "worker_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "worker_id",
+          "generation",
+          "provider",
+          "model",
+          "art"
+        ],
+        "title": "ArtRevisionResultRequest",
+        "type": "object"
+      },
+      "ArtRevisionResultResponse": {
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "usage_call_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage Call Id"
+          }
+        },
+        "required": [
+          "accepted",
+          "artifact_id"
+        ],
+        "title": "ArtRevisionResultResponse",
+        "type": "object"
+      },
       "ArtifactReviewRequest": {
         "properties": {
           "decision": {
@@ -149,6 +225,30 @@
               }
             ],
             "title": "Revision Id"
+          },
+          "revision_job_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Job Id"
+          },
+          "revision_task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Task Id"
           },
           "sha256": {
             "title": "Sha256",
@@ -2824,6 +2924,20 @@
       },
       "WorkerJobContextResponse": {
         "properties": {
+          "art_revision": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Art Revision"
+          },
           "assembly": {
             "default": false,
             "title": "Assembly",
@@ -3843,6 +3957,64 @@
           }
         ],
         "summary": "Scoped Tool",
+        "tags": [
+          "private-worker"
+        ]
+      }
+    },
+    "/private/worker/art-result": {
+      "post": {
+        "operationId": "worker_art_revision_result_private_worker_art_result_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Ebook-Worker-Token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Ebook-Worker-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtRevisionResultRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtRevisionResultResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
+        "summary": "Worker Art Revision Result",
         "tags": [
           "private-worker"
         ]
@@ -4983,6 +5155,77 @@
           }
         ],
         "summary": "Events Stream"
+      }
+    },
+    "/projects/{project_id}/execution": {
+      "get": {
+        "description": "Return a bounded owner-only control-room snapshot from durable records.",
+        "operationId": "project_execution_projects__project_id__execution_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "After",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 250,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Project Execution Projects  Project Id  Execution Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
+        "summary": "Project Execution",
+        "tags": [
+          "operations"
+        ]
       }
     },
     "/projects/{project_id}/exports/{revision_id}": {
