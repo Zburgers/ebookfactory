@@ -17,6 +17,9 @@ active on port 6969 and PostgreSQL migration head `a1b2c3d4e5f6`.
   hash. Source bytes remained unchanged.
 - `scripts/validate-epub.sh` on the live package returned exit 0:
   `0 fatals / 0 errors / 0 warnings / 0 infos`.
+- After the service restart on the reviewed revision, the new package's
+  authenticated `metadata.json` download returned HTTP 200, while a known
+  legacy placeholder package's metadata download returned HTTP 409.
 
 The exact-call `artifacts.usage_call_id` binding, retry fencing, legacy metadata
 fail-closed behavior and cross-project/alternate-art rejection are covered by
