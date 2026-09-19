@@ -1,6 +1,6 @@
 # Delivery scorecard
 
-Current score: **83/100 — durable runtime/containment, real production with
+Current score: **82/100 — durable runtime/containment, real production with
 reviewed revision lineage, live usage attribution, dashboard document flow and
 structural publishing packages are evidenced; external hard gates remain.**
 
@@ -22,7 +22,7 @@ streaming, failure-recovery, Telegram, authentication, or concurrency findings.
 | Containment | 10/10 | Filesystem/secret isolation, enforced network/resource limits and label-scoped reconciliation all pass P04 evidence, including unrelated-container preservation |
 | Production | 16/16 | Real fiction/nonfiction output, fenced context/task lineage, owner revision, resolved review finding and a live pre-publication budget rejection are evidenced (`evidence/P05/real-production.md`, `evidence/P05/budget-blocking.md`, `evidence/P05/budget-live.md`, `evidence/P06/dashboard-correction.md`) |
 | Dashboard | 10/10 | Real Chromium journey covered chat/brief/review, replayed events, section editing, ten export/download links, quota/settings visibility and accessibility checks (`evidence/P06/dashboard-browser-trace.md`) |
-| Usage | 9/12 | Real finalized production and separate Codex-art call attribution when app-server usage is reported, idempotent totals, live redacted Codex subscription windows, explicit stale/unknown states and project-scoped call drill-down are evidenced; estimates and Copilot quota remain pending (`evidence/P07/live-usage.md`, `evidence/P07/quota-live.md`, `evidence/P07/usage-drilldown.md`) |
+| Usage | 8/12 | Real finalized production attribution, separate Codex-art call accounting is implemented and tested but not yet proven by a new live image call, plus idempotent totals, live redacted Codex subscription windows, explicit stale/unknown states and project-scoped call drill-down are evidenced; estimates and Copilot quota remain pending (`evidence/P07/live-usage.md`, `evidence/P07/quota-live.md`, `evidence/P07/usage-drilldown.md`) |
 | Publishing | 10/12 | Real structurally checked EPUB/PDF/DOCX/Markdown, cover, metadata and manifests are persisted; EPUBCheck and Kindle preview remain pending (`evidence/P08/publishing.md`) |
 | Art | 3/5 | Real subscription-backed image output is persisted and dashboard-visible; owner image revision/layout review remains open (`evidence/P08/art-live.md`) |
 | Telegram | 1/5 | Real `/help` receipt and outbox delivery are evidenced; same-project free-text loop and real sender rejection remain open (`evidence/P09/telegram.md`) |
