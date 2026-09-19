@@ -43,6 +43,18 @@ required. The worker uses the loopback HTTP listener only. Use `make start`,
 `scripts/service.sh` wrapper remains a local test helper; it does not supervise
 worker or Podman jobs.
 
+The API launcher passes `EBOOK_FACTORY_GRACEFUL_SHUTDOWN_SECONDS` (default
+`10`) to Uvicorn and the systemd unit treats its expected SIGTERM exit as a
+successful stop. A browser event stream may therefore take up to the bounded
+grace period to reconnect during a deliberate restart; jobs remain durable in
+PostgreSQL. Verify recovery with:
+
+```sh
+systemctl --user restart ebook-factory-api.service
+curl -fsS http://192.168.29.14:6969/ready
+systemctl --user is-active ebook-factory-api.service ebook-factory-worker.service ebook-factory-telegram.service
+```
+
 Create a custom-format peer-authenticated backup:
 
 ```sh

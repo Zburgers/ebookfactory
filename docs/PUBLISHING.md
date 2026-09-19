@@ -22,6 +22,14 @@ Nonfiction: source URLs, access dates, claim-to-source references and actual sup
 - `metadata.json` and `metadata.csv`: title/subtitle/author/language/description/keywords/category suggestions and AI-content provenance. These are owner handoff data, not an asserted Amazon bulk-upload schema.
 - `sources.json`, `manifest.json`, `validation.json`: citations, exact revision/asset hashes and checks performed.
 
+The Studio's delivery-format selection controls the optional book files
+(`book.epub`, `book.pdf`, `book.docx`, and/or `book.md`). The mandatory cover,
+metadata, sources, manifest and validation files are retained in every package
+so a selective delivery can still be audited. The title, author, subtitle,
+description, audience, genre, keywords and language come from the exact
+approved brief that owns the production run; they are not replaced by generic
+factory defaults.
+
 An export requested from any section revision in a completed multi-section run
 resolves the run's dependency-fenced section revisions and packages the whole
 manuscript. If the owner edits one of those sections, the new revision replaces

@@ -4,9 +4,9 @@ Approved design, 2026-09-18. Personal ebook business, one owner. Deliver reliabl
 
 ## Owner journey
 
-The owner chats with the main orchestrator in the dashboard or linked Telegram conversation. The agent asks only for missing creative decisions, proposes defaults, and produces a structured brief: audience, promise/premise, scope, genre/profile, language, length, style, sources policy, forbidden claims/content, output formats, art direction and resource budget. The owner approves that exact revision.
+The owner chats with the main orchestrator in the dashboard or linked Telegram conversation. The agent asks only for missing creative decisions, proposes defaults, and produces a structured brief: audience, promise/premise, scope, genre/profile, language, length, style, sources policy, forbidden claims/content, output formats, art direction and resource budget. The owner approves that exact revision. The dashboard keeps the same brief visible as book metadata, so the owner does not have to open a generated JSON file to know what is being made.
 
-The orchestrator creates a persisted work plan and delegates bounded tasks. It gathers research, makes an outline, writes sections, checks coherence/facts, revises, and assembles a draft. Routine intermediate checks are automatic. The owner sees progress without responding to child agents. Interrupt only for a real blocker (auth/quota, inaccessible source, unresolved essential choice, budget ceiling), manuscript review, or art review. Merge manuscript/art decisions where practical. Final publishing is an owner action outside v1.
+The orchestrator creates a persisted work plan and delegates bounded tasks. It gathers research, makes an outline, writes sections, checks coherence/facts, revises, and assembles a draft. Routine intermediate checks are automatic. The owner sees the causal run/task/attempt trace, provider/model lineage, safe result references, reviews, retries and errors without responding to child agents. Those operational updates are deliberately not fabricated as assistant chat messages; the control room is the source of truth for work that was not a conversational turn. Interrupt only for a real blocker (auth/quota, inaccessible source, unresolved essential choice, budget ceiling), manuscript review, or art review. Merge manuscript/art decisions where practical. Final publishing is an owner action outside v1.
 
 If the owner sends a new direction mid-run, acknowledge immediately, persist the change request, and apply it at a checkpoint. Changes beyond the approved brief produce a new brief revision and require renewed approval. No silent rewrites of accepted work.
 
@@ -39,7 +39,7 @@ flowchart LR
 
 ## Dashboard (reuse Ant Design or equivalent maintained components)
 
-Project list; persistent chat; brief approval card; production timeline with task tree and honest state; chapter/outline browser with edit and revision comparison; draft/art review; exports and validation report; usage with drill-down; provider/settings screen; Telegram connection status. Reuse Markdown renderer and editor, not handwritten rich-text plumbing. Include loading/errors, keyboard operation, accessible labels, narrow-screen layout and reconnect recovery.
+Project list; persistent chat; first-class book metadata and brief editor; production journey with task tree and honest state; chapter/outline browser with edit and revision comparison; draft/art review; selected delivery formats and validation report; usage with drill-down; provider/settings screen; Telegram connection status. Reuse Markdown renderer and editor, not handwritten rich-text plumbing. Include loading/errors, keyboard operation, accessible labels, narrow-screen layout and reconnect recovery. Decorative panel numbering is not part of the information architecture.
 
 Usage navigation: account -> provider -> project -> run -> task -> attempt -> model call. Click a task to see input revision references, output artifacts, concise tool events and errors. Show elapsed time and completed tasks; no invented percentage of an unknown agent workload.
 

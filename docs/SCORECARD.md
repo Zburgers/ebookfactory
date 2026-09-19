@@ -5,7 +5,9 @@ reviewed revision lineage, live usage attribution, dashboard document flow,
 structural publishing packages and the live Telegram owner loop are evidenced;
 external publishing/quota and owner-art-review gates remain.**
 
-The latest reconciliation revisions are `572517e` (authenticated artifact
+The latest reconciliation revisions are `e4f00b0` (brief metadata carried into
+delivery packages, selected delivery formats, and clean graceful service
+shutdown), `572517e` (authenticated artifact
 downloads/previews, compact artifact tiles and persisted production stages) and
 `104511c` (EPUB heading navigation, PDF metadata, current KDP cover-size
 preflight and manual package QA). These repair usability and package quality;
@@ -19,6 +21,14 @@ explicit local-network owner choice, the private-LAN listener is plain HTTP and
 the Tailscale listener remains HTTPS. A default generated Tailscale certificate
 still lacks authenticated server identity; that remains a separate
 transport-trust finding from the H1 provider-call gate.
+
+The latest package reconciliation makes the editable brief authoritative for
+the handoff: title, author, description, keywords, genre, audience, subtitle,
+language and selected book formats are carried into generated files. Every
+package still retains its cover, metadata, source, manifest and validation
+evidence. This improves the real owner workflow but does not claim Kindle
+Previewer or owner-art approval evidence, so the conservative score remains
+89.
 
 Revision `747d211` fully revises the dashboard presentation on
 `codex/ebook-factory-v2` while preserving the existing API, SSE and live model

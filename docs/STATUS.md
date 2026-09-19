@@ -1,5 +1,29 @@
 # Build status
 
+2026-09-19 20:27 UTC: Revision `e4f00b0` closes three remaining internal
+product holes. Brief metadata now flows into EPUB/PDF/DOCX/JSON output from the
+approved run brief; the Studio's delivery-format choices are honored while
+cover, metadata, source, manifest, and validation evidence remain mandatory;
+and invalid format names are rejected at the API boundary. The API launcher
+now bounds graceful shutdown at ten seconds and systemd treats its intentional
+SIGTERM exit as successful, making restarts with a live event stream clean.
+Focused export/brief tests, web verification, transport checks, and systemd
+manifest checks passed. Kindle Previewer, live owner art judgment, and
+provider-specific billing remain external gates.
+
+2026-09-19 20:05 UTC: Revisions `5db1978`, `83cb6fa`, and `c5989e5` make
+production execution inspectable. The Studio now has a first-class book
+overview and metadata editor, a journey rail, a nested run/task/attempt
+control room, honest empty-chat copy, grouped artifact tiles with protected
+previews/downloads, review/revision replay, image provenance, and a real
+delivery-package action. The API exposes a bounded owner-only execution
+aggregate and durable agent/review lifecycle events; an art revision request
+creates a fenced, deduplicated job and retains the source image. An isolated
+manual journey reached a structurally validated ten-member package with EPUB
+container/nav checks and sixteen durable activity events. Live `/ready`
+returned healthy after restart on `192.168.29.14:6969`; no owner token was
+available for authenticated visual browser QA.
+
 2026-09-19 19:06 UTC: Revision `eeec023` fixes a boot-time LAN binding
 race in `scripts/serve-api.sh`. The launcher now retries configured private
 interface discovery for up to 30 seconds, covering delayed DHCP/link readiness

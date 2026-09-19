@@ -29,6 +29,16 @@ Job: queued -> running -> succeeded | retry_wait | blocked | failed | cancelled.
 
 Approvals require expected revision/hash, are idempotent, and enqueue work in the same DB transaction. Duplicate dashboard/Telegram approvals cannot create two runs. Earlier approvals become stale when content changes. Approval must never be interpreted from untrusted source text or a child agent result.
 
+Brief metadata is part of the approved revision, not export-only decoration. The
+structured brief may carry `title`, `subtitle`, `author`, `description`,
+`language`, `genre`, `audience`, `keywords`, `categories`, `art_direction`,
+`target_pages` or `target_length`, and `output_formats` (`epub`, `pdf`, `docx`,
+or `markdown`). The selected book formats are generated on export; cover,
+metadata JSON/CSV, sources, manifest and validation evidence remain mandatory.
+Exports resolve metadata from the exact approved brief for the production run,
+falling back to the project's active brief only for a manuscript with no
+production run.
+
 ## Queue mechanics
 
 Claim an eligible job using a transaction and `FOR UPDATE SKIP LOCKED`, increment its fencing generation, assign owner and lease, commit before execution. No DB transaction remains open during an LLM call. Default heartbeat 10 seconds and lease 60 seconds are initial tunable values, not universal constants.
@@ -63,7 +73,7 @@ MCP adapters expose only selected tools. Third-party tool descriptions and retri
 
 ## API/event surface to implement
 
-`POST /projects`, `GET /projects/{id}`, `POST /projects/{id}/messages` (returns durable message/turn ID), `GET /projects/{id}/events?after=<event_id>` (SSE replay), brief approve/revise endpoints, run pause/resume/cancel, section edit with expected revision, draft/art approve/revise, export creation/status/download, usage queries, provider catalog/config/auth/test, Telegram status/link configuration.
+`POST /projects`, `GET /projects/{id}`, `POST /projects/{id}/messages` (returns durable message/turn ID), `GET /projects/{id}/events?after=<event_id>` (SSE replay), `GET /projects/{id}/execution?after=<event_id>&limit=<n>` (bounded owner-only control-room aggregate), brief approve/revise endpoints, run pause/resume/cancel, section edit with expected revision, draft/art approve/revise, export creation/status/download, usage queries, provider catalog/config/auth/test, Telegram status/link configuration. An image `request_revision` decision appends `artifact.owner_reviewed`, creates a deduplicated fenced art-revision task/job, and leaves the source artifact immutable.
 
 Private supervisor endpoints: claim/heartbeat/checkpoint/complete/fail plus scoped tool invocation. Local transport/private token; never public unauthenticated worker callbacks. SSE event envelope: id, version, timestamp, project_id, run_id?, task_id?, kind, payload. Reconnect replays without double-counting or rerunning work. A closed HTTP stream never cancels a production job.
 
