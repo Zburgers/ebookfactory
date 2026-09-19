@@ -17,6 +17,8 @@ function fakeChild() {
   return child;
 }
 
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
 test("aborting an in-flight image request terminates the child and rejects", async () => {
   const child = fakeChild();
   const controller = new AbortController();
@@ -35,6 +37,49 @@ test("timed-out image request terminates the child with a bounded error", async 
     return true;
   });
   assert.deepEqual(child.killSignals, ["SIGTERM"]);
+});
+
+test("escalates a surviving child from SIGTERM to SIGKILL", async () => {
+  const child = fakeChild();
+  const request = runCodexArt({ prompt: "hang", timeoutMs: 5, terminateGraceMs: 5, spawnProcess: () => child });
+  await assert.rejects(request, /timed out after 5ms/);
+  await wait(15);
+  assert.deepEqual(child.killSignals, ["SIGTERM", "SIGKILL"]);
+});
+
+test("keeps timeout escalation armed when the child closes after rejection", async () => {
+  const child = fakeChild();
+  const request = runCodexArt({ prompt: "hang", timeoutMs: 5, terminateGraceMs: 5, spawnProcess: () => child });
+  await assert.rejects(request, /timed out after 5ms/);
+  child.emit("close", 0);
+  await wait(15);
+  assert.deepEqual(child.killSignals, ["SIGTERM", "SIGKILL"]);
+});
+
+test("uses the detached Linux process group for cleanup when a pid is available", async () => {
+  const child = fakeChild();
+  child.pid = 4321;
+  const signals = [];
+  const request = runCodexArt({
+    prompt: "hang", timeoutMs: 5, terminateGraceMs: 5, platform: "linux",
+    killProcess: (pid, signal) => signals.push({ pid, signal }), spawnProcess: () => child,
+  });
+  await assert.rejects(request, /timed out after 5ms/);
+  await wait(15);
+  assert.deepEqual(signals, [{ pid: -4321, signal: "SIGTERM" }, { pid: -4321, signal: "SIGKILL" }]);
+  assert.deepEqual(child.killSignals, []);
+});
+
+test("redacts raw tokens and URL credentials from child errors", async () => {
+  const child = fakeChild();
+  const request = runCodexArt({ prompt: "fail", spawnProcess: () => child });
+  child.emit("error", new Error("sk-live-secret rk-refresh-secret https://alice:p@ss@example.test/api"));
+  await assert.rejects(request, error => {
+    assert.doesNotMatch(error.message, /sk-live-secret|rk-refresh-secret|alice:p@ss/);
+    assert.match(error.message, /https:\/\/example\.test\/api/);
+    assert.match(error.message, /\[redacted\]/);
+    return true;
+  });
 });
 
 test("builds the experimental app-server handshake and image turn", () => {

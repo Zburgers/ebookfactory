@@ -16,4 +16,4 @@
 - Result: H2/H4 remain unpassed. No output from this cancelled run is counted
   as a book or image acceptance. The follow-up repair adds a default 120-second
   timeout, parent abort handling, child termination and redacted bounded errors
-  in `apps/worker/src/codex-art.ts`, with seven focused tests passing.
+ in `apps/worker/src/codex-art.ts`, with eleven focused tests passing.

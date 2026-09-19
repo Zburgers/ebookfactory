@@ -5,7 +5,8 @@ fencing generation 1 to generation 2 after the worker service was killed and
 automatically restarted. The probe then found an unbounded Codex art
 app-server subprocess; the run was cancelled durably before retry. The
 follow-up adds a 120-second timeout, parent abort handling and bounded redacted
-errors with seven focused tests. H2/H4 are not claimed from this failed probe;
+errors with process-group SIGTERM/SIGKILL escalation and eleven focused tests.
+H2/H4 are not claimed from this failed probe;
 evidence is at `evidence/P05/restart-live.md`.
 
 2026-09-19: Independent re-review of the page/artifact packet found six
