@@ -10,6 +10,19 @@ persisted a 9-section manuscript and entered `draft_review`; evidence is at
 `evidence/P05/outline-stage-live.md`. This closes the outline handoff hole but
 does not claim the full 50–150 page research/review/publishing graph.
 
+2026-09-19: A second real no-art run opened the dashboard in Chromium, closed
+the browser process, killed the worker main process, and observed systemd
+reclaim the production lease at generation 2. The run completed with a durable
+artifact and separate outline/manuscript usage; evidence is at
+`evidence/P05/browser-close-restart-live.md`. H2 is now evidenced as PASS;
+H4/H5 and the full long-book graph remain open.
+
+2026-09-19: Settings now exposes an authenticated, accessible Telegram chat-ID
+link action scoped to the currently selected project, with readable validation
+and server-side credential handling. The allowlisted chat is linked at the API
+boundary, but no live same-conversation credit is claimed until an actual
+owner-authored Telegram message is observed.
+
 2026-09-19: A real disposable production restart probe reclaimed one job from
 fencing generation 1 to generation 2 after the worker service was killed and
 automatically restarted. The probe then found an unbounded Codex art
