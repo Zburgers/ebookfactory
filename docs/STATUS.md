@@ -14,6 +14,13 @@ performed the live review action.
 snapshot count unchanged at `2 -> 2`. Evidence is at
 `evidence/P07/quota-live-deployed-recheck.md`.
 
+2026-09-19: A Tailscale access audit confirmed port 6969 is listening only on
+loopback, the private LAN address and the tailnet address. A trusted Tailscale
+certificate is available only for the MagicDNS hostname, not raw private IPs,
+so the current IP-SAN certificate remains in place to preserve the requested
+`<tailscale-ip>:6969` URL. Evidence is at
+`evidence/P10/tailscale-access-audit.md`.
+
 2026-09-19: Telegram is configured and the poller is active, but the live audit
 still shows no owner-authored free-text message. The allowlisted chat is linked
 to `Live outline handoff verification`, so the owner must link the intended
