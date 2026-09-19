@@ -1,10 +1,13 @@
-const state = { projects: [], selected: null, sections: [], providers: [], catalog: null, eventCursor: 0, streamController: null, liveAssistant: null };
+import { fetchProtectedArtifact } from "./artifact-client.js";
+import { artifactFilename, artifactPresentation, deriveStageStates, formatArtifactSize, formatEventKind } from "./view-models.js";
+
+const state = { projects: [], selected: null, sections: [], reviews: [], artifacts: [], events: [], providers: [], catalog: null, eventCursor: 0, streamController: null, liveAssistant: null, artifactUrls: [] };
 const $ = (selector) => document.querySelector(selector);
 const ownerToken = () => sessionStorage.getItem("ebook-factory-owner-token") || "";
 const applyTheme = (theme) => { document.documentElement.dataset.theme = theme; $("#theme-label").textContent = theme === "dark" ? "Light surface" : "Night surface"; $("#theme-icon").textContent = theme === "dark" ? "○" : "●"; localStorage.setItem("ebook-factory-theme", theme); };
 applyTheme(localStorage.getItem("ebook-factory-theme") || "dark");
 $("#theme-toggle").addEventListener("click", () => applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
-const api = async (path, options = {}) => { const headers = { "content-type": "application/json", ...(options.headers || {}) }; const token = ownerToken(); if (token) headers.Authorization = `Bearer ${token}`; const response = await fetch(path, { headers, ...options }); if (!response.ok) { const error = new Error((await response.text()).slice(0, 240)); error.status = response.status; throw error; } return response.status === 204 ? null : response.json(); };
+const api = async (path, options = {}) => { const headers = { "content-type": "application/json", ...(options.headers || {}) }; const token = ownerToken(); if (token) headers.Authorization = `Bearer ${token}`; const response = await fetch(path, { ...options, headers }); if (!response.ok) { const error = new Error((await response.text()).slice(0, 240)); error.status = response.status; throw error; } return response.status === 204 ? null : response.json(); };
 const showError = (id, error) => { $(id).textContent = error.message || String(error); };
 function addSavedOption(select, value, label) { if (!value) return; const option = [...select.options].find((candidate) => candidate.value === value); if (option) { option.selected = true; return; } const saved = document.createElement("option"); saved.value = value; saved.textContent = label + " (saved; unavailable)"; saved.selected = true; select.append(saved); }
 function populateCatalogSelects(saved = {}) { const models = state.catalog?.models || []; const providerSelect = $("#provider-select"); const modelSelects = [$("#orchestration-model"), $("#drafting-model"), $("#review-model")]; providerSelect.replaceChildren(); [...new Set(models.map((model) => model.provider))].sort().forEach((provider) => { const option = document.createElement("option"); option.value = provider; option.textContent = provider; providerSelect.append(option); }); addSavedOption(providerSelect, saved.provider, "Provider"); modelSelects.forEach((select) => { select.replaceChildren(); models.forEach((model) => { const option = document.createElement("option"); option.value = model.qualified_model; option.textContent = model.qualified_model + " · context " + model.context + " · max " + model.max_output; select.append(option); }); }); addSavedOption($("#orchestration-model"), saved.orchestration_model, "Main orchestrator model"); addSavedOption($("#drafting-model"), saved.drafting_model, "Drafting model"); addSavedOption($("#review-model"), saved.review_model, "Review model"); }
@@ -15,17 +18,66 @@ async function loadCatalog() { const status = $("#catalog-status"); const select
 
 function renderProjects() { const list = $("#project-list"); list.replaceChildren(); if (!state.projects.length) { const empty = document.createElement("p"); empty.className = "muted"; empty.textContent = "No projects yet. Start with a small idea."; list.append(empty); return; } state.projects.forEach((project) => { const card = document.createElement("button"); card.className = "project-card"; card.innerHTML = `<h3></h3><p class="muted"></p><span class="status-pill"></span>`; card.querySelector("h3").textContent = project.title; card.querySelector("p").textContent = `${project.profile} · ${project.language}`; card.querySelector("span").textContent = project.state; card.addEventListener("click", () => selectProject(project)); list.append(card); }); }
 async function loadProjects() { state.projects = await api("/projects"); renderProjects(); }
-async function selectProject(project) { state.streamController?.abort(); state.selected = project; state.liveAssistant = null; state.eventCursor = Number(localStorage.getItem(`ebook-factory-event-cursor:${project.project_id}`) || 0); $("#studio-project-label").textContent = project.title; document.querySelector('[data-view="studio"]').click(); await Promise.all([loadMessages(), loadEvents(), loadSections(), loadReviews(), loadArtifacts(), loadUsage()]); startEventStream(); }
+async function selectProject(project) { state.streamController?.abort(); state.selected = project; state.liveAssistant = null; state.eventCursor = 0; state.events = []; state.reviews = []; state.artifacts = []; $("#studio-project-label").textContent = `${project.title} · ${project.state}`; document.querySelector('[data-view="studio"]').click(); renderStageBoard(); await Promise.all([loadMessages(), loadEvents(), loadSections(), loadReviews(), loadArtifacts(), loadUsage()]); startEventStream(); }
 async function loadMessages() { if (!state.selected) return; const messages = await api(`/projects/${state.selected.project_id}/messages`); const box = $("#messages"); box.replaceChildren(); messages.forEach((message) => { const item = document.createElement("div"); item.className = `message ${message.role}`; item.textContent = message.content; box.append(item); }); }
-function applyEvent(event) { if (!state.selected || event.project_id !== state.selected.project_id || event.id <= state.eventCursor) return; const list = $("#events"); const item = document.createElement("li"); item.textContent = `${event.kind} · ${new Date(event.timestamp).toLocaleTimeString()}`; list.append(item); state.eventCursor = event.id; localStorage.setItem(`ebook-factory-event-cursor:${state.selected.project_id}`, String(state.eventCursor)); const payload = event.payload || {}; if (event.kind === "orchestrator.turn.delta" && payload.delta) { if (!state.liveAssistant || state.liveAssistant.turnId !== payload.turn_id) { const element = document.createElement("div"); element.className = "message assistant streaming"; element.setAttribute("aria-live", "polite"); $("#messages").append(element); state.liveAssistant = { turnId: payload.turn_id, text: "", element }; } state.liveAssistant.text += payload.delta; state.liveAssistant.element.textContent = state.liveAssistant.text; } if (["orchestrator.turn.completed", "orchestrator.turn.failed"].includes(event.kind)) { state.liveAssistant = null; loadMessages().catch(() => {}); } }
-async function loadEvents() { if (!state.selected) return; const events = await api(`/projects/${state.selected.project_id}/events?after=${state.eventCursor}`); if (state.eventCursor === 0) $("#events").replaceChildren(); events.forEach(applyEvent); }
+function stageStatusLabel(status) { return ({ complete: "Complete", current: "In progress", needs_review: "Needs review", waiting: "Waiting", blocked: "Blocked" })[status] || status; }
+function renderStageBoard() {
+  const rail = $("#stage-rail");
+  const summary = $("#stage-summary");
+  if (!rail || !summary) return;
+  rail.replaceChildren();
+  if (!state.selected) { summary.textContent = "Select a project to see its current checkpoint."; return; }
+  const stages = deriveStageStates(state.selected, { sections: state.sections, reviews: state.reviews, artifacts: state.artifacts, events: state.events });
+  stages.forEach((stage, index) => {
+    const item = document.createElement("li"); item.className = `stage-card stage-${stage.status}`;
+    const marker = document.createElement("span"); marker.className = "stage-marker"; marker.textContent = stage.status === "complete" ? "✓" : String(index + 1).padStart(2, "0"); marker.setAttribute("aria-hidden", "true");
+    const content = document.createElement("div"); content.className = "stage-content";
+    const heading = document.createElement("div"); heading.className = "stage-heading";
+    const title = document.createElement("h3"); title.textContent = stage.label;
+    const status = document.createElement("span"); status.className = "stage-status"; status.textContent = stageStatusLabel(stage.status);
+    const description = document.createElement("p"); description.className = "muted"; description.textContent = stage.detail;
+    heading.append(title, status); content.append(heading, description); item.append(marker, content); rail.append(item);
+  });
+  const focus = stages.find((stage) => ["needs_review", "current", "blocked"].includes(stage.status)) || stages.at(-1);
+  summary.textContent = `${focus.label}: ${stageStatusLabel(focus.status)} · ${focus.detail} Project state: ${state.selected.state}.`;
+}
+function appendTimelineEvent(event) {
+  if (event.kind === "orchestrator.turn.delta") return;
+  const list = $("#events");
+  list.querySelector(".timeline-empty")?.remove();
+  const item = document.createElement("li"); item.dataset.kind = event.kind;
+  const heading = document.createElement("strong"); heading.textContent = formatEventKind(event.kind);
+  const meta = document.createElement("span"); meta.textContent = new Date(event.timestamp).toLocaleString();
+  item.append(heading, meta); list.append(item);
+}
+function renderTimelineEmpty() {
+  const list = $("#events");
+  if (list.children.length) return;
+  const empty = document.createElement("li"); empty.className = "timeline-empty"; empty.textContent = state.events.length ? "Live token deltas are condensed here; summary events will appear as work advances." : "No durable summary events yet. The stage rail above is derived from the saved project state."; list.append(empty);
+}
+function applyEvent(event) {
+  if (!state.selected || event.project_id !== state.selected.project_id || event.id <= state.eventCursor) return;
+  state.events.push(event); state.eventCursor = event.id; appendTimelineEvent(event); renderStageBoard();
+  const payload = event.payload || {};
+  if (event.kind === "orchestrator.turn.delta" && payload.delta) { if (!state.liveAssistant || state.liveAssistant.turnId !== payload.turn_id) { const element = document.createElement("div"); element.className = "message assistant streaming"; element.setAttribute("aria-live", "polite"); $("#messages").append(element); state.liveAssistant = { turnId: payload.turn_id, text: "", element }; } state.liveAssistant.text += payload.delta; state.liveAssistant.element.textContent = state.liveAssistant.text; }
+  if (["orchestrator.turn.completed", "orchestrator.turn.failed"].includes(event.kind)) { state.liveAssistant = null; loadMessages().catch(() => {}); }
+}
+async function loadEvents() {
+  if (!state.selected) return;
+  const restartStream = Boolean(state.streamController && !state.streamController.signal.aborted);
+  state.streamController?.abort(); state.streamController = null;
+  const list = $("#events"); list.replaceChildren(); state.events = []; state.eventCursor = 0;
+  let events = [];
+  do { events = await api(`/projects/${state.selected.project_id}/events?after=${state.eventCursor}&limit=100`); events.forEach(applyEvent); } while (events.length === 100);
+  renderTimelineEmpty(); renderStageBoard(); if (restartStream) startEventStream();
+}
 function parseSseBlock(block) { const data = block.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n"); return data ? JSON.parse(data) : null; }
 async function startEventStream() { const projectId = state.selected?.project_id; if (!projectId) return; const controller = new AbortController(); state.streamController = controller; while (!controller.signal.aborted && state.selected?.project_id === projectId) { try { const response = await fetch(`/projects/${projectId}/events/stream?after=${state.eventCursor}&follow=true`, { headers: { Authorization: `Bearer ${ownerToken()}` }, signal: controller.signal }); if (!response.ok) throw new Error(`event stream ${response.status}`); const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = ""; while (!controller.signal.aborted) { const { done, value } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const blocks = buffer.split("\n\n"); buffer = blocks.pop() || ""; blocks.forEach((block) => { try { const event = parseSseBlock(block); if (event) applyEvent(event); } catch { /* reconnect from the durable cursor */ } }); } } catch (error) { if (controller.signal.aborted) break; await new Promise((resolve) => setTimeout(resolve, 1000)); } } }
 async function loadSections() {
   if (!state.selected) return;
   state.sections = await api(`/projects/${state.selected.project_id}/sections`);
   const list = $("#sections"); list.replaceChildren();
-  if (!state.sections.length) { const empty = document.createElement("p"); empty.className = "muted"; empty.textContent = "No accepted sections yet."; list.append(empty); return; }
+  if (!state.sections.length) { const empty = document.createElement("p"); empty.className = "muted"; empty.textContent = "No accepted sections yet."; list.append(empty); renderStageBoard(); return; }
   state.sections.forEach((section) => {
     const card = document.createElement("article"); card.className = "section-card";
     const heading = document.createElement("h4"); heading.textContent = `${section.order_no}. ${section.heading}`; card.append(heading);
@@ -38,8 +90,65 @@ async function loadSections() {
     exportButton.addEventListener("click", async () => { try { const packageResult = await api(`/projects/${state.selected.project_id}/exports/${section.latest_revision_id}`, { method: "POST", body: "{}" }); renderExports(packageResult); result.textContent = `${packageResult.package_state}; Kindle preview remains pending.`; } catch (error) { result.textContent = error.message; } });
     actions.append(save, exportButton); card.append(actions, result); list.append(card);
   });
+  renderStageBoard();
 }
-function renderExports(packageResult) { const box = $("#exports"); box.replaceChildren(); const heading = document.createElement("h4"); heading.textContent = `Export: ${packageResult.title} · ${packageResult.package_state}`; box.append(heading); packageResult.artifacts.forEach((artifact) => { const link = document.createElement("a"); link.href = artifact.download_path; link.textContent = `${artifact.filename} (${artifact.byte_count} bytes)`; link.download = artifact.filename; box.append(link, document.createElement("br")); }); }
+function revokeArtifactUrls() { state.artifactUrls.splice(0).forEach((url) => URL.revokeObjectURL(url)); }
+async function responseFailure(response) { const detail = (await response.text()).trim(); return detail ? `${response.status}: ${detail.slice(0, 180)}` : `HTTP ${response.status}`; }
+async function downloadArtifact(path, filename, button, result) {
+  button.disabled = true; button.textContent = "Preparing…"; result.textContent = "Fetching the protected artifact…";
+  try {
+    const response = await fetchProtectedArtifact(path, { token: ownerToken() });
+    if (!response.ok) throw new Error(await responseFailure(response));
+    const url = URL.createObjectURL(await response.blob()); state.artifactUrls.push(url);
+    const link = document.createElement("a"); link.href = url; link.download = filename; link.hidden = true; document.body.append(link); link.click(); link.remove();
+    button.textContent = "Downloaded"; result.textContent = `${filename} is ready in your downloads.`;
+    window.setTimeout(() => { URL.revokeObjectURL(url); state.artifactUrls = state.artifactUrls.filter((candidate) => candidate !== url); }, 60_000);
+  } catch (error) { button.textContent = "Try again"; result.textContent = `Download failed: ${error.message}`; }
+  finally { button.disabled = false; }
+}
+async function loadProtectedPreview(image, path, filename) {
+  try {
+    const response = await fetchProtectedArtifact(path, { token: ownerToken() });
+    if (!response.ok) throw new Error(await responseFailure(response));
+    const url = URL.createObjectURL(await response.blob()); state.artifactUrls.push(url); image.src = url; image.alt = `${filename} preview`;
+  } catch { const fallback = document.createElement("p"); fallback.className = "artifact-preview-fallback"; fallback.textContent = "Preview unavailable; download the protected file to inspect it."; image.replaceWith(fallback); }
+}
+function appendArtifactDetails(item, artifact, presentation) {
+  const details = document.createElement("details"); details.className = "artifact-details";
+  const summary = document.createElement("summary"); summary.textContent = "File details"; details.append(summary);
+  const path = document.createElement("p"); path.className = "muted"; path.textContent = `${artifact.relative_path || presentation.filename} · ${artifact.mime_type || presentation.label}`; details.append(path);
+  if (artifact.sha256) { const hash = document.createElement("code"); hash.textContent = `SHA-256 ${artifact.sha256}`; details.append(hash); }
+  item.append(details);
+}
+function createArtifactTile(artifact) {
+  const presentation = artifactPresentation(artifact);
+  const item = document.createElement("article"); item.className = `artifact-tile artifact-${presentation.kind}`;
+  const top = document.createElement("div"); top.className = "artifact-tile-top";
+  const icon = document.createElement("span"); icon.className = "artifact-icon"; icon.textContent = presentation.icon; icon.setAttribute("aria-hidden", "true");
+  const stateLabel = document.createElement("span"); stateLabel.className = "artifact-state"; stateLabel.textContent = artifact.owner_review_state ? reviewStateLabel(artifact.owner_review_state) : artifact.validation_state === "generated" ? "Generated" : "Package member";
+  top.append(icon, stateLabel);
+  const heading = document.createElement("h4"); heading.textContent = presentation.label;
+  const filename = document.createElement("p"); filename.className = "artifact-filename"; filename.textContent = presentation.filename;
+  const meta = document.createElement("p"); meta.className = "muted artifact-meta"; meta.textContent = `${artifact.mime_type || presentation.extension} · ${formatArtifactSize(artifact.byte_count)}`;
+  const actions = document.createElement("div"); actions.className = "artifact-actions";
+  const button = document.createElement("button"); button.type = "button"; button.className = "quiet artifact-download"; button.textContent = "Download";
+  const result = document.createElement("p"); result.className = "muted artifact-download-result"; result.setAttribute("role", "status"); result.setAttribute("aria-live", "polite");
+  button.addEventListener("click", () => downloadArtifact(artifact.download_path, artifactFilename(artifact), button, result)); actions.append(button, result);
+  item.append(top, heading, filename, meta, actions);
+  if (presentation.isImage && artifact.download_path) { const preview = document.createElement("div"); preview.className = "artifact-preview-frame"; const image = document.createElement("img"); image.className = "artifact-preview"; image.alt = `${presentation.filename} preview`; image.loading = "lazy"; preview.append(image); item.append(preview); loadProtectedPreview(image, artifact.download_path, presentation.filename); }
+  if (artifact.relative_path || artifact.sha256) appendArtifactDetails(item, artifact, presentation);
+  const isReviewableImage = presentation.isImage && !presentation.isExport && artifact.artifact_id;
+  if (isReviewableImage) appendArtifactReview(item, artifact);
+  return item;
+}
+function renderExports(packageResult) {
+  const box = $("#exports"); box.replaceChildren();
+  const heading = document.createElement("h4"); heading.textContent = `Export package · ${packageResult.title}`;
+  const status = document.createElement("p"); status.className = "muted export-status"; status.textContent = `${packageResult.package_state} · ${packageResult.artifacts.length} protected files`;
+  const grid = document.createElement("div"); grid.className = "artifact-grid export-grid";
+  packageResult.artifacts.forEach((artifact) => grid.append(createArtifactTile(artifact)));
+  box.append(heading, status, grid);
+}
 function reviewStateLabel(state) { return ({ approved: "Approved", revision_requested: "Revision requested", pending: "Review pending" })[state] || "Review pending"; }
 function appendArtifactReview(item, artifact) {
   const review = document.createElement("div"); review.className = "artifact-review";
@@ -60,8 +169,8 @@ function appendArtifactReview(item, artifact) {
   });
   review.append(noteLabel, actions, result); item.append(review);
 }
-async function loadArtifacts() { if (!state.selected) return; const box = $("#artifacts"); try { const artifacts = await api(`/projects/${state.selected.project_id}/artifacts`); box.replaceChildren(); if (!artifacts.length) { box.textContent = "No production artifacts loaded."; return; } artifacts.forEach((artifact) => { const item = document.createElement("article"); item.className = "usage-call"; const link = document.createElement("a"); link.href = artifact.download_path; link.download = artifact.relative_path.split("/").pop(); link.textContent = `${artifact.relative_path} · ${artifact.byte_count.toLocaleString()} bytes`; const meta = document.createElement("p"); meta.className = "muted"; meta.textContent = `${artifact.mime_type} · ${artifact.validation_state} · SHA-256 ${artifact.sha256}`; item.append(link, meta); const isReviewableImage = artifact.mime_type.startsWith("image/") && !artifact.relative_path.startsWith("exports/"); if (artifact.mime_type.startsWith("image/")) { const image = document.createElement("img"); image.src = artifact.download_path; image.alt = artifact.relative_path; image.loading = "lazy"; image.className = "artifact-preview"; item.append(image); } if (isReviewableImage) appendArtifactReview(item, artifact); box.append(item); }); } catch (error) { box.textContent = `Artifacts unavailable: ${error.message}`; } }
-async function loadReviews() { if (!state.selected) return; const reviews = await api(`/projects/${state.selected.project_id}/reviews`); const box = $("#reviews"); box.replaceChildren(); if (!reviews.length) return; const heading = document.createElement("h4"); heading.textContent = "Review findings"; box.append(heading); reviews.forEach((finding) => { const item = document.createElement("p"); item.className = "review-finding"; item.textContent = `${finding.severity} · ${finding.criterion}: ${finding.evidence}${finding.resolution_revision_id ? " · resolved" : " · open"}`; box.append(item); }); }
+async function loadArtifacts() { if (!state.selected) return; const box = $("#artifacts"); revokeArtifactUrls(); try { const artifacts = await api(`/projects/${state.selected.project_id}/artifacts`); state.artifacts = artifacts; box.replaceChildren(); box.className = artifacts.length ? "artifact-grid" : "artifact-empty"; if (!artifacts.length) { box.textContent = "No production artifacts loaded."; renderStageBoard(); return; } artifacts.forEach((artifact) => box.append(createArtifactTile(artifact))); renderStageBoard(); } catch (error) { state.artifacts = []; box.className = "artifact-empty"; box.textContent = `Artifacts unavailable: ${error.message}`; renderStageBoard(); } }
+async function loadReviews() { if (!state.selected) return; const reviews = await api(`/projects/${state.selected.project_id}/reviews`); state.reviews = reviews; const box = $("#reviews"); box.replaceChildren(); if (!reviews.length) { renderStageBoard(); return; } const heading = document.createElement("h4"); heading.textContent = "Review findings"; box.append(heading); reviews.forEach((finding) => { const item = document.createElement("p"); item.className = "review-finding"; item.textContent = `${finding.severity} · ${finding.criterion}: ${finding.evidence}${finding.resolution_revision_id ? " · resolved" : " · open"}`; box.append(item); }); renderStageBoard(); }
 function quotaWindowLabel(snapshot, accountCount) { const seconds = Number(snapshot.window_seconds); const name = seconds === 18000 ? "5-hour window" : seconds === 604800 ? "7-day window" : "Provider window"; return accountCount > 1 ? `${name} · account ${snapshot.account_index}` : name; }
 async function loadQuota() { const summary = $("#quota-summary"); summary.textContent = "Refreshing live Codex limits…"; try { const live = await api("/quota/live"); summary.replaceChildren(); if (!live.windows?.length) { summary.textContent = "Codex limits unavailable: no measurable live windows were returned."; return; } const accountCount = Math.max(...live.windows.map((window) => Number(window.account_index) || 1)); const source = document.createElement("p"); source.className = "muted"; source.textContent = `Live source: ${live.source} · fetched ${new Date(live.fetched_at).toLocaleString()}`; summary.append(source); live.windows.forEach((window) => { const item = document.createElement("article"); item.className = "usage-call"; const heading = document.createElement("strong"); heading.textContent = quotaWindowLabel(window, accountCount); const details = document.createElement("p"); details.className = "muted"; details.textContent = `${window.used}% used · ${window.remaining}% remaining · resets ${window.reset}`; item.append(heading, details); summary.append(item); }); } catch (error) { summary.textContent = "Codex live limits unavailable: " + error.message; } }
 function displayModel(call) { const prefix = `${call.provider}/`; return call.model.startsWith(prefix) ? call.model.slice(prefix.length) : call.model; }
