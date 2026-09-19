@@ -1,5 +1,11 @@
 # Build status
 
+2026-09-19 21:16 UTC: Final post-commit verification of `1995d32` passed
+`make verify`: 104 API tests, 33 worker tests, 11 web tests, 21 explicit
+PostgreSQL recovery skips, generated contracts, service lifecycle, transport,
+sandbox, Telegram, EPUBCheck and restore checks. The deployed API, worker and
+Telegram units remain enabled/active; LAN `/ready` is healthy.
+
 2026-09-20: The final ebook handoff now has a durable Kindle preview
 checkpoint. The owner can record Kindle Previewer or KDP Online Previewer
 results against the exact immutable EPUB hash; the Studio journey and replay
