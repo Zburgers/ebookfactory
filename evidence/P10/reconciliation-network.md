@@ -25,3 +25,19 @@ Checks:
 - `bash scripts/tests/test_serve_api_transport.sh` passed.
 - `bash scripts/tests/test_serve_api_tls.sh` passed.
 - `bash -n scripts/serve-api.sh` passed.
+
+Live post-commit check at revision `88f7680`:
+
+- `systemctl --user is-active ebook-factory-api.service` returned `active`.
+- `systemctl --user is-enabled ebook-factory-api.service` returned `enabled`.
+- The service has listeners on `127.0.0.1:6969` (HTTP),
+  `192.168.29.14:6969` (HTTP), and `100.87.104.100:6969` (HTTPS).
+- `curl http://127.0.0.1:6969/ready` returned HTTP 200 and `status: ok`.
+- `curl http://192.168.29.14:6969/ready` returned HTTP 200 and `status: ok`.
+- `curl --insecure https://100.87.104.100:6969/ready` returned HTTP 200 and
+  `status: ok`.
+
+The LAN check was made without `--insecure`, so it verifies that the requested
+LAN URL is plain HTTP rather than HTTPS with an untrusted certificate. This is
+a host-side route/listener check; a separate client must still use the exact
+`http://` URL and be allowed by its local network path.

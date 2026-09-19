@@ -1,6 +1,6 @@
 # Build status
 
-2026-09-19: The owned API transport now treats the private LAN as a trusted
+2026-09-19: Revision `88f7680` makes the owned API transport treat the private LAN as a trusted
 local deployment boundary: `192.168.29.14:6969` serves plain HTTP, eliminating
 the raw-IP CA failure reported by the owner. Tailscale remains HTTPS, and
 `EBOOK_FACTORY_PRIVATE_TLS=true` is available when a LAN certificate is later
