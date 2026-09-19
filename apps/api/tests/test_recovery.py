@@ -550,6 +550,11 @@ def test_api_project_brief_and_approval_boundary(database_session: Session) -> N
     art_usage = next(call for call in usage_calls if call.purpose == "art")
     assert art_usage.input_tokens == 12
     assert art_usage.output_tokens == 3
+    art_artifact = database_session.scalar(
+        select(Artifact).where(Artifact.run_id == UUID(output_response.json()["run_id"]), Artifact.mime_type == "image/png")
+    )
+    assert art_artifact is not None
+    assert art_artifact.attempt_id == art_usage.attempt_id
     assert sse_response.status_code == 200
     assert sse_response.headers["content-type"].startswith("text/event-stream")
     assert "run.approved" in sse_response.text

@@ -2072,18 +2072,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
                 if budget_allowed:
                     production_row = session.execute(
-                        select(Task, ProductionRun).join(ProductionRun, ProductionRun.id == Task.run_id)
-                        .join(Job, Job.task_id == Task.id).where(Job.id == payload.job_id).with_for_update()
+                        select(Task, ProductionRun, Attempt)
+                        .join(ProductionRun, ProductionRun.id == Task.run_id)
+                        .join(Job, Job.task_id == Task.id)
+                        .join(
+                            Attempt,
+                            (Attempt.task_id == Task.id)
+                            & (Attempt.fencing_generation == payload.generation),
+                        )
+                        .where(Job.id == payload.job_id)
+                        .with_for_update()
                     ).first()
                     if production_row is None or production_row[0].task_type != "production":
                         raise HTTPException(status_code=409, detail="production result is only valid for production tasks")
+                    production_task, production_run, attempt = production_row
                     if payload.content == "__server_assembly__":
-                        assembly_row = production_row
-                        dependencies = [UUID(value) for value in (assembly_row[0].dependencies or [])]
+                        dependencies = [UUID(value) for value in (production_task.dependencies or [])]
                         payload.content = assemble_section_revisions(
                             session,
-                            project_id=assembly_row[1].project_id,
-                            run_id=assembly_row[1].id,
+                            project_id=production_run.project_id,
+                            run_id=production_run.id,
                             section_task_ids=dependencies,
                         )
                     output = accept_production_output(
@@ -2106,6 +2114,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             content=payload.content.encode(),
                             mime_type="text/markdown",
                             run_id=output.run_id,
+                            attempt_id=attempt.id,
                             revision_id=output.revision_id,
                             manage_transaction=False,
                         )
@@ -2131,6 +2140,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             art_artifact = write_artifact(
                                 session, root=resolved_settings.artifact_root, relative_path=art_relative_path,
                                 content=art_content, mime_type=payload.art.mime_type, run_id=output.run_id,
+                                attempt_id=attempt.id,
                                 revision_id=output.revision_id, manage_transaction=False,
                             )
                         except FileExistsError:
@@ -2144,12 +2154,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
                     usage_call_id = None
                     if payload.provider and payload.model:
-                        attempt = session.scalar(
-                            select(Attempt).where(
-                                Attempt.task_id == output.task_id,
-                                Attempt.fencing_generation == payload.generation,
-                            )
-                        )
                         usage = payload.usage
                         usage_result = record_usage_call(
                             session,
