@@ -18,10 +18,15 @@ export function buildProductionPrompt(context) {
       JSON.stringify({ project_id: context.project_id, messages: context.messages }),
     ].join("\n\n");
   }
+  const pages = context.brief.target_pages;
+  const pageInstruction = pages
+    ? `Target ${pages.minimum}-${pages.maximum} pages, using a planning estimate of 125-120 words per page (${(pages.minimum * 125).toLocaleString()}-${(pages.maximum * 120).toLocaleString()} words). Create a bounded chapter plan of 8-15 chapters, then write the durable sectioned manuscript with one ## heading per chapter.`
+    : "Preserve the requested word target and return a concise title followed by section headings and complete prose.";
   return [
     "Create the next bounded manuscript draft from this approved brief.",
     "Preserve the requested profile, audience, language, length range and output formats.",
-    "Return a concise title followed by section headings and complete prose.",
+    pages ? `Produce a durable sectioned manuscript, not a synopsis or placeholder. ${pageInstruction}` : pageInstruction,
+    "Every section must contain complete prose; never emit TODOs, filler, or planning notes as finished text.",
     JSON.stringify({ project_id: context.project_id, run_id: context.run_id, brief: context.brief, budget: context.budget }),
   ].join("\n\n");
 }

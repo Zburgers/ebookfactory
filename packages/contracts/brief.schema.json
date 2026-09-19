@@ -4,7 +4,11 @@
   "title": "ApprovedBrief",
   "type": "object",
   "additionalProperties": false,
-  "required": ["audience", "promise_or_premise", "profile", "language", "target_length", "output_formats", "art_direction"],
+  "required": ["audience", "promise_or_premise", "profile", "language", "output_formats", "art_direction"],
+  "anyOf": [
+    {"required": ["target_length"]},
+    {"required": ["target_pages"]}
+  ],
   "properties": {
     "audience": {"type": "string", "minLength": 1},
     "promise_or_premise": {"type": "string", "minLength": 1},
@@ -12,6 +16,7 @@
     "profile": {"enum": ["fiction", "nonfiction", "custom"]},
     "language": {"type": "string", "minLength": 2},
     "target_length": {"type": "object", "additionalProperties": false, "required": ["minimum_words", "maximum_words"], "properties": {"minimum_words": {"type": "integer", "minimum": 1}, "maximum_words": {"type": "integer", "minimum": 1}}},
+    "target_pages": {"type": "object", "additionalProperties": false, "required": ["minimum", "maximum"], "properties": {"minimum": {"type": "integer", "minimum": 50, "maximum": 150}, "maximum": {"type": "integer", "minimum": 50, "maximum": 150}}},
     "style": {"type": "string"},
     "sources_policy": {"type": "string"},
     "forbidden_claims_or_content": {"type": "array", "items": {"type": "string"}},
