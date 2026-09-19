@@ -17,7 +17,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import aliased
@@ -212,6 +212,16 @@ class ProjectResponse(BaseModel):
 
 class BriefCreateRequest(BaseModel):
     structured_brief: dict[str, Any]
+
+    @model_validator(mode="after")
+    def validate_target_ranges(self) -> "BriefCreateRequest":
+        pages = self.structured_brief.get("target_pages")
+        words = self.structured_brief.get("target_length")
+        if pages and pages.get("minimum", 0) > pages.get("maximum", 0):
+            raise ValueError("minimum must not exceed maximum")
+        if words and words.get("minimum_words", 0) > words.get("maximum_words", 0):
+            raise ValueError("minimum must not exceed maximum")
+        return self
 
 
 class BriefResponse(BaseModel):

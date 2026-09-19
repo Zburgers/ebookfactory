@@ -3,6 +3,7 @@ from uuid import uuid4
 import pytest
 
 from app.production import parse_production_sections, validate_production_text
+from app.main import BriefCreateRequest
 
 
 def test_page_manuscript_is_split_into_ordered_sections() -> None:
@@ -25,3 +26,10 @@ def test_word_target_keeps_single_document_compatibility() -> None:
     sections = parse_production_sections("A short existing manuscript.", page_target=False)
     assert len(sections) == 1
     assert sections[0].heading == "Draft manuscript"
+
+
+def test_brief_rejects_reversed_page_or_word_ranges() -> None:
+    with pytest.raises(ValueError, match="minimum must not exceed maximum"):
+        BriefCreateRequest(structured_brief={"target_pages": {"minimum": 150, "maximum": 50}})
+    with pytest.raises(ValueError, match="minimum must not exceed maximum"):
+        BriefCreateRequest(structured_brief={"target_length": {"minimum_words": 3000, "maximum_words": 1000}})
