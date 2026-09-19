@@ -7,7 +7,7 @@ the raw-IP CA failure reported by the owner. Tailscale remains HTTPS, and
 required. This is a transport usability choice, not a security score increase;
 the default Tailscale self-signed identity remains separately documented.
 
-2026-09-19: The publishing preflight now enforces the current KDP marketing
+2026-09-19: Revision `59a728e` makes the publishing preflight enforce the current KDP marketing
 cover ceiling of 5 MiB in addition to RGB and 1600×2560 geometry. This improves
 the local package gate but does not replace Kindle Previewer evidence.
 

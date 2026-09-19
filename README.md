@@ -1,6 +1,6 @@
 # Ebook Factory v2
 
-Status: DEPLOYED CANDIDATE / PARTIAL ACCEPTANCE. Revision `88f7680` is the
+Status: DEPLOYED CANDIDATE / PARTIAL ACCEPTANCE. Revision `59a728e` is the
 reviewed v2 candidate used by the local services. The runtime, database, worker,
 dashboard and Telegram paths are provisioned; Kindle preview, live owner art
 approval and unsupported provider billing/quota sources remain external gates.
