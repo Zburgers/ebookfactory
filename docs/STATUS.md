@@ -1,5 +1,14 @@
 # Build status
 
+2026-09-19: Revisions `c5e05e9`, `205d1ca` and `e2fcd8e` extend the durable
+book path. Studio now submits a selected 50–150 page target (or an explicit
+word range), the API rejects reversed ranges, and project artifacts have
+project-scoped metadata, previews/downloads and immutable path checks. Codex
+app-server image calls now carry their generated call ID and reported usage;
+the production callback records a separate `art` usage row when available.
+Focused artifact, recovery, worker-art and contract checks pass. These changes
+still do not claim a real 50–150 page provider run or EPUBCheck/Kindle proof.
+
 2026-09-19: Revision `952bfc2` closes the dashboard token-streaming hole at
 the durable boundary. Pi JSON `message_update` text deltas are forwarded by
 the trusted worker, fenced by turn generation, persisted as replayable events,
