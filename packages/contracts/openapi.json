@@ -60,6 +60,10 @@
             "title": "Byte Count",
             "type": "integer"
           },
+          "download_path": {
+            "title": "Download Path",
+            "type": "string"
+          },
           "mime_type": {
             "title": "Mime Type",
             "type": "string"
@@ -96,7 +100,8 @@
           "mime_type",
           "byte_count",
           "sha256",
-          "validation_state"
+          "validation_state",
+          "download_path"
         ],
         "title": "ArtifactView",
         "type": "object"
@@ -4043,6 +4048,62 @@
           }
         ],
         "summary": "List Artifacts",
+        "tags": [
+          "publishing"
+        ]
+      }
+    },
+    "/projects/{project_id}/artifacts/{artifact_id}/download": {
+      "get": {
+        "operationId": "download_artifact_projects__project_id__artifacts__artifact_id__download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
+        "summary": "Download Artifact",
         "tags": [
           "publishing"
         ]

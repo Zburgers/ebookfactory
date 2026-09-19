@@ -19,6 +19,7 @@ export interface ArtifactView {
   byte_count: number;
   sha256: string;
   validation_state: string;
+  download_path: string;
 }
 
 export interface BriefCreateRequest {
