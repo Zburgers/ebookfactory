@@ -19,7 +19,15 @@ accepted. Assembly now nests those internal headings as `###`, with a red/green
 regression and an independent Luna-high GO review. The corrected replay is
 recorded at `evidence/P05/long-book-live.md` and supplies the multi-section
 long-book evidence; H4 is now PASS in combination with the prior
-fiction/nonfiction and owner-revision evidence. H5–H7 remain open.
+fiction/nonfiction and owner-revision evidence. H5 and H6 remain open. H7 now
+has a real pinned EPUBCheck result; Kindle Previewer remains explicitly
+pending.
+
+2026-09-19: Publishing validation is reproducible through the locked
+`epubcheck-standalone-cli` 5.4.0-build2 runner. The generated EPUB at
+`apps/api/var/artifacts/exports/d7c5f819-c4dc-4491-94a6-a133491592ba/book.epub`
+returned zero fatals, errors, warnings and infos. This does not claim Kindle
+Previewer or Amazon certification.
 
 2026-09-19: The editorial graph now includes a durable review task after
 production, with role-specific configured models, bounded persisted section

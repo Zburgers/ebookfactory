@@ -17,7 +17,7 @@ credential values and auth-file contents are excluded.
 | Codex image route | NOT PROVEN | CLI help exposes image input, not an unattended image-artifact output route; no generated image was claimed |
 | Podman | `podman version 4.9.3`; rootless status `verified` | `podman info --format '{{.Host.Security.Rootless}}'`; P04 must prove isolation behavior |
 | PostgreSQL client | `psql 16.15`; a PostgreSQL process/listener exists | Exact server/database/role remains owner-confirmation-required; no migrations or provisioning performed |
-| Converters/validators | Pandoc, EPUBCheck and LibreOffice unavailable; Chromium and Google Chrome are installed | P08 must install or use pinned maintained converters and record their actual versions |
+| Converters/validators | Initial probe found Pandoc, Java/EPUBCheck and LibreOffice unavailable; a pinned standalone EPUBCheck 5.4.0-build2 runner is now present and Chromium/Google Chrome are installed | `scripts/validate-epub.sh` invokes the locked local package; Kindle Previewer remains unavailable |
 | Reference trees | Desktop paths in the handoff are absent on this host | No sibling reference tree was modified; the absence is a delivery limitation to report |
 | Telegram | Not configured | Token and allowed chat/sender IDs were not supplied |
 
@@ -44,5 +44,20 @@ because session metadata can contain sensitive or provider-specific data.
 - Provide the Telegram token plus allowed chat and sender IDs.
 - Prove a callable subscription-backed Codex image-artifact route, or retain
   the image gate as blocked; manual import does not satisfy H8.
-- Install or pin maintained EPUB/PDF/DOCX converters and validators before
-  claiming package acceptance.
+- Kindle Previewer remains unavailable on this Linux host; keep
+  `kindle_preview_pending` until an owner-authorized Previewer/KDP preview is
+  run against the exact package hash.
+
+## Current publishing validator
+
+The host does not have Java or Kindle Previewer. Install the locked local
+validator once with `make install-epubcheck`; validation itself is then offline
+and does not mutate dependencies:
+
+```sh
+scripts/validate-epub.sh apps/api/var/artifacts/exports/d7c5f819-c4dc-4491-94a6-a133491592ba/book.epub
+```
+
+The 2026-09-19 run returned zero fatals, errors, warnings and infos. This is
+EPUB structural evidence only; it is not Kindle Previewer or Amazon
+certification evidence.

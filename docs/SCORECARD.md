@@ -33,7 +33,7 @@ streaming, failure-recovery, Telegram, authentication, or concurrency findings.
 | Production | 16/16 | Real fiction/nonfiction output, durable outline-to-manuscript task lineage, fenced context/task lineage, owner revision, resolved review finding and a live pre-publication budget rejection are evidenced (`evidence/P05/real-production.md`, `evidence/P05/outline-stage-live.md`, `evidence/P05/budget-blocking.md`, `evidence/P05/budget-live.md`, `evidence/P06/dashboard-correction.md`) |
 | Dashboard | 10/10 | Real Chromium journey covered chat/brief/review, replayed events, section editing, ten export/download links, quota/settings visibility and accessibility checks (`evidence/P06/dashboard-browser-trace.md`) |
 | Usage | 8/12 | Real finalized production attribution, separate Codex-art call accounting is implemented and tested but not yet proven by a new live image call, plus idempotent totals, live redacted Codex subscription windows, explicit stale/unknown states and project-scoped call drill-down are evidenced; estimates and Copilot quota remain pending (`evidence/P07/live-usage.md`, `evidence/P07/quota-live.md`, `evidence/P07/quota-live-recheck.md`, `evidence/P07/usage-drilldown.md`) |
-| Publishing | 10/12 | Real structurally checked EPUB/PDF/DOCX/Markdown, cover, metadata and manifests are persisted; EPUBCheck and Kindle preview remain pending (`evidence/P08/publishing.md`) |
+| Publishing | 10/12 | Real EPUB/PDF/DOCX/Markdown package, cover, metadata, manifests and pinned EPUBCheck validation are evidenced; Kindle preview remains pending (`evidence/P08/publishing.md`) |
 | Art | 3/5 | Real subscription-backed image output is persisted and dashboard-visible; owner image revision/layout review remains open (`evidence/P08/art-live.md`) |
 | Telegram | 1/5 | Real `/help` receipt and outbox delivery are evidenced; Settings now provides authenticated project linking, but same-project free-text loop and real sender rejection remain open (`evidence/P09/telegram.md`) |
 | Operations | 6/6 | Peer-authenticated backup, real isolated PostgreSQL restore with collision-safe temporary cluster, runbook and owned API lifecycle are evidenced (`evidence/P10/isolated-restore.md`, `evidence/P10/`) |
@@ -45,7 +45,9 @@ Hard gates: H1 PASS at the API/integration boundary from
 `evidence/P10/isolated-restore.md`; H2 PASS is evidenced by
 `evidence/P05/browser-close-restart-live.md`. H4 PASS is now supported by the
 real 50-page sectioned replay at `evidence/P05/long-book-live.md`, the prior
-fiction/nonfiction runs and owner-revision evidence. H5–H7 remain NOT RUN.
+fiction/nonfiction runs and owner-revision evidence. H5 and H6 remain NOT RUN;
+H7 PASS is supported by the real package plus EPUBCheck evidence at
+`evidence/P08/publishing.md`, with Kindle preview explicitly pending.
 Streaming relay evidence is in
 `evidence/P06/streaming-live.md`, while the latest security review remains
 NO-GO because default self-signed TLS can be bypassed by a client. Independent Luna critics are now available

@@ -3,7 +3,7 @@
 API_DIR := apps/api
 EVIDENCE_DIR := evidence/P00
 
-.PHONY: doctor dev install-service start stop restart status verify backup restore-check acceptance
+.PHONY: doctor dev install-service install-epubcheck start stop restart status verify backup restore-check acceptance
 
 doctor:
 	./scripts/doctor.sh --strict --output $(EVIDENCE_DIR)/capabilities.json
@@ -13,6 +13,9 @@ dev:
 
 install-service:
 	./scripts/install-user-service.sh
+
+install-epubcheck:
+	npm ci --prefix tools/epubcheck --ignore-scripts --no-audit --fund=false
 
 start:
 	systemctl --user start ebook-factory-api.service ebook-factory-worker.service ebook-factory-telegram.service
@@ -57,4 +60,5 @@ verify:
 	./scripts/tests/test_worker_runner.sh
 	./scripts/tests/test_worker_service.sh
 	PYTHONPATH=$(API_DIR) $(API_DIR)/.venv/bin/python scripts/tests/test_telegram_worker.py
+	./scripts/tests/test_epubcheck_entrypoint.sh
 	./scripts/check-isolation.sh
