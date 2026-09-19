@@ -337,6 +337,16 @@ def test_export_uses_persisted_codex_art_and_records_layout_provenance(tmp_path:
                 profile="fiction",
                 art_artifact_id=source_artifact.id,
             )
+        second_artifact.owner_review_state = "revision_requested"
+        with pytest.raises(ValueError, match="requires owner revision"):
+            export_book(
+                session,
+                root=source_root,
+                project_id=project_id,
+                revision_id=revision_id,
+                language="en",
+                profile="fiction",
+            )
 
     metadata = json.loads((source_root / f"exports/{revision_id}/metadata.json").read_text())
     provenance = metadata["ai_content_provenance"]["image"]
@@ -588,13 +598,17 @@ def test_artifact_owner_review_is_project_scoped_and_durable(tmp_path: Path) -> 
     ) as client:
         approved = client.post(
             f"/projects/{project_id}/artifacts/{artifact_id}/review",
-            json={"decision": "approve", "note": "Cover composition is readable."},
+            json={"decision": "approve", "note": "Cover composition is readable.", "expected_owner_review_state": "pending"},
         )
         listed = client.get(f"/projects/{project_id}/artifacts")
         listed_after_approval = client.get(f"/projects/{project_id}/artifacts")
         revision_requested = client.post(
             f"/projects/{project_id}/artifacts/{artifact_id}/review",
-            json={"decision": "request_revision", "note": "Increase title contrast."},
+            json={"decision": "request_revision", "note": "Increase title contrast.", "expected_owner_review_state": "approved"},
+        )
+        stale_decision = client.post(
+            f"/projects/{project_id}/artifacts/{artifact_id}/review",
+            json={"decision": "approve", "note": "Stale approval.", "expected_owner_review_state": "pending"},
         )
 
     assert approved.status_code == 200
@@ -606,3 +620,32 @@ def test_artifact_owner_review_is_project_scoped_and_durable(tmp_path: Path) -> 
     assert listed_after_approval.json()[0]["owner_review_state"] == "approved"
     assert revision_requested.status_code == 200
     assert revision_requested.json()["owner_review_state"] == "revision_requested"
+    assert stale_decision.status_code == 409
+
+    with Session(engine) as session:
+        artifact = session.get(Artifact, artifact_id)
+        assert artifact is not None
+        export_cover = Artifact(
+            revision_id=revision_id,
+            relative_path=f"exports/{revision_id}/cover.jpg",
+            mime_type="image/jpeg",
+            byte_count=1,
+            sha256="b" * 64,
+        )
+        session.add(export_cover)
+        session.commit()
+        export_cover_id = export_cover.id
+    with TestClient(
+        create_app(Settings(database_url=database_url, owner_token="owner", artifact_root=root)),
+        headers={"Authorization": "Bearer owner"},
+    ) as client:
+        derived_review = client.post(
+            f"/projects/{project_id}/artifacts/{export_cover_id}/review",
+            json={"decision": "approve", "expected_owner_review_state": "pending"},
+        )
+        wrong_project = client.post(
+            f"/projects/{uuid4()}/artifacts/{artifact_id}/review",
+            json={"decision": "approve", "expected_owner_review_state": "revision_requested"},
+        )
+    assert derived_review.status_code == 422
+    assert wrong_project.status_code == 404

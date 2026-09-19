@@ -476,6 +476,7 @@ class ArtifactView(BaseModel):
 class ArtifactReviewRequest(BaseModel):
     decision: Literal["approve", "request_revision"]
     note: str | None = Field(default=None, max_length=4000)
+    expected_owner_review_state: Literal["pending", "approved", "revision_requested"]
 
 
 class ArtifactReviewResponse(ArtifactView):
@@ -1413,24 +1414,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def review_artifact(project_id: UUID, artifact_id: UUID, request: ArtifactReviewRequest) -> ArtifactReviewResponse:
         session = database.session()
         try:
-            artifact = session.scalar(
-                select(Artifact)
-                .where(
-                    Artifact.id == artifact_id,
-                    or_(
-                        Artifact.run_id.in_(select(ProductionRun.id).where(ProductionRun.project_id == project_id)),
-                        Artifact.revision_id.in_(
-                            select(SectionRevision.id)
-                            .join(Section, Section.id == SectionRevision.section_id)
-                            .where(Section.project_id == project_id)
-                        ),
-                    ),
-                )
-            )
+            artifact = session.scalar(select(Artifact).where(Artifact.id == artifact_id).with_for_update())
             if artifact is None:
+                raise HTTPException(status_code=404, detail="artifact not found in project")
+            if artifact.run_id is not None:
+                run_project_id = session.scalar(select(ProductionRun.project_id).where(ProductionRun.id == artifact.run_id))
+                if run_project_id != project_id:
+                    raise HTTPException(status_code=404, detail="artifact not found in project")
+            if artifact.revision_id is not None:
+                revision_project_id = session.scalar(
+                    select(Section.project_id).join(SectionRevision, SectionRevision.section_id == Section.id).where(SectionRevision.id == artifact.revision_id)
+                )
+                if revision_project_id != project_id:
+                    raise HTTPException(status_code=404, detail="artifact not found in project")
+            if artifact.run_id is None and artifact.revision_id is None:
                 raise HTTPException(status_code=404, detail="artifact not found in project")
             if not artifact.mime_type.lower().startswith("image/"):
                 raise HTTPException(status_code=422, detail="owner review is only available for image artifacts")
+            if artifact.relative_path.startswith("exports/"):
+                raise HTTPException(status_code=422, detail="derived export artifacts cannot be owner reviewed")
+            if artifact.owner_review_state != request.expected_owner_review_state:
+                raise HTTPException(status_code=409, detail="artifact owner review state changed")
             artifact.owner_review_state = "approved" if request.decision == "approve" else "revision_requested"
             artifact.owner_review_note = request.note
             artifact.owner_reviewed_at = utc_now()

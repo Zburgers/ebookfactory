@@ -165,6 +165,7 @@ def _cover_source(
             Section.project_id == project_id,
             Artifact.mime_type.like("image/%"),
             ~Artifact.relative_path.startswith("exports/"),
+            Artifact.owner_review_state != "revision_requested",
         )
         .order_by(Artifact.created_at.desc(), Artifact.id.desc())
     ).all()
@@ -393,6 +394,24 @@ def _verify_export_provenance(metadata_path: Path, revision_id: UUID) -> None:
         raise ValueError("legacy export provenance is invalid")
 
 
+def _verify_source_artifact_review(session: Session, metadata_path: Path) -> None:
+    """Prevent replay of a package whose selected source image needs revision."""
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        source_artifact_id = metadata["ai_content_provenance"]["image"].get("source_artifact_id")
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("immutable export art selection cannot be verified") from exc
+    if source_artifact_id is None:
+        return
+    try:
+        artifact_id = UUID(source_artifact_id)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("immutable export art selection cannot be verified") from exc
+    artifact = session.get(Artifact, artifact_id)
+    if artifact is None or artifact.owner_review_state == "revision_requested":
+        raise ValueError("export source image requires owner revision")
+
+
 def export_book(
     session: Session,
     *,
@@ -430,15 +449,17 @@ def export_book(
                     Section.project_id == project_id,
                     Artifact.mime_type.like("image/%"),
                     ~Artifact.relative_path.startswith("exports/"),
+                    Artifact.owner_review_state != "revision_requested",
                 )
             )
             if requested_art is None:
                 raise ValueError("requested art artifact is not an eligible image for this revision")
         verified = verify_export_members(session, root=root, revision_id=revision_id)
         metadata_artifact = next(item for item in verified if Path(item.relative_path).name == "metadata.json")
-        _verify_export_provenance(safe_artifact_path(root, metadata_artifact.relative_path), revision_id)
+        metadata_path = safe_artifact_path(root, metadata_artifact.relative_path)
+        _verify_export_provenance(metadata_path, revision_id)
+        _verify_source_artifact_review(session, metadata_path)
         if art_artifact_id is not None:
-            metadata_path = safe_artifact_path(root, metadata_artifact.relative_path)
             try:
                 metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
                 recorded_artifact_id = metadata["ai_content_provenance"]["image"]["source_artifact_id"]
