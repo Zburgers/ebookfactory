@@ -4,6 +4,9 @@ set -euo pipefail
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 port="${EBOOK_FACTORY_PORT:-6969}"
 
+tls_cert="${EBOOK_FACTORY_TLS_CERT:-}"
+tls_key="${EBOOK_FACTORY_TLS_KEY:-}"
+
 is_private_ipv4() {
   local address="$1"
   [[ "$address" =~ ^10\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ||
@@ -88,6 +91,58 @@ if [[ "${EBOOK_FACTORY_DRY_RUN:-false}" == "true" ]]; then
   exit 0
 fi
 
+has_public_address=false
+for address in "${addresses[@]}"; do
+  if [[ "$address" != "127.0.0.1" && "$address" != "::1" ]]; then
+    has_public_address=true
+    break
+  fi
+done
+
+if [[ "$has_public_address" == "true" ]]; then
+  if [[ -n "$tls_cert" || -n "$tls_key" ]]; then
+    [[ -n "$tls_cert" && -n "$tls_key" ]] || {
+      echo "EBOOK_FACTORY_TLS_CERT and EBOOK_FACTORY_TLS_KEY must be configured together" >&2
+      exit 1
+    }
+  else
+    command -v openssl >/dev/null 2>&1 || {
+      echo "openssl is required for the non-loopback HTTPS listener" >&2
+      exit 1
+    }
+    tls_dir="${EBOOK_FACTORY_TLS_DIR:-$project_root/var/tls}"
+    tls_cert="$tls_dir/server.crt"
+    tls_key="$tls_dir/server.key"
+    mkdir -p "$tls_dir"
+    chmod 700 "$tls_dir"
+    san="DNS:localhost"
+    for address in "${addresses[@]}"; do
+      [[ "$address" == "127.0.0.1" || "$address" == "::1" ]] && continue
+      san+="\nIP:$address"
+    done
+    cert_text=""
+    if [[ -s "$tls_cert" && -s "$tls_key" ]]; then
+      cert_text="$(openssl x509 -in "$tls_cert" -noout -text 2>/dev/null || true)"
+    fi
+    needs_new_cert=false
+    [[ -n "$cert_text" ]] || needs_new_cert=true
+    for address in "${addresses[@]}"; do
+      [[ "$address" == "127.0.0.1" || "$address" == "::1" ]] && continue
+      grep -Fq "IP Address:$address" <<<"$cert_text" || needs_new_cert=true
+    done
+    if [[ "$needs_new_cert" == "true" ]]; then
+      umask 077
+      openssl req -x509 -nodes -newkey rsa:2048 -days "${EBOOK_FACTORY_TLS_DAYS:-3650}" \
+        -keyout "$tls_key" -out "$tls_cert" -subj "/CN=ebook-factory.local" \
+        -addext "subjectAltName = $(printf '%b' "$san" | paste -sd, -)" >/dev/null 2>&1
+    fi
+  fi
+  [[ -r "$tls_cert" && -r "$tls_key" ]] || {
+    echo "configured TLS certificate/key is not readable" >&2
+    exit 1
+  }
+fi
+
 children=()
 cleanup() {
   local child
@@ -108,7 +163,11 @@ trap terminate TERM INT
 
 for address in "${addresses[@]}"; do
   (
-    exec uv run --directory "$project_root/apps/api" uvicorn app.main:app --host "$address" --port "$port"
+    uvicorn_args=(app.main:app --host "$address" --port "$port")
+    if [[ "$address" != "127.0.0.1" && "$address" != "::1" ]]; then
+      uvicorn_args+=(--ssl-certfile "$tls_cert" --ssl-keyfile "$tls_key")
+    fi
+    exec uv run --directory "$project_root/apps/api" uvicorn "${uvicorn_args[@]}"
   ) &
   children+=("$!")
 done

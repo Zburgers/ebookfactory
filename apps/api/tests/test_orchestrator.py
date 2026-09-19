@@ -181,7 +181,11 @@ def test_orchestrator_failure_requeues_then_terminally_publishes_owner_error(tmp
         assert terminal.status_code == 200
         assert terminal.json()["state"] == "queued"
         third = client.post("/private/orchestrator/claim", json={"worker_id": "pi-1"}, headers=headers).json()
-        terminal = client.post("/private/orchestrator/failure", headers=headers, json={**third, "error": "provider unavailable"})
+        terminal = client.post(
+            "/private/orchestrator/failure",
+            headers=headers,
+            json={**third, "error": "Bearer secret-value api_key=secret-value"},
+        )
         assert terminal.status_code == 200
         assert terminal.json()["state"] == "failed"
 
@@ -193,6 +197,10 @@ def test_orchestrator_failure_requeues_then_terminally_publishes_owner_error(tmp
         assert messages[-1].role == "assistant"
         assert "couldn’t complete" in messages[-1].content
         assert {event.kind for event in events} >= {"orchestrator.turn.retryable_failure", "orchestrator.turn.failed"}
+        failure_events = [event for event in events if event.kind == "orchestrator.turn.failed"]
+        assert "Bearer secret-value" not in str(failure_events[-1].data)
+        assert "api_key=secret-value" not in str(failure_events[-1].data)
+        assert "[redacted]" in str(failure_events[-1].data)
 
 
 def test_orchestrator_failure_rejects_stale_fence_and_is_idempotent_after_terminal(tmp_path) -> None:

@@ -1,6 +1,7 @@
 """Durable dashboard-turn queue and fenced trusted-worker mutations."""
 
 from datetime import timedelta, timezone
+import re
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -11,6 +12,16 @@ from app.models import Conversation, Message, OrchestratorTurn, Project, Telegra
 from app.usage import record_usage_call
 
 MAX_ORCHESTRATOR_ATTEMPTS = 3
+
+
+def _sanitize_error(error: str) -> str:
+    """Keep durable failure diagnostics useful without retaining credentials."""
+
+    value = " ".join(error.split())
+    value = re.sub(r"(?i)\bBearer\s+[^\s,;]+", "Bearer [redacted]", value)
+    value = re.sub(r"(?i)(\b(?:api[_-]?key|token|password|secret)\s*[:=]\s*)[^\s,;]+", r"\1[redacted]", value)
+    value = re.sub(r"(?i)(://)[^\s/@:]+:[^\s/@]+@", r"\1[redacted]@", value)
+    return value[:500] or "unknown orchestrator failure"
 
 
 def enqueue_turn(session: Session, *, project_id: UUID, conversation_id: UUID, message_id: UUID, dedupe_key: str) -> OrchestratorTurn:
@@ -65,7 +76,7 @@ def heartbeat_turn(session: Session, *, turn_id: UUID, worker_id: str, generatio
 
 def fail_turn(session: Session, *, turn_id: UUID, worker_id: str, generation: int, error: str) -> OrchestratorTurn:
     """Fenced, idempotent failure transition with bounded retry and owner feedback."""
-    safe_error = " ".join(error.split())[:500] or "unknown orchestrator failure"
+    safe_error = _sanitize_error(error)
     with session.begin():
         turn = session.scalar(select(OrchestratorTurn).where(OrchestratorTurn.id == turn_id).with_for_update())
         if turn is None:

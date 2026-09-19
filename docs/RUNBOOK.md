@@ -26,8 +26,12 @@ tailscale ip -4
 The service binds separately to the current Tailscale IPv4 and detected private
 LAN IPv4 addresses, restarts on failure, and is enabled under the user manager's
 `default.target`. This host already has user lingering enabled, so it starts
-after reboot without a login session. Open `http://<tailscale-ip>:6969` or
-`http://<private-lan-ip>:6969`. Use `make start`, `make restart` and `make stop`
+after reboot without a login session. Non-loopback listeners use HTTPS: open
+`https://<tailscale-ip>:6969` or `https://<private-lan-ip>:6969`. The default
+local certificate is generated in `var/tls` and is private/self-signed, so a
+browser requires a one-time trust exception or an operator-provided certificate
+via `EBOOK_FACTORY_TLS_CERT` and `EBOOK_FACTORY_TLS_KEY`. The worker uses the
+loopback HTTP listener only. Use `make start`, `make restart` and `make stop`
 for lifecycle operations, and `journalctl --user -u ebook-factory-api.service`
 for logs. The separate `scripts/service.sh` wrapper remains a local test helper;
 it does not supervise worker or Podman jobs.

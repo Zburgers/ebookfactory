@@ -6,11 +6,14 @@ from decimal import Decimal
 import json
 import hashlib
 import base64
+import threading
+import time
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -563,6 +566,10 @@ def _worker_path(path: str) -> bool:
     return path.startswith(("/private/",))
 
 
+LOGIN_WINDOW_SECONDS = 60.0
+LOGIN_MAX_FAILURES = 5
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Create the API application with explicit settings for tests and workers."""
 
@@ -588,6 +595,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.state.database = database
     application.state.settings = resolved_settings
+    application.state.login_attempts = {}
+    application.state.login_attempts_lock = threading.Lock()
+
+    def custom_openapi() -> dict[str, Any]:
+        if application.openapi_schema:
+            return application.openapi_schema
+        schema = get_openapi(
+            title=application.title,
+            version=application.version,
+            description=application.description,
+            routes=application.routes,
+        )
+        schemes = schema.setdefault("components", {}).setdefault("securitySchemes", {})
+        schemes["OwnerBearer"] = {"type": "http", "scheme": "bearer"}
+        schemes["WorkerToken"] = {"type": "apiKey", "in": "header", "name": "X-Ebook-Worker-Token"}
+        for path, operations in schema.get("paths", {}).items():
+            if _worker_path(path):
+                security = [{"WorkerToken": []}]
+            elif _owner_exempt_path(path):
+                security = []
+            else:
+                security = [{"OwnerBearer": []}]
+            for operation in operations.values():
+                if isinstance(operation, dict):
+                    operation["security"] = security
+        application.openapi_schema = schema
+        return schema
+
+    application.openapi = custom_openapi  # type: ignore[method-assign]
 
     @application.middleware("http")
     async def owner_auth(request: Request, call_next: Any) -> Any:
@@ -625,11 +661,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse(status_code=status_code, content=payload)
 
     @application.post("/auth/login", response_model=OwnerAuthResponse, tags=["authentication"])
-    def owner_login(payload: OwnerLoginRequest) -> OwnerAuthResponse:
+    def owner_login(request: Request, payload: OwnerLoginRequest) -> OwnerAuthResponse:
         if not resolved_settings.owner_token:
             raise HTTPException(status_code=503, detail="owner authentication is not configured")
+        client_host = request.client.host if request.client else "unknown"
+        now = time.monotonic()
+        with application.state.login_attempts_lock:
+            attempts = application.state.login_attempts
+            for host, timestamps in list(attempts.items()):
+                attempts[host] = [timestamp for timestamp in timestamps if now - timestamp < LOGIN_WINDOW_SECONDS]
+                if not attempts[host]:
+                    del attempts[host]
+            recent_failures = attempts.get(client_host, [])
+            if len(recent_failures) >= LOGIN_MAX_FAILURES:
+                retry_after = max(1, int(LOGIN_WINDOW_SECONDS - (now - recent_failures[0])))
+                raise HTTPException(status_code=429, detail="too many invalid login attempts", headers={"Retry-After": str(retry_after)})
         if not _owner_token_matches(resolved_settings, payload.token):
+            with application.state.login_attempts_lock:
+                application.state.login_attempts.setdefault(client_host, []).append(now)
             raise HTTPException(status_code=401, detail="invalid owner token")
+        with application.state.login_attempts_lock:
+            application.state.login_attempts.pop(client_host, None)
         return OwnerAuthResponse(authenticated=True)
 
     @application.get("/auth/verify", response_model=OwnerAuthResponse, tags=["authentication"])
