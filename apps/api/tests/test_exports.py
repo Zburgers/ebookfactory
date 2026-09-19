@@ -20,6 +20,7 @@ from app.models import (
     BriefRevision,
     ProductionRun,
     Project,
+    ReviewFinding,
     Section,
     SectionRevision,
     Task,
@@ -202,6 +203,48 @@ def test_review_artifacts_are_project_scoped_and_resolvable(tmp_path: Path) -> N
     assert resolved.status_code == 200
 
 
+def test_review_findings_reject_inconsistent_artifact_relationships(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'review-scope.db'}"
+    engine = create_engine(database_url)
+    Base.metadata.create_all(engine)
+    project_a_id, project_b_id = uuid4(), uuid4()
+    with Session(engine) as session:
+        project_a = Project(id=project_a_id, title="A", profile="fiction", language="en")
+        project_b = Project(id=project_b_id, title="B", profile="fiction", language="en")
+        section_a = Section(project_id=project_a_id, order_no=1, heading="A")
+        section_b = Section(project_id=project_b_id, order_no=1, heading="B")
+        brief_a = BriefRevision(id=uuid4(), project_id=project_a_id, revision=1, structured_brief={}, content_hash="d" * 64)
+        session.add_all([project_a, project_b, section_a, section_b, brief_a])
+        session.flush()
+        revision_a = SectionRevision(section_id=section_a.id, revision=1, content="# A", content_hash="a" * 64)
+        revision_b = SectionRevision(section_id=section_b.id, revision=1, content="# B", content_hash="b" * 64)
+        run_a = ProductionRun(project_id=project_a_id, approved_brief_id=brief_a.id)
+        session.add_all([revision_a, revision_b, run_a])
+        session.flush()
+        artifact = Artifact(run_id=run_a.id, revision_id=revision_b.id, relative_path="leaked.md", mime_type="text/markdown", byte_count=1, sha256="c" * 64)
+        session.add(artifact)
+        session.flush()
+        finding = ReviewFinding(artifact_id=artifact.id, severity="high", criterion="scope", evidence="inconsistent")
+        session.add(finding)
+        session.commit()
+        finding_id = finding.id
+        artifact_id = artifact.id
+        revision_a_id = revision_a.id
+
+    with TestClient(create_app(Settings(database_url=database_url, owner_token="owner")), headers={"Authorization": "Bearer owner"}) as client:
+        listed_a = client.get(f"/projects/{project_a_id}/reviews")
+        listed_b = client.get(f"/projects/{project_b_id}/reviews")
+        created_a = client.post(f"/projects/{project_a_id}/reviews", json={"artifact_id": str(artifact_id), "severity": "high", "criterion": "scope", "evidence": "wrong"})
+        created_b = client.post(f"/projects/{project_b_id}/reviews", json={"artifact_id": str(artifact_id), "severity": "high", "criterion": "scope", "evidence": "wrong"})
+        resolved_a = client.post(f"/projects/{project_a_id}/reviews/{finding_id}/resolve", json={"resolution_revision_id": str(revision_a_id)})
+        resolved_b = client.post(f"/projects/{project_b_id}/reviews/{finding_id}/resolve", json={"resolution_revision_id": str(revision_a_id)})
+
+    assert listed_a.status_code == listed_b.status_code == 200
+    assert listed_a.json() == listed_b.json() == []
+    assert created_a.status_code == created_b.status_code == 404
+    assert resolved_a.status_code == resolved_b.status_code == 404
+
+
 def test_export_uses_persisted_codex_art_and_records_layout_provenance(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'art-export.db'}")
     Base.metadata.create_all(engine)
@@ -347,6 +390,7 @@ def test_export_uses_persisted_codex_art_and_records_layout_provenance(tmp_path:
                 language="en",
                 profile="fiction",
             )
+        session.commit()
 
     metadata = json.loads((source_root / f"exports/{revision_id}/metadata.json").read_text())
     provenance = metadata["ai_content_provenance"]["image"]
@@ -374,6 +418,15 @@ def test_export_uses_persisted_codex_art_and_records_layout_provenance(tmp_path:
         assert cover.getpixel((0, 0))[0] < 100
         assert cover.getpixel((0, 0))[1] > 80
         assert cover.getpixel((0, 0))[2] > 120
+
+    with TestClient(
+        create_app(Settings(database_url=f"sqlite:///{tmp_path / 'art-export.db'}", owner_token="owner", artifact_root=source_root)),
+        headers={"Authorization": "Bearer owner"},
+    ) as client:
+        cover_download = client.get(f"/projects/{project_id}/exports/{revision_id}/cover.jpg")
+        metadata_download = client.get(f"/projects/{project_id}/exports/{revision_id}/metadata.json")
+    assert cover_download.status_code == 409
+    assert metadata_download.status_code == 409
 
 
 def test_export_fails_closed_for_corrupt_persisted_image(tmp_path: Path) -> None:

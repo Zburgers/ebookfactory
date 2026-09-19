@@ -26,7 +26,7 @@ from app.database import Database
 from app.conversations import append_message, create_project
 from app.orchestrator import append_delta, claim_turn, complete_turn, enqueue_turn, fail_turn, heartbeat_turn, locked_turn
 from app.documents import create_brief_revision, create_section, save_section_revision
-from app.exports import MIME_TYPES, PACKAGE_FILES, _verify_export_provenance, export_book, verify_export_members
+from app.exports import MIME_TYPES, PACKAGE_FILES, _verify_export_provenance, _verify_source_artifact_review, export_book, verify_export_members
 from app.events import replay_events
 from app.jobs import (
     ApprovalConflict,
@@ -1332,6 +1332,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     _verify_export_provenance(path, revision_id)
                 except ValueError as exc:
                     raise HTTPException(status_code=409, detail=str(exc)) from exc
+            try:
+                _verify_source_artifact_review(session, safe_artifact_path(resolved_settings.artifact_root, f"exports/{revision_id}/metadata.json"))
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
             media_type = MIME_TYPES[filename.rsplit(".", 1)[-1]]
             return FileResponse(path, media_type=media_type, filename=filename)
         finally:
@@ -1474,23 +1478,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             finding_section = aliased(Section)
             artifact_revision = aliased(SectionRevision)
             artifact_section = aliased(Section)
-            rows = session.scalars(
-                select(ReviewFinding)
-                .outerjoin(finding_revision, finding_revision.id == ReviewFinding.revision_id)
-                .outerjoin(finding_section, finding_section.id == finding_revision.section_id)
-                .outerjoin(Artifact, Artifact.id == ReviewFinding.artifact_id)
-                .outerjoin(artifact_revision, artifact_revision.id == Artifact.revision_id)
-                .outerjoin(artifact_section, artifact_section.id == artifact_revision.section_id)
-                .outerjoin(ProductionRun, ProductionRun.id == Artifact.run_id)
-                .where(
-                    or_(
-                        finding_section.project_id == project_id,
-                        artifact_section.project_id == project_id,
-                        ProductionRun.project_id == project_id,
+            rows = session.scalars(select(ReviewFinding).order_by(ReviewFinding.created_at.desc())).all()
+            rows = [
+                finding for finding in rows
+                if (
+                    (finding.artifact_id is not None and (artifact := session.get(Artifact, finding.artifact_id)) is not None and artifact_belongs_to_project(session, artifact, project_id))
+                    or (
+                        finding.artifact_id is None
+                        and finding.revision_id is not None
+                        and session.scalar(
+                            select(Section.project_id)
+                            .join(SectionRevision, SectionRevision.section_id == Section.id)
+                            .where(SectionRevision.id == finding.revision_id)
+                        ) == project_id
                     )
                 )
-                .order_by(ReviewFinding.created_at.desc())
-            ).all()
+            ]
             return [
                 ReviewFindingView(
                     finding_id=finding.id,
@@ -1521,20 +1524,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 if valid is None:
                     raise HTTPException(status_code=404, detail="revision not found")
             if payload.artifact_id is not None:
-                valid = session.scalar(
-                    select(Artifact.id)
-                    .outerjoin(SectionRevision, SectionRevision.id == Artifact.revision_id)
-                    .outerjoin(Section, Section.id == SectionRevision.section_id)
-                    .outerjoin(ProductionRun, ProductionRun.id == Artifact.run_id)
-                    .where(
-                        Artifact.id == payload.artifact_id,
-                        or_(
-                            Section.project_id == project_id,
-                            ProductionRun.project_id == project_id,
-                        ),
-                    )
-                )
-                if valid is None:
+                artifact = session.get(Artifact, payload.artifact_id)
+                if artifact is None or not artifact_belongs_to_project(session, artifact, project_id):
                     raise HTTPException(status_code=404, detail="artifact not found")
             session.rollback()
             finding_id = record_finding(
@@ -1562,27 +1553,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             finding_section = aliased(Section)
             artifact_revision = aliased(SectionRevision)
             artifact_section = aliased(Section)
-            row = session.execute(
-                select(ReviewFinding)
-                .outerjoin(finding_revision, finding_revision.id == ReviewFinding.revision_id)
-                .outerjoin(finding_section, finding_section.id == finding_revision.section_id)
-                .outerjoin(Artifact, Artifact.id == ReviewFinding.artifact_id)
-                .outerjoin(artifact_revision, artifact_revision.id == Artifact.revision_id)
-                .outerjoin(artifact_section, artifact_section.id == artifact_revision.section_id)
-                .outerjoin(ProductionRun, ProductionRun.id == Artifact.run_id)
-                .where(
-                    ReviewFinding.id == finding_id,
-                    or_(
-                        finding_section.project_id == project_id,
-                        artifact_section.project_id == project_id,
-                        ProductionRun.project_id == project_id,
-                    ),
-                )
-                .with_for_update()
-            ).first()
-            if row is None:
+            finding = session.get(ReviewFinding, finding_id, with_for_update=True)
+            if finding is None:
                 raise HTTPException(status_code=404, detail="review finding not found")
-            finding = row[0]
+            if finding.artifact_id is not None:
+                artifact = session.get(Artifact, finding.artifact_id)
+                in_scope = artifact is not None and artifact_belongs_to_project(session, artifact, project_id)
+            else:
+                in_scope = finding.revision_id is not None and session.scalar(
+                    select(Section.project_id)
+                    .join(SectionRevision, SectionRevision.section_id == Section.id)
+                    .where(SectionRevision.id == finding.revision_id)
+                ) == project_id
+            if not in_scope:
+                raise HTTPException(status_code=404, detail="review finding not found")
             valid = session.scalar(
                 select(SectionRevision.id)
                 .join(Section, Section.id == SectionRevision.section_id)
