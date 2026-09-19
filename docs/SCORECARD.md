@@ -1,11 +1,12 @@
 # Delivery scorecard
 
-Current score: **78/100 — durable runtime/containment, real production with
+Current score: **82/100 — durable runtime/containment, real production with
 reviewed revision lineage, live usage attribution, dashboard document flow and
 structural publishing packages are evidenced; external hard gates remain.**
 
-The score is intentionally unchanged pending a full re-score. Revision
-`2ad955e` proves a real durable dashboard-to-Luna completion and live
+Revision `25268b1` plus `3a029c7` now prove a real bounded Codex image output
+and dashboard-visible production artifact. Revision `2ad955e` proves a real
+durable dashboard-to-Luna completion and live
 non-persistent quota reads, but it does not close the independent critique's
 streaming, failure-recovery, Telegram, authentication, or concurrency findings.
 
@@ -18,16 +19,16 @@ streaming, failure-recovery, Telegram, authentication, or concurrency findings.
 | Dashboard | 10/10 | Real Chromium journey covered chat/brief/review, replayed events, section editing, ten export/download links, quota/settings visibility and accessibility checks (`evidence/P06/dashboard-browser-trace.md`) |
 | Usage | 8/12 | Real finalized call attribution, idempotent totals, live redacted Codex subscription windows, explicit stale/unknown states and project-scoped call drill-down are evidenced; estimates and Copilot quota remain pending (`evidence/P07/live-usage.md`, `evidence/P07/quota-live.md`, `evidence/P07/usage-drilldown.md`) |
 | Publishing | 10/12 | Real structurally checked EPUB/PDF/DOCX/Markdown, cover, metadata and manifests are persisted; EPUBCheck and Kindle preview remain pending (`evidence/P08/publishing.md`) |
-| Art | 0/5 | pending |
-| Telegram | 0/5 | Durable adapter and redacted status boundary are implemented and tested; live token/chat/sender loop remains pending (`evidence/P09/telegram.md`) |
+| Art | 3/5 | Real subscription-backed image output is persisted and dashboard-visible; owner image revision/layout review remains open (`evidence/P08/art-live.md`) |
+| Telegram | 1/5 | Real `/help` receipt and outbox delivery are evidenced; same-project free-text loop and real sender rejection remain open (`evidence/P09/telegram.md`) |
 | Operations | 6/6 | Peer-authenticated backup, real isolated PostgreSQL restore with collision-safe temporary cluster, runbook and owned API lifecycle are evidenced (`evidence/P10/isolated-restore.md`, `evidence/P10/`) |
 
-Hard gates: H3 PASS from `evidence/P04/reconciliation-correction.md`; H9 PASS
-from `evidence/P10/isolated-restore.md`; H1, H2, H4–H8 remain NOT RUN. H4 now has real output and owner-review evidence but
+Hard gates: H3 PASS from `evidence/P04/reconciliation-correction.md`; H8 PASS
+from `evidence/P08/art-live.md`; H9 PASS from
+`evidence/P10/isolated-restore.md`; H1, H2, H4–H7 remain NOT RUN. H4 now has real output and owner-review evidence but
 still needs a restart-through-production proof; the worker lease boundary is
 now directly tested in `evidence/P05/worker-supervisor.md`, but that is not a
-full H2 production restart proof. H8 remains unproven because no
-image-generation turn was invoked. Independent Luna critics are now available
+full H2 production restart proof. Independent Luna critics are now available
 for the latest packets; earlier lead critiques remain recorded at `evidence/P00/critique.md`,
 `evidence/P01/critique.md`, `evidence/P02/critique.md`,
 `evidence/P03/critique.md`, `evidence/P04/critique.md`,

@@ -20,8 +20,8 @@ Rate-Limited Accounts
 """
     parsed = codex_quota.parse_codexctl_status(output)
     assert parsed == [
-        {"window_seconds": 18000, "used": 24, "remaining": 76, "reset": "in 3h 38m"},
-        {"window_seconds": 604800, "used": 34, "remaining": 66, "reset": "in 9h 23m"},
+        {"account_index": 1, "window_seconds": 18000, "used": 24, "remaining": 76, "reset": "in 3h 38m"},
+        {"account_index": 1, "window_seconds": 604800, "used": 34, "remaining": 66, "reset": "in 9h 23m"},
     ]
     assert "gkvxjbz2r8" not in str(parsed)
 
@@ -30,6 +30,15 @@ def test_parse_codexctl_status_rejects_invalid_percentages() -> None:
     import pytest
     with pytest.raises(codex_quota.CodexQuotaError):
         codex_quota.parse_codexctl_status("│ account ┆ 101% ┆ in 1h ┆ 20% ┆ in 2h ┆ 2 ┆ 1d │")
+
+
+def test_parse_codexctl_status_keeps_all_redacted_accounts() -> None:
+    output = """│ * account-one ┆ 24% ┆ in 3h ┆ 34% ┆ in 9h ┆ 2 ┆ 1d │
+│ * account-two ┆ 61% ┆ in 2h ┆ 48% ┆ in 8h ┆ 1 ┆ 2d │
+"""
+    parsed = codex_quota.parse_codexctl_status(output)
+    assert [window["account_index"] for window in parsed] == [1, 1, 2, 2]
+    assert [window["used"] for window in parsed] == [24, 34, 61, 48]
 
 
 def test_usage_call_routes_require_worker_token(tmp_path) -> None:
@@ -50,7 +59,7 @@ def test_live_quota_route_returns_adapter_result_without_database_snapshot(tmp_p
     database_url = f"sqlite:///{tmp_path / 'live-quota.db'}"
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)
-    monkeypatch.setattr(codex_quota, "fetch_live_quota", lambda: {"fetched_at": "2026-09-19T00:00:00Z", "source": "codexctl status", "windows": [{"window_seconds": 18000, "used": 24, "remaining": 76, "reset": "in 3h"}]})
+    monkeypatch.setattr(codex_quota, "fetch_live_quota", lambda: {"fetched_at": "2026-09-19T00:00:00Z", "source": "codexctl status", "windows": [{"account_index": 1, "window_seconds": 18000, "used": 24, "remaining": 76, "reset": "in 3h"}]})
     client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-secret")))
     response = client.get("/quota/live")
     assert response.status_code == 200

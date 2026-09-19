@@ -18,6 +18,7 @@ class CodexQuotaError(RuntimeError):
 
 def parse_codexctl_status(output: str) -> list[dict[str, object]]:
     rows = []
+    account_index = 0
     for line in output.splitlines():
         fields = [field.strip() for field in line.strip("│").split("┆")]
         if len(fields) != 7 or not fields[1].endswith("%") or not fields[3].endswith("%"):
@@ -28,11 +29,11 @@ def parse_codexctl_status(output: str) -> list[dict[str, object]]:
             continue
         if not 0 <= used_5h <= 100 or not 0 <= used_7d <= 100 or not fields[2].startswith("in ") or not fields[4].startswith("in "):
             continue
-        rows = [
-            {"window_seconds": 18000, "used": used_5h, "remaining": 100 - used_5h, "reset": fields[2]},
-            {"window_seconds": 604800, "used": used_7d, "remaining": 100 - used_7d, "reset": fields[4]},
-        ]
-        break
+        account_index += 1
+        rows.extend([
+            {"account_index": account_index, "window_seconds": 18000, "used": used_5h, "remaining": 100 - used_5h, "reset": fields[2]},
+            {"account_index": account_index, "window_seconds": 604800, "used": used_7d, "remaining": 100 - used_7d, "reset": fields[4]},
+        ])
     if not rows:
         raise CodexQuotaError("codexctl status output was empty or malformed")
     return rows

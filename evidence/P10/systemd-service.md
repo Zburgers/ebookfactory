@@ -59,6 +59,9 @@ make start
 journalctl --user -u ebook-factory-api.service
 ```
 
-The legacy `scripts/service.sh` remains a bounded local lifecycle test helper;
-the boot service is the systemd unit above. Worker and rootless Podman job
-supervision remain separate product boundaries.
+The legacy `scripts/service.sh` remains a bounded local lifecycle test helper.
+The boot installation now enables three user units: API, production/
+orchestrator worker, and Telegram poller. The worker unit waits for API
+readiness before claiming work; all three are active under the `naki` user
+manager after restart. Rootless Podman job supervision remains a separate
+product boundary.

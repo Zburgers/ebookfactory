@@ -109,6 +109,7 @@ export interface LiveQuotaResponse {
 }
 
 export interface LiveQuotaWindow {
+  account_index: number;
   window_seconds: number;
   used: number;
   remaining: number;

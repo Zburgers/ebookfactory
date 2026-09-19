@@ -1,5 +1,18 @@
 # Build status
 
+2026-09-19: Revisions `1508766` and `25268b1` repair the live Codex
+app-server art boundary: current snake_case `saved_path` events are accepted,
+provider-qualified model names are normalized at `thread/start`, and focused
+red/green tests cover both. Revision `3a029c7` makes project artifact listing
+include production-run outputs, so generated covers appear in the dashboard.
+A real integrated production run completed after bounded retries and
+persisted a 1.38 MB PNG with hash evidence in `evidence/P08/art-live.md`.
+H8 is now PASS; H4/H5/H2 and the 50–150 page staged workflow remain open.
+The affected focused checks pass, and `make verify` passes with 61 Python
+tests plus the worker, service, recovery, migration, containment and Telegram
+behavior checks. The live quota response continues to be fetched from
+`codexctl status` per request; its values are intentionally time-sensitive.
+
 2026-09-19: Revision `2ad955e` adds a durable dashboard-to-Pi orchestrator
 worker and an on-demand Codex quota adapter. `GET /quota/live` invokes the
 local `codexctl status` command per request, parses only verified 5-hour and

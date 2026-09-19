@@ -493,6 +493,11 @@
       },
       "LiveQuotaWindow": {
         "properties": {
+          "account_index": {
+            "minimum": 1.0,
+            "title": "Account Index",
+            "type": "integer"
+          },
           "remaining": {
             "title": "Remaining",
             "type": "integer"
@@ -511,6 +516,7 @@
           }
         },
         "required": [
+          "account_index",
           "window_seconds",
           "used",
           "remaining",

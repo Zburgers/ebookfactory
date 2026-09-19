@@ -92,6 +92,7 @@ class ReadinessResponse(BaseModel):
 
 
 class LiveQuotaWindow(BaseModel):
+    account_index: int = Field(ge=1)
     window_seconds: int
     used: int
     remaining: int
