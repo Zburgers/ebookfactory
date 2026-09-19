@@ -11,6 +11,25 @@ export interface ApprovalResponse {
   job_id: string;
 }
 
+export interface ArtifactReviewRequest {
+  decision: string;
+  note?: string | null;
+}
+
+export interface ArtifactReviewResponse {
+  artifact_id: string;
+  revision_id: string | null;
+  relative_path: string;
+  mime_type: string;
+  byte_count: number;
+  sha256: string;
+  validation_state: string;
+  owner_review_state: string;
+  owner_review_note: string | null;
+  owner_reviewed_at: string | null;
+  download_path: string;
+}
+
 export interface ArtifactView {
   artifact_id: string;
   revision_id: string | null;
@@ -19,6 +38,9 @@ export interface ArtifactView {
   byte_count: number;
   sha256: string;
   validation_state: string;
+  owner_review_state: string;
+  owner_review_note: string | null;
+  owner_reviewed_at: string | null;
   download_path: string;
 }
 

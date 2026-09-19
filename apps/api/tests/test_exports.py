@@ -545,3 +545,61 @@ def test_existing_legacy_placeholder_provenance_fails_closed(tmp_path: Path) -> 
         ) as client:
             response = client.get(f"/projects/{project_id}/exports/{revision_id}/metadata.json")
         assert response.status_code == 409
+
+
+def test_artifact_owner_review_is_project_scoped_and_durable(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'artifact-review.db'}"
+    engine = create_engine(database_url)
+    Base.metadata.create_all(engine)
+    project_id, revision_id = uuid4(), uuid4()
+    root = tmp_path / "artifacts"
+    image_path = root / f"{uuid4()}/cover.png"
+    image_path.parent.mkdir(parents=True)
+    image_content = b"\x89PNG\r\n\x1a\nowner-review"
+    image_path.write_bytes(image_content)
+    with Session(engine) as session:
+        project = Project(id=project_id, title="Art Review", profile="fiction", language="en")
+        section = Section(project_id=project_id, order_no=1, heading="Opening")
+        session.add_all([project, section])
+        session.flush()
+        session.add(
+            SectionRevision(
+                id=revision_id,
+                section_id=section.id,
+                revision=1,
+                content="# Art Review\n\nA story.",
+                content_hash="a" * 64,
+            )
+        )
+        artifact = Artifact(
+            revision_id=revision_id,
+            relative_path=str(image_path.relative_to(root)),
+            mime_type="image/png",
+            byte_count=len(image_content),
+            sha256=hashlib.sha256(image_content).hexdigest(),
+        )
+        session.add(artifact)
+        session.commit()
+        artifact_id = artifact.id
+
+    with TestClient(
+        create_app(Settings(database_url=database_url, owner_token="owner", artifact_root=root)),
+        headers={"Authorization": "Bearer owner"},
+    ) as client:
+        approved = client.post(
+            f"/projects/{project_id}/artifacts/{artifact_id}/review",
+            json={"decision": "approve", "note": "Cover composition is readable."},
+        )
+        listed = client.get(f"/projects/{project_id}/artifacts")
+        revision_requested = client.post(
+            f"/projects/{project_id}/artifacts/{artifact_id}/review",
+            json={"decision": "request_revision", "note": "Increase title contrast."},
+        )
+
+    assert approved.status_code == 200
+    assert approved.json()["owner_review_state"] == "approved"
+    assert approved.json()["owner_review_note"] == "Cover composition is readable."
+    assert listed.status_code == 200
+    assert listed.json()[0]["owner_review_state"] == "pending"
+    assert revision_requested.status_code == 200
+    assert revision_requested.json()["owner_review_state"] == "revision_requested"

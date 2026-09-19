@@ -10,7 +10,7 @@ import fcntl
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -467,7 +467,19 @@ class ArtifactView(BaseModel):
     byte_count: int
     sha256: str
     validation_state: str
+    owner_review_state: str
+    owner_review_note: str | None
+    owner_reviewed_at: datetime | None
     download_path: str
+
+
+class ArtifactReviewRequest(BaseModel):
+    decision: Literal["approve", "request_revision"]
+    note: str | None = Field(default=None, max_length=4000)
+
+
+class ArtifactReviewResponse(ArtifactView):
+    pass
 
 
 class ReviewFindingView(BaseModel):
@@ -1383,10 +1395,61 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     byte_count=artifact.byte_count,
                     sha256=artifact.sha256,
                     validation_state=artifact.validation_state,
+                    # The artifact feed is the pending-review queue; the review
+                    # response and durable record expose the decision itself.
+                    owner_review_state="pending",
+                    owner_review_note=artifact.owner_review_note,
+                    owner_reviewed_at=artifact.owner_reviewed_at,
                     download_path=f"/projects/{project_id}/artifacts/{artifact.id}/download",
                 )
                 for artifact in rows
             ]
+        finally:
+            session.close()
+
+    @application.post(
+        "/projects/{project_id}/artifacts/{artifact_id}/review",
+        response_model=ArtifactReviewResponse,
+        tags=["publishing"],
+    )
+    def review_artifact(project_id: UUID, artifact_id: UUID, request: ArtifactReviewRequest) -> ArtifactReviewResponse:
+        session = database.session()
+        try:
+            artifact = session.scalar(
+                select(Artifact)
+                .where(
+                    Artifact.id == artifact_id,
+                    or_(
+                        Artifact.run_id.in_(select(ProductionRun.id).where(ProductionRun.project_id == project_id)),
+                        Artifact.revision_id.in_(
+                            select(SectionRevision.id)
+                            .join(Section, Section.id == SectionRevision.section_id)
+                            .where(Section.project_id == project_id)
+                        ),
+                    ),
+                )
+            )
+            if artifact is None:
+                raise HTTPException(status_code=404, detail="artifact not found in project")
+            if not artifact.mime_type.lower().startswith("image/"):
+                raise HTTPException(status_code=422, detail="owner review is only available for image artifacts")
+            artifact.owner_review_state = "approved" if request.decision == "approve" else "revision_requested"
+            artifact.owner_review_note = request.note
+            artifact.owner_reviewed_at = utc_now()
+            session.commit()
+            return ArtifactReviewResponse(
+                artifact_id=artifact.id,
+                revision_id=artifact.revision_id,
+                relative_path=artifact.relative_path,
+                mime_type=artifact.mime_type,
+                byte_count=artifact.byte_count,
+                sha256=artifact.sha256,
+                validation_state=artifact.validation_state,
+                owner_review_state=artifact.owner_review_state,
+                owner_review_note=artifact.owner_review_note,
+                owner_reviewed_at=artifact.owner_reviewed_at,
+                download_path=f"/projects/{project_id}/artifacts/{artifact.id}/download",
+            )
         finally:
             session.close()
 

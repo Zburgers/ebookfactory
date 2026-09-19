@@ -49,7 +49,36 @@
         "title": "ApprovalResponse",
         "type": "object"
       },
-      "ArtifactView": {
+      "ArtifactReviewRequest": {
+        "properties": {
+          "decision": {
+            "enum": [
+              "approve",
+              "request_revision"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "ArtifactReviewRequest",
+        "type": "object"
+      },
+      "ArtifactReviewResponse": {
         "properties": {
           "artifact_id": {
             "format": "uuid",
@@ -67,6 +96,33 @@
           "mime_type": {
             "title": "Mime Type",
             "type": "string"
+          },
+          "owner_review_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Review Note"
+          },
+          "owner_review_state": {
+            "title": "Owner Review State",
+            "type": "string"
+          },
+          "owner_reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Reviewed At"
           },
           "relative_path": {
             "title": "Relative Path",
@@ -101,6 +157,96 @@
           "byte_count",
           "sha256",
           "validation_state",
+          "owner_review_state",
+          "owner_review_note",
+          "owner_reviewed_at",
+          "download_path"
+        ],
+        "title": "ArtifactReviewResponse",
+        "type": "object"
+      },
+      "ArtifactView": {
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "byte_count": {
+            "title": "Byte Count",
+            "type": "integer"
+          },
+          "download_path": {
+            "title": "Download Path",
+            "type": "string"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "owner_review_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Review Note"
+          },
+          "owner_review_state": {
+            "title": "Owner Review State",
+            "type": "string"
+          },
+          "owner_reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Reviewed At"
+          },
+          "relative_path": {
+            "title": "Relative Path",
+            "type": "string"
+          },
+          "revision_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Id"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "validation_state": {
+            "title": "Validation State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "revision_id",
+          "relative_path",
+          "mime_type",
+          "byte_count",
+          "sha256",
+          "validation_state",
+          "owner_review_state",
+          "owner_review_note",
+          "owner_reviewed_at",
           "download_path"
         ],
         "title": "ArtifactView",
@@ -4476,6 +4622,74 @@
           }
         ],
         "summary": "Download Artifact",
+        "tags": [
+          "publishing"
+        ]
+      }
+    },
+    "/projects/{project_id}/artifacts/{artifact_id}/review": {
+      "post": {
+        "operationId": "review_artifact_projects__project_id__artifacts__artifact_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactReviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
+        "summary": "Review Artifact",
         "tags": [
           "publishing"
         ]

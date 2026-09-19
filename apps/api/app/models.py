@@ -309,6 +309,9 @@ class Artifact(CreatedMixin, Base):
     byte_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     validation_state: Mapped[str] = mapped_column(String(32), nullable=False, default="generated")
+    owner_review_state: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    owner_review_note: Mapped[str | None] = mapped_column(Text)
+    owner_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ReviewFinding(CreatedMixin, Base):
