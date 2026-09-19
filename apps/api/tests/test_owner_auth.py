@@ -11,6 +11,7 @@ def client() -> TestClient:
 def test_health_and_login_bootstrap_are_public_but_owner_data_is_not() -> None:
     with client() as http:
         assert http.get("/health").status_code == 200
+        assert http.get("/atlas-cover.png").status_code == 200
         assert http.get("/projects").status_code == 401
         assert http.get("/projects", headers={"Authorization": "Bearer wrong"}).status_code == 401
         assert http.post("/auth/login", json={"token": "owner-secret"}).json() == {"authenticated": True}

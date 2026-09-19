@@ -659,7 +659,7 @@ def _owner_token_matches(settings: Settings, supplied: str) -> bool:
 
 
 def _owner_exempt_path(path: str) -> bool:
-    return path in {"/health", "/ready", "/auth/login", "/docs", "/redoc", "/openapi.json"} or path.startswith("/src/") or path in {"/", "/favicon.ico"}
+    return path in {"/health", "/ready", "/auth/login", "/docs", "/redoc", "/openapi.json"} or path.startswith("/src/") or path in {"/", "/atlas-cover.png", "/favicon.ico"}
 
 
 def _worker_path(path: str) -> bool:
