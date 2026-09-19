@@ -77,6 +77,28 @@ def test_usage_stream_replay_rejects_cross_attempt_reuse(tmp_path) -> None:
             expected_attempt_id=other_attempt_id,
             expected_purpose="art",
         )
+    with pytest.raises(ValueError, match="usage call binding"):
+        record_usage_call(
+            session,
+            call_id=call_id,
+            provider="test-provider",
+            model="test-model",
+            purpose="art",
+            outcome="succeeded",
+            attempt_id=other_attempt_id,
+        )
+    with pytest.raises(ValueError, match="usage call binding"):
+        record_usage_call(
+            session,
+            call_id=uuid4(),
+            provider="test-provider",
+            model="test-model",
+            purpose="art",
+            outcome="succeeded",
+            attempt_id=first_attempt_id,
+            expected_attempt_id=other_attempt_id,
+            expected_purpose="art",
+        )
 
 
 def test_usage_call_drilldown_returns_lineage_and_unknown_billing(tmp_path) -> None:
