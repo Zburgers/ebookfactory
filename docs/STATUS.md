@@ -6,8 +6,13 @@ enforce estimated 100–180 words/page bounds, downloads verify SHA-256 as well
 as size, OpenAPI describes the provider connection-test policy, and the Pi
 runner flushes an unterminated final JSONL event. The earlier `c53c700` repair
 normalizes Codex art usage keys before persistence. The default self-signed TLS
-identity remains the unresolved H1; the page workflow still lacks a real
-50–150 page provider run and the score remains conservative.
+identity remains a separate transport-trust finding; the page workflow still
+lacks a real 50–150 page provider run and the score remains conservative.
+
+2026-09-19: The page-target prompt now matches the validator contract: it
+states 100–180 words per page, derives 5,000–27,000 words for a 50–150 page
+request, and asks for an 8–15 sectioned manuscript. Focused worker tests pass;
+no provider was invoked for this repair.
 
 2026-09-19: Revisions `c5e05e9`, `205d1ca` and `e2fcd8e` extend the durable
 book path. Studio now submits a selected 50–150 page target (or an explicit
@@ -28,8 +33,8 @@ adds shared short-lived login throttling, stronger durable failure redaction,
 and accurate OpenAPI owner/worker/capability metadata. Non-loopback port 6969
 listeners now use TLS while loopback remains HTTP for the local worker.
 Default TLS is self-signed and therefore does not prove server identity until
-the certificate is trusted or replaced; H1 remains open and the latest
-independent critic is NO-GO. The 50–150 page path is staged but still lacks a
+the certificate is trusted or replaced. This remains a transport security
+finding, separate from the H1 provider-call definition. The 50–150 page path is staged but still lacks a
 real long-book run, Telegram same-conversation proof, art usage attribution,
 and restart-through-production evidence.
 

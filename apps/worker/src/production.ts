@@ -20,7 +20,7 @@ export function buildProductionPrompt(context) {
   }
   const pages = context.brief.target_pages;
   const pageInstruction = pages
-    ? `Target ${pages.minimum}-${pages.maximum} pages, using a planning estimate of 125-120 words per page (${(pages.minimum * 125).toLocaleString()}-${(pages.maximum * 120).toLocaleString()} words). Create a bounded chapter plan of 8-15 chapters, then write the durable sectioned manuscript with one ## heading per chapter.`
+    ? `Target ${pages.minimum}-${pages.maximum} pages, using a bounded estimate of 100-180 words per page (${(pages.minimum * 100).toLocaleString()}-${(pages.maximum * 180).toLocaleString()} words). Write an 8-15 sectioned manuscript with one ## heading per section.`
     : "Preserve the requested word target and return a concise title followed by section headings and complete prose.";
   return [
     "Create the next bounded manuscript draft from this approved brief.",

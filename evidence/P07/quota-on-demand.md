@@ -22,3 +22,10 @@ human-readable window names, shows fetch source/time, and renders an explicit
 unavailable message instead of `unknown%` or a placeholder bucket. The
 persisted `/quota` snapshot API remains available for separately authenticated
 worker observations, but is not used for this live dashboard panel.
+
+Latest service recheck at `2026-09-19T01:04Z` returned two consecutive live
+responses with source `codexctl status` and distinct fetch timestamps
+(`01:04:11.401Z` and `01:04:13.916Z`). Both returned two measurable windows;
+the CLI values changed from the earlier observation, confirming that the panel
+is not replaying a stored snapshot. The PostgreSQL `quota_snapshots` count was
+unchanged at `2` before and after the request.
