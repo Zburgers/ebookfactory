@@ -1,5 +1,11 @@
 # Build status
 
+2026-09-19: Telegram is configured and the poller is active, but the live audit
+still shows no owner-authored free-text message. The allowlisted chat is linked
+to `Live outline handoff verification`, so the owner must link the intended
+dashboard project and send one real message before H5 can pass. Evidence is at
+`evidence/P09/telegram-live-audit.md`; no Telegram message was fabricated.
+
 2026-09-19: The art-backed export seam is now revision- and provenance-fenced.
 Exports select only eligible images from the requested revision, verify source
 bytes and layout, bind persisted art to its exact usage call and active attempt,
