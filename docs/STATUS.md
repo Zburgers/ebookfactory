@@ -1,5 +1,19 @@
 # Build status
 
+2026-09-19: Telegram project routing is live and durable at revision
+`f2d614f`. The single configured owner chat is automatically linked to all 27
+projects with exactly one active selection. `/help` sends an inline project
+menu; selecting a button switches the durable active project, while plain
+messages route to only that project. Callback allowlisting, replay handling,
+invalid-update acknowledgement and restart-safe processing claims are covered
+by focused tests. The real owner message `Hi` was received and its assistant
+response was sent. Evidence is at
+`evidence/P09/telegram-project-switching-live.md`.
+
+The Settings page labels the main orchestrator model explicitly and continues
+to populate it from the live `pi --list-models` catalog, persisting the selected
+qualified model in provider settings.
+
 2026-09-19: The owner art-review workflow is now durable and fail-closed.
 Image decisions are PostgreSQL state with optimistic concurrency; inconsistent
 cross-project artifact relationships are rejected across listing, download,
@@ -21,11 +35,10 @@ so the current IP-SAN certificate remains in place to preserve the requested
 `<tailscale-ip>:6969` URL. Evidence is at
 `evidence/P10/tailscale-access-audit.md`.
 
-2026-09-19: Telegram is configured and the poller is active, but the live audit
-still shows no owner-authored free-text message. The allowlisted chat is linked
-to `Live outline handoff verification`, so the owner must link the intended
-dashboard project and send one real message before H5 can pass. Evidence is at
-`evidence/P09/telegram-live-audit.md`; no Telegram message was fabricated.
+2026-09-19: The earlier Telegram audit recorded the pre-message state at
+`evidence/P09/telegram-live-audit.md`; the owner-message and project-switching
+follow-up supersedes that pending state with live evidence at
+`evidence/P09/telegram-project-switching-live.md`.
 
 2026-09-19: The art-backed export seam is now revision- and provenance-fenced.
 Exports select only eligible images from the requested revision, verify source

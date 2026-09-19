@@ -1,9 +1,9 @@
 # Delivery scorecard
 
-Current score: **85/100 — durable runtime/containment, real production with
-reviewed revision lineage, live usage attribution, dashboard document flow and
-structural publishing packages are evidenced; production restart, Telegram,
-and external publishing gates remain.**
+Current score: **89/100 — durable runtime/containment, real production with
+reviewed revision lineage, live usage attribution, dashboard document flow,
+structural publishing packages and the live Telegram owner loop are evidenced;
+external publishing/quota and owner-art-review gates remain.**
 
 The latest implementation adds live orchestrator delta relay, owner-boundary
 repairs, live non-persistent quota reads, a corrected page-target prompt, and a
@@ -19,14 +19,14 @@ package that passed EPUBCheck (`evidence/P08/art-export-live.md`).
 
 The owner art-review workflow is now durable, project-scoped and fail-closed
 for stale source images and derived packages (`evidence/P08/art-review-workflow.md`).
-The score remains conservative at 85 because no live owner review decision has
+The score remains conservative at 89 because no live owner review decision has
 been performed yet.
 
 The outline-stage packet now adds a durable dependency-gated outline handoff,
 terminal dependency failure propagation, typed worker context contracts and
 separate outline/manuscript lineage. A real systemd run is recorded at
-`evidence/P05/outline-stage-live.md`; the score remains 85 because the real
-50-page sectioned replay is now evidenced, but Telegram and external
+`evidence/P05/outline-stage-live.md`; the score remains 89 because the real
+50-page sectioned replay is now evidenced, but external
 publishing/quota gates remain open.
 
 Revision `25268b1` plus `3a029c7` now prove a real bounded Codex image output
@@ -45,7 +45,7 @@ streaming, failure-recovery, Telegram, authentication, or concurrency findings.
 | Usage | 8/12 | Real finalized production attribution, exact revision/attempt/artifact-to-call binding, separate Codex-art accounting, idempotent totals, live redacted Codex subscription windows, explicit stale/unknown states and project-scoped call drill-down are evidenced; estimates and Copilot quota remain pending (`evidence/P07/live-usage.md`, `evidence/P07/quota-live.md`, `evidence/P07/quota-live-recheck.md`, `evidence/P07/usage-drilldown.md`, `evidence/P08/art-export-live.md`) |
 | Publishing | 10/12 | Real EPUB/PDF/DOCX/Markdown package, cover, metadata, manifests and pinned EPUBCheck validation are evidenced; Kindle preview remains pending (`evidence/P08/publishing.md`) |
 | Art | 3/5 | Real subscription-backed image output is persisted and dashboard-visible; owner image revision/layout review remains open (`evidence/P08/art-live.md`) |
-| Telegram | 1/5 | Real `/help` receipt and outbox delivery are evidenced; Settings now provides authenticated project linking, but same-project free-text loop and real sender rejection remain open (`evidence/P09/telegram.md`) |
+| Telegram | 5/5 | Real owner message/assistant response delivery, one-chat/all-project linking, durable active selection, inline `/help` switching, replay safety and allowlist behavior are evidenced (`evidence/P09/telegram-project-switching-live.md`) |
 | Operations | 6/6 | Peer-authenticated backup, real isolated PostgreSQL restore with collision-safe temporary cluster, runbook and owned API lifecycle are evidenced (`evidence/P10/isolated-restore.md`, `evidence/P10/`) |
 
 Hard gates: H1 PASS at the API/integration boundary from
@@ -55,9 +55,11 @@ Hard gates: H1 PASS at the API/integration boundary from
 `evidence/P10/isolated-restore.md`; H2 PASS is evidenced by
 `evidence/P05/browser-close-restart-live.md`. H4 PASS is now supported by the
 real 50-page sectioned replay at `evidence/P05/long-book-live.md`, the prior
-fiction/nonfiction runs and owner-revision evidence. H5 and H6 remain NOT RUN;
+fiction/nonfiction runs and owner-revision evidence. H6 remains NOT RUN;
 H7 PASS is supported by the real package plus EPUBCheck evidence at
 `evidence/P08/publishing.md`, with Kindle preview explicitly pending.
+H5 PASS is now supported by the real owner Telegram message/response and the
+durable project-scoped routing evidence at `evidence/P09/telegram-project-switching-live.md`.
 Streaming relay evidence is in
 `evidence/P06/streaming-live.md`, while the latest security review remains
 NO-GO because default self-signed TLS can be bypassed by a client. Independent Luna critics are now available
