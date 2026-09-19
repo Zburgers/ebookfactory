@@ -483,3 +483,46 @@ def test_export_api_enforces_art_selection_and_member_integrity(tmp_path: Path) 
         (root / f"exports/{revision_id}/book.md").write_bytes(b"tampered")
         tampered = client.get(download_path)
         assert tampered.status_code == 409
+
+
+def test_existing_legacy_placeholder_provenance_fails_closed(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'legacy-export.db'}")
+    Base.metadata.create_all(engine)
+    project_id, revision_id = uuid4(), uuid4()
+    root = tmp_path / "artifacts"
+    with Session(engine) as session:
+        project = Project(id=project_id, title="Legacy Export", profile="fiction", language="en")
+        section = Section(project_id=project_id, order_no=1, heading="Opening")
+        session.add_all([project, section])
+        session.flush()
+        session.add(
+            SectionRevision(
+                id=revision_id,
+                section_id=section.id,
+                revision=1,
+                content="# Legacy Export\n\nA story.",
+                content_hash="f" * 64,
+            )
+        )
+        session.commit()
+        export_book(session, root=root, project_id=project_id, revision_id=revision_id, language="en", profile="fiction")
+        metadata_artifact = session.scalar(
+            select(Artifact).where(Artifact.relative_path == f"exports/{revision_id}/metadata.json")
+        )
+        assert metadata_artifact is not None
+        legacy_content = json.dumps(
+            {
+                "revision_id": str(revision_id),
+                "ai_content_provenance": {
+                    "text": "Pi provider output",
+                    "image": "deterministic local cover; Codex image route pending",
+                },
+            }
+        ).encode()
+        metadata_path = root / metadata_artifact.relative_path
+        metadata_path.write_bytes(legacy_content)
+        metadata_artifact.byte_count = len(legacy_content)
+        metadata_artifact.sha256 = hashlib.sha256(legacy_content).hexdigest()
+        session.commit()
+        with pytest.raises(ValueError, match="legacy export provenance"):
+            export_book(session, root=root, project_id=project_id, revision_id=revision_id, language="en", profile="fiction")

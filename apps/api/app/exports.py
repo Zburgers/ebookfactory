@@ -362,6 +362,34 @@ def verify_export_members(
     return members
 
 
+def _verify_export_provenance(metadata_path: Path, revision_id: UUID) -> None:
+    """Reject historical packages whose provenance is not machine-readable."""
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        provenance = metadata["ai_content_provenance"]
+        text = provenance["text"]
+        image = provenance["image"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("legacy export provenance is invalid") from exc
+
+    if not isinstance(text, dict) or text != {
+        "source": "revisioned-manuscript",
+        "revision_id": str(revision_id),
+        "owner_review_required": True,
+    }:
+        raise ValueError("legacy export provenance is invalid")
+    if not isinstance(image, dict):
+        raise ValueError("legacy export provenance is invalid")
+    source_artifact_id = image.get("source_artifact_id")
+    if source_artifact_id is None:
+        if image.get("source") != "deterministic-fallback":
+            raise ValueError("legacy export provenance is invalid")
+    elif not isinstance(source_artifact_id, str) or image.get("source") == "deterministic-fallback":
+        raise ValueError("legacy export provenance is invalid")
+    if not isinstance(image.get("layout"), str) or not isinstance(image.get("final_cover_filename"), str):
+        raise ValueError("legacy export provenance is invalid")
+
+
 def export_book(
     session: Session,
     *,
@@ -404,8 +432,9 @@ def export_book(
             if requested_art is None:
                 raise ValueError("requested art artifact is not an eligible image for this revision")
         verified = verify_export_members(session, root=root, revision_id=revision_id)
+        metadata_artifact = next(item for item in verified if Path(item.relative_path).name == "metadata.json")
+        _verify_export_provenance(safe_artifact_path(root, metadata_artifact.relative_path), revision_id)
         if art_artifact_id is not None:
-            metadata_artifact = next(item for item in verified if Path(item.relative_path).name == "metadata.json")
             metadata_path = safe_artifact_path(root, metadata_artifact.relative_path)
             try:
                 metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
