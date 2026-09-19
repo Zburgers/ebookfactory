@@ -83,6 +83,13 @@ def test_brief_rejects_non_positive_or_ambiguous_length_targets() -> None:
         )
 
 
+def test_brief_rejects_unknown_delivery_formats() -> None:
+    with pytest.raises(ValueError, match="output formats"):
+        BriefCreateRequest(structured_brief={"output_formats": ["kindle-mobi"]})
+    with pytest.raises(ValueError, match="output formats"):
+        BriefCreateRequest(structured_brief={"output_formats": []})
+
+
 def test_sqlite_production_result_accepts_persisted_lease(tmp_path) -> None:
     database_url = f"sqlite:///{tmp_path / 'sqlite-production.db'}"
     Base.metadata.create_all(create_engine(database_url))

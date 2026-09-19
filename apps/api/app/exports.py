@@ -27,7 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.artifacts import safe_artifact_path, write_artifact
-from app.models import Artifact, Project, Section, SectionRevision, Task, UsageCall
+from app.models import Artifact, BriefRevision, ProductionRun, Project, Section, SectionRevision, Task, UsageCall
 
 
 PACKAGE_FILES = (
@@ -43,6 +43,22 @@ PACKAGE_FILES = (
     "validation.json",
 )
 
+CORE_PACKAGE_FILES = (
+    "cover.jpg",
+    "metadata.json",
+    "metadata.csv",
+    "sources.json",
+    "manifest.json",
+    "validation.json",
+)
+REQUESTED_FORMAT_FILES = {
+    "epub": "book.epub",
+    "pdf": "book.pdf",
+    "docx": "book.docx",
+    "md": "book.md",
+    "markdown": "book.md",
+}
+
 MIME_TYPES = {
     "md": "text/markdown",
     "jpg": "image/jpeg",
@@ -53,6 +69,23 @@ MIME_TYPES = {
     "csv": "text/csv",
 }
 MAX_MARKETING_COVER_BYTES = 50 * 1024 * 1024
+
+
+def _requested_package_files(structured_brief: dict[str, object]) -> tuple[str, ...]:
+    """Return requested book formats plus the package's mandatory evidence files."""
+
+    requested = structured_brief.get("output_formats")
+    if not isinstance(requested, (list, tuple)) or not requested:
+        book_files = ["book.epub", "book.pdf", "book.docx", "book.md"]
+    else:
+        book_files = []
+        for value in requested:
+            filename = REQUESTED_FORMAT_FILES.get(str(value).strip().lower())
+            if filename and filename not in book_files:
+                book_files.append(filename)
+        if not book_files:
+            raise ValueError("output_formats must include epub, pdf, docx, or markdown")
+    return tuple([*book_files, *CORE_PACKAGE_FILES])
 
 
 @dataclass(frozen=True)
@@ -150,17 +183,17 @@ def _production_scope_entries(
     return sorted(entries, key=lambda item: item[0].order_no)
 
 
-def _production_scope_for_revision(
+def _production_task_for_revision(
     session: Session,
     *,
     project_id: UUID,
     revision: SectionRevision,
-) -> list[tuple[Section, SectionRevision]] | None:
-    """Find the completed production run that owns an anchor or owner revision."""
+) -> Task | None:
+    """Find the completed production task that owns an anchor or owner revision."""
 
-    production_artifacts = session.execute(
-        select(Artifact, Task)
-        .join(Task, Task.run_id == Artifact.run_id)
+    production_tasks = session.scalars(
+        select(Task)
+        .join(Artifact, Artifact.run_id == Task.run_id)
         .join(SectionRevision, SectionRevision.id == Artifact.revision_id)
         .join(Section, Section.id == SectionRevision.section_id)
         .where(
@@ -170,8 +203,9 @@ def _production_scope_for_revision(
             Section.project_id == project_id,
             Task.task_type == "production",
         )
+        .distinct()
     ).all()
-    for _, production_task in production_artifacts:
+    for production_task in production_tasks:
         entries = _production_scope_entries(
             session, project_id=project_id, production_task=production_task
         )
@@ -181,9 +215,54 @@ def _production_scope_for_revision(
             if section.id == revision.section_id and _revision_is_descendant(
                 session, candidate=revision, ancestor_id=section_revision.id
             ):
-                entries[index] = (section, revision)
-                return entries
+                return production_task
     return None
+
+
+def _production_scope_for_revision(
+    session: Session,
+    *,
+    project_id: UUID,
+    revision: SectionRevision,
+) -> list[tuple[Section, SectionRevision]] | None:
+    """Find the completed production scope that owns an anchor or owner revision."""
+
+    production_task = _production_task_for_revision(
+        session, project_id=project_id, revision=revision
+    )
+    if production_task is None:
+        return None
+    entries = _production_scope_entries(
+        session, project_id=project_id, production_task=production_task
+    )
+    for index, (section, section_revision) in enumerate(entries):
+        if section.id == revision.section_id and _revision_is_descendant(
+            session, candidate=revision, ancestor_id=section_revision.id
+        ):
+            entries[index] = (section, revision)
+            return entries
+    return None
+
+
+def _brief_for_revision(
+    session: Session,
+    *,
+    project_id: UUID,
+    revision: SectionRevision,
+) -> dict[str, object]:
+    """Resolve metadata from the approved run before falling back to the active brief."""
+
+    production_task = _production_task_for_revision(
+        session, project_id=project_id, revision=revision
+    )
+    if production_task is not None and production_task.run_id is not None:
+        run = session.get(ProductionRun, production_task.run_id)
+        brief = session.get(BriefRevision, run.approved_brief_id) if run is not None else None
+        if brief is not None and brief.project_id == project_id:
+            return dict(brief.structured_brief or {})
+    project = session.get(Project, project_id)
+    active_brief = session.get(BriefRevision, project.active_brief_id) if project and project.active_brief_id else None
+    return dict(active_brief.structured_brief or {}) if active_brief is not None else {}
 
 
 def _resolve_manuscript_scope(
@@ -364,13 +443,24 @@ def _cover_source(
     }
 
 
-def _make_epub(title: str, language: str, markdown: str, cover: bytes, revision_id: UUID) -> bytes:
+def _make_epub(
+    title: str,
+    language: str,
+    markdown: str,
+    cover: bytes,
+    revision_id: UUID,
+    author: str = "Ebook Factory",
+    description: str = "AI-assisted manuscript; owner review required.",
+    subtitle: str | None = None,
+) -> bytes:
     book = epub.EpubBook()
     book.set_identifier(f"urn:uuid:{revision_id}")
     book.set_title(title)
     book.set_language(language)
-    book.add_author("Ebook Factory")
-    book.add_metadata("DC", "description", "AI-assisted manuscript; owner review required.")
+    book.add_author(author)
+    book.add_metadata("DC", "description", description)
+    if subtitle:
+        book.add_metadata("DC", "subject", subtitle)
     book.set_cover("cover.jpg", cover)
     chapter = epub.EpubHtml(title=title, file_name="chapter-1.xhtml", lang=language)
     body = [f'<h1 id="book-title">{html.escape(title)}</h1>']
@@ -402,8 +492,10 @@ def _make_epub(title: str, language: str, markdown: str, cover: bytes, revision_
         return path.read_bytes()
 
 
-def _make_docx(title: str, markdown: str) -> bytes:
+def _make_docx(title: str, markdown: str, author: str = "Ebook Factory") -> bytes:
     document = Document()
+    document.core_properties.author = author
+    document.core_properties.title = title
     document.add_heading(title, 0)
     for kind, value in _markdown_blocks(markdown):
         if kind.startswith("h"):
@@ -415,7 +507,12 @@ def _make_docx(title: str, markdown: str) -> bytes:
     return output.getvalue()
 
 
-def _make_pdf(title: str, markdown: str) -> bytes:
+def _make_pdf(
+    title: str,
+    markdown: str,
+    author: str = "Ebook Factory",
+    description: str = "AI-assisted manuscript; owner review required.",
+) -> bytes:
     output = io.BytesIO()
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle("BookTitle", parent=styles["Title"], alignment=TA_CENTER, spaceAfter=24)
@@ -431,8 +528,8 @@ def _make_pdf(title: str, markdown: str) -> bytes:
 
     def set_metadata(canvas, _document) -> None:
         canvas.setTitle(title)
-        canvas.setAuthor("Ebook Factory")
-        canvas.setSubject("AI-assisted manuscript; owner review required.")
+        canvas.setAuthor(author)
+        canvas.setSubject(description)
 
     document.build(story, onFirstPage=set_metadata, onLaterPages=set_metadata)
     return output.getvalue()
@@ -445,16 +542,39 @@ def _metadata(
     revision_id: UUID,
     source_revision_ids: tuple[UUID, ...],
     image_provenance: dict[str, object],
+    structured_brief: dict[str, object] | None = None,
 ) -> dict[str, object]:
+    brief = structured_brief or {}
+    author = str(brief.get("author") or "Ebook Factory").strip()
+    description = str(brief.get("description") or "AI-assisted manuscript; owner review required.").strip()
+    subtitle_value = brief.get("subtitle")
+    subtitle = str(subtitle_value).strip() if subtitle_value else None
+    keywords_value = brief.get("keywords") or []
+    if isinstance(keywords_value, str):
+        keywords = [item.strip() for item in keywords_value.split(",") if item.strip()]
+    elif isinstance(keywords_value, (list, tuple)):
+        keywords = [str(item).strip() for item in keywords_value if str(item).strip()][:24]
+    else:
+        keywords = []
+    genre = str(brief.get("genre") or profile).strip()
+    audience_value = brief.get("audience")
+    audience = str(audience_value).strip() if audience_value else None
+    categories_value = brief.get("categories") or ([genre] if genre else [])
+    categories = [str(item).strip() for item in categories_value if str(item).strip()] if isinstance(categories_value, (list, tuple)) else [str(categories_value).strip()]
+    output_formats_value = brief.get("output_formats") or []
+    output_formats = [str(item).strip().lower() for item in output_formats_value if str(item).strip()] if isinstance(output_formats_value, (list, tuple)) else []
     return {
         "title": title,
-        "subtitle": None,
-        "author": "Ebook Factory",
+        "subtitle": subtitle,
+        "author": author,
         "language": language,
-        "profile": profile,
-        "description": "AI-assisted manuscript; owner review required.",
-        "keywords": [],
-        "categories": [],
+        "profile": str(brief.get("profile") or profile),
+        "genre": genre,
+        "audience": audience,
+        "description": description,
+        "keywords": keywords,
+        "categories": categories,
+        "output_formats": output_formats,
         "revision_id": str(revision_id),
         "source_revision_ids": [str(source_revision_id) for source_revision_id in source_revision_ids],
         "ai_content_provenance": {
@@ -479,31 +599,43 @@ def _metadata_csv(metadata: dict[str, object]) -> bytes:
 
 
 def _validate_files(
-    files: dict[str, bytes], *, source_revision_count: int, manuscript_heading_count: int
+    files: dict[str, bytes],
+    *,
+    markdown: str,
+    source_revision_count: int,
+    manuscript_heading_count: int,
+    requested_files: tuple[str, ...],
 ) -> dict[str, object]:
     checks: dict[str, bool] = {}
-    checks["markdown_nonempty"] = bool(files["book.md"].strip())
-    checks["pdf_signature"] = files["book.pdf"].startswith(b"%PDF-")
-    checks["pdf_metadata"] = b"/Title" in files["book.pdf"] and b"/Author" in files["book.pdf"]
-    checks["docx_structure"] = all(marker in files["book.docx"] for marker in (b"word/document.xml", b"[Content_Types].xml"))
-    with zipfile.ZipFile(io.BytesIO(files["book.epub"])) as archive:
-        checks["epub_archive"] = archive.testzip() is None
-        names = set(archive.namelist())
-        nav_name = next((name for name in names if name.endswith("nav.xhtml")), None)
-        chapter_name = next((name for name in names if name.endswith("chapter-1.xhtml")), None)
-        navigation = archive.read(nav_name) if nav_name else b""
-        checks["epub_navigation"] = bool(
-            nav_name
-            and chapter_name
-            and b'epub:type="toc"' in navigation
-            and b'chapter-1.xhtml' in navigation
-        )
-        checks["epub_toc_headings"] = len(re.findall(rb'chapter-1\.xhtml#section-\d+', navigation)) >= manuscript_heading_count
+    checks["markdown_nonempty"] = bool(markdown.strip())
+    if "book.pdf" in files:
+        checks["pdf_signature"] = files["book.pdf"].startswith(b"%PDF-")
+        checks["pdf_metadata"] = b"/Title" in files["book.pdf"] and b"/Author" in files["book.pdf"]
+    if "book.docx" in files:
+        checks["docx_structure"] = all(marker in files["book.docx"] for marker in (b"word/document.xml", b"[Content_Types].xml"))
+    if "book.epub" in files:
+        with zipfile.ZipFile(io.BytesIO(files["book.epub"])) as archive:
+            checks["epub_archive"] = archive.testzip() is None
+            names = set(archive.namelist())
+            nav_name = next((name for name in names if name.endswith("nav.xhtml")), None)
+            chapter_name = next((name for name in names if name.endswith("chapter-1.xhtml")), None)
+            navigation = archive.read(nav_name) if nav_name else b""
+            checks["epub_navigation"] = bool(
+                nav_name
+                and chapter_name
+                and b'epub:type="toc"' in navigation
+                and b'chapter-1.xhtml' in navigation
+            )
+            checks["epub_toc_headings"] = len(re.findall(rb'chapter-1\.xhtml#section-\d+', navigation)) >= manuscript_heading_count
     with Image.open(io.BytesIO(files["cover.jpg"])) as cover:
         checks["cover_rgb"] = cover.mode == "RGB"
         checks["cover_dimensions"] = cover.size == (1600, 2560)
     checks["cover_file_size"] = len(files["cover.jpg"]) <= MAX_MARKETING_COVER_BYTES
     checks["manuscript_scope_complete"] = source_revision_count >= 1
+    checks["requested_formats_present"] = all(
+        filename in files or filename in {"manifest.json", "validation.json"}
+        for filename in requested_files
+    )
     checks["all_structural_checks_pass"] = all(checks.values())
     return {"package_state": "structurally_validated" if checks["all_structural_checks_pass"] else "generated", "checks": checks, "kindle_preview": "pending"}
 
@@ -516,11 +648,26 @@ def verify_export_members(
 ) -> list[Artifact]:
     """Verify every registered member before exposing an immutable export."""
     prefix = f"exports/{revision_id}/"
-    expected_paths = {f"{prefix}{filename}" for filename in PACKAGE_FILES}
     members = session.scalars(select(Artifact).where(Artifact.relative_path.like(f"{prefix}%"))).all()
+    manifest = next((item for item in members if Path(item.relative_path).name == "manifest.json"), None)
+    expected_filenames = set(PACKAGE_FILES)
+    if manifest is not None:
+        try:
+            manifest_path = safe_artifact_path(root, manifest.relative_path)
+            if manifest_path.is_symlink() or not manifest_path.is_file():
+                raise ValueError("canonical export manifest is invalid")
+            manifest_content = manifest_path.read_text(encoding="utf-8")
+            manifest_value = json.loads(manifest_content)
+            package_files = manifest_value.get("package_files")
+            if isinstance(package_files, list):
+                expected_filenames = {str(filename) for filename in package_files}
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ValueError("canonical export manifest is invalid") from exc
     if (
-        len(members) != len(PACKAGE_FILES)
-        or {item.relative_path for item in members} != expected_paths
+        not expected_filenames.issubset(set(PACKAGE_FILES))
+        or not set(CORE_PACKAGE_FILES).issubset(expected_filenames)
+        or len(members) != len(expected_filenames)
+        or {item.relative_path for item in members} != {f"{prefix}{filename}" for filename in expected_filenames}
         or any(item.revision_id != revision_id for item in members)
     ):
         raise ValueError("canonical export package paths or revision ownership are invalid")
@@ -600,13 +747,24 @@ def export_book(
     language: str,
     profile: str,
     art_artifact_id: UUID | None = None,
+    structured_brief: dict[str, object] | None = None,
 ) -> ExportResult:
     """Generate or replay one immutable package for an exact section revision."""
 
     scope = _resolve_manuscript_scope(
         session, project_id=project_id, revision_id=revision_id
     )
-    title, body = scope.title, scope.body
+    brief = structured_brief or _brief_for_revision(
+        session, project_id=project_id, revision=session.get(SectionRevision, revision_id)
+    )
+    title = str(brief.get("title") or scope.title).strip() or scope.title
+    language = str(brief.get("language") or language).strip() or language
+    profile = str(brief.get("profile") or profile).strip() or profile
+    author = str(brief.get("author") or "Ebook Factory").strip() or "Ebook Factory"
+    description = str(brief.get("description") or "AI-assisted manuscript; owner review required.").strip()
+    subtitle_value = brief.get("subtitle")
+    subtitle = str(subtitle_value).strip() if subtitle_value else None
+    body = scope.body
     existing = session.scalars(
         select(Artifact).where(Artifact.relative_path.like(f"exports/{revision_id}/%"))
     ).all()
@@ -652,6 +810,7 @@ def export_book(
             ),
         )
     markdown = _canonical_markdown(title, body)
+    requested_files = _requested_package_files(brief)
     cover_source, image_provenance = _cover_source(
         session, root=root, revision_id=revision_id, project_id=project_id, art_artifact_id=art_artifact_id
     )
@@ -665,21 +824,30 @@ def export_book(
         revision_id,
         scope.revision_ids,
         image_provenance,
+        brief,
     )
-    files = {
-        "book.md": markdown.encode(),
-        "cover.jpg": cover,
-        "book.epub": _make_epub(title, language, body, cover, revision_id),
-        "book.docx": _make_docx(title, body),
-        "book.pdf": _make_pdf(title, body),
-        "metadata.json": json.dumps(metadata, indent=2, ensure_ascii=False).encode(),
-        "metadata.csv": _metadata_csv(metadata),
-        "sources.json": b"[]\n",
-    }
+    files: dict[str, bytes] = {"cover.jpg": cover}
+    if "book.epub" in requested_files:
+        files["book.epub"] = _make_epub(title, language, body, cover, revision_id, author, description, subtitle)
+    if "book.pdf" in requested_files:
+        files["book.pdf"] = _make_pdf(title, body, author, description)
+    if "book.docx" in requested_files:
+        files["book.docx"] = _make_docx(title, body, author)
+    if "book.md" in requested_files:
+        files["book.md"] = markdown.encode()
+    files.update(
+        {
+            "metadata.json": json.dumps(metadata, indent=2, ensure_ascii=False).encode(),
+            "metadata.csv": _metadata_csv(metadata),
+            "sources.json": b"[]\n",
+        }
+    )
     validation = _validate_files(
         files,
+        markdown=markdown,
         source_revision_count=len(scope.revision_ids),
         manuscript_heading_count=sum(kind.startswith("h") for kind, _ in _markdown_blocks(body)),
+        requested_files=requested_files,
     )
     manifest_files = [
         {"filename": name, "byte_count": len(content), "sha256": hashlib.sha256(content).hexdigest()}
@@ -691,6 +859,7 @@ def export_book(
         "source_revision_ids": [str(source_revision_id) for source_revision_id in scope.revision_ids],
         "title": title,
         "files": manifest_files,
+        "package_files": [*files.keys(), "manifest.json", "validation.json"],
     }
     files["manifest.json"] = (json.dumps(manifest, indent=2) + "\n").encode()
     files["validation.json"] = (json.dumps(validation, indent=2) + "\n").encode()

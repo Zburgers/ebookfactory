@@ -59,6 +59,117 @@ def test_pdf_embeds_package_identity() -> None:
     assert b"/Author (Ebook Factory)" in pdf
 
 
+def test_export_uses_brief_metadata_in_the_delivery_files(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'metadata.db'}")
+    Base.metadata.create_all(engine)
+    project_id = uuid4()
+    revision_id = uuid4()
+    brief = {
+        "title": "The Night Orchard",
+        "subtitle": "A field guide to patient growth",
+        "author": "Nadia Rivers",
+        "description": "A practical, gentle guide for growing a small garden.",
+        "keywords": ["gardening", "slow living"],
+        "genre": "gardening guide",
+        "audience": "First-time gardeners",
+    }
+    with Session(engine) as session:
+        project = Project(id=project_id, title="Metadata Fixture", profile="guide", language="en")
+        section = Section(project_id=project_id, order_no=1, heading="Opening")
+        session.add_all([project, section])
+        session.flush()
+        session.add(
+            SectionRevision(
+                id=revision_id,
+                section_id=section.id,
+                revision=1,
+                content="# The Night Orchard\n\nA useful book.",
+                summary="fixture",
+                source_refs=[],
+                knowledge_refs=[],
+                approval_status="draft",
+                content_hash="b" * 64,
+            )
+        )
+        session.commit()
+        export_book(
+            session,
+            root=tmp_path / "artifacts",
+            project_id=project_id,
+            revision_id=revision_id,
+            language="en",
+            profile="guide",
+            structured_brief=brief,
+        )
+
+    root = tmp_path / "artifacts" / f"exports/{revision_id}"
+    metadata = json.loads((root / "metadata.json").read_text())
+    assert metadata["title"] == brief["title"]
+    assert metadata["subtitle"] == brief["subtitle"]
+    assert metadata["author"] == brief["author"]
+    assert metadata["description"] == brief["description"]
+    assert metadata["keywords"] == brief["keywords"]
+    assert metadata["genre"] == brief["genre"]
+    assert metadata["audience"] == brief["audience"]
+    assert b"Nadia Rivers" in (root / "book.pdf").read_bytes()
+    with zipfile.ZipFile(root / "book.epub") as epub_file:
+        opf = epub_file.read("EPUB/content.opf")
+        assert b"Nadia Rivers" in opf
+        assert b"A field guide to patient growth" in opf
+
+
+def test_export_respects_requested_delivery_formats(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'formats.db'}")
+    Base.metadata.create_all(engine)
+    project_id = uuid4()
+    revision_id = uuid4()
+    with Session(engine) as session:
+        project = Project(id=project_id, title="Format Fixture", profile="custom", language="en")
+        section = Section(project_id=project_id, order_no=1, heading="Opening")
+        session.add_all([project, section])
+        session.flush()
+        session.add(
+            SectionRevision(
+                id=revision_id,
+                section_id=section.id,
+                revision=1,
+                content="# A Selective Package\n\nOnly the requested editable formats should ship.",
+                summary="fixture",
+                source_refs=[],
+                knowledge_refs=[],
+                approval_status="draft",
+                content_hash="c" * 64,
+            )
+        )
+        session.commit()
+        result = export_book(
+            session,
+            root=tmp_path / "artifacts",
+            project_id=project_id,
+            revision_id=revision_id,
+            language="en",
+            profile="custom",
+            structured_brief={"output_formats": ["epub", "markdown"]},
+        )
+
+    expected = {
+        "book.epub",
+        "book.md",
+        "cover.jpg",
+        "metadata.json",
+        "metadata.csv",
+        "sources.json",
+        "manifest.json",
+        "validation.json",
+    }
+    assert {artifact.filename for artifact in result.artifacts} == expected
+    root = tmp_path / "artifacts" / f"exports/{revision_id}"
+    assert not (root / "book.pdf").exists()
+    assert not (root / "book.docx").exists()
+    manifest = json.loads((root / "manifest.json").read_text())
+    assert set(manifest["package_files"]) == expected
+
+
 def test_cover_size_gate_matches_current_kdp_ceiling() -> None:
     assert MAX_MARKETING_COVER_BYTES == 50 * 1024 * 1024
 
@@ -199,7 +310,11 @@ def test_export_scope_includes_all_production_section_revisions(tmp_path: Path) 
     with Session(engine) as session:
         project = Project(id=project_id, title="Scope Book", profile="fiction", language="en")
         brief = BriefRevision(
-            id=uuid4(), project_id=project_id, revision=1, structured_brief={}, content_hash="a" * 64
+            id=uuid4(),
+            project_id=project_id,
+            revision=1,
+            structured_brief={"title": "Approved Scope Book", "author": "Run Author"},
+            content_hash="a" * 64,
         )
         run = ProductionRun(id=run_id, project_id=project_id, approved_brief_id=brief.id)
         session.add_all([project, brief, run])
@@ -266,6 +381,8 @@ def test_export_scope_includes_all_production_section_revisions(tmp_path: Path) 
     markdown = (export_root / "book.md").read_text()
     metadata = json.loads((export_root / "metadata.json").read_text())
     assert result.package_state == "structurally_validated"
+    assert metadata["title"] == "Approved Scope Book"
+    assert metadata["author"] == "Run Author"
     assert all(f"## Chapter {index}" in markdown for index in range(1, 4))
     assert all(f"Body for chapter {index}." in markdown for index in range(1, 4))
     assert metadata["source_revision_ids"] == [str(revision_id) for revision_id in revision_ids]

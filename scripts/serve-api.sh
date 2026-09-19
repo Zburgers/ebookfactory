@@ -3,6 +3,12 @@ set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 port="${EBOOK_FACTORY_PORT:-6969}"
+graceful_shutdown_seconds="${EBOOK_FACTORY_GRACEFUL_SHUTDOWN_SECONDS:-10}"
+
+[[ "$graceful_shutdown_seconds" =~ ^[0-9]+$ ]] || {
+  echo "EBOOK_FACTORY_GRACEFUL_SHUTDOWN_SECONDS must be a non-negative integer" >&2
+  exit 1
+}
 
 tls_cert="${EBOOK_FACTORY_TLS_CERT:-}"
 tls_key="${EBOOK_FACTORY_TLS_KEY:-}"
@@ -194,7 +200,7 @@ trap terminate TERM INT
 
 for address in "${addresses[@]}"; do
   (
-    uvicorn_args=(app.main:app --host "$address" --port "$port")
+    uvicorn_args=(app.main:app --host "$address" --port "$port" --timeout-graceful-shutdown "$graceful_shutdown_seconds")
     if use_tls_for_address "$address"; then
       uvicorn_args+=(--ssl-certfile "$tls_cert" --ssl-keyfile "$tls_key")
     fi

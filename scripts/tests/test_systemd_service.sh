@@ -12,6 +12,7 @@ serve="$project_root/scripts/serve-api.sh"
 
 grep -Fq 'Description=Ebook Factory API' "$unit"
 grep -Fq 'Restart=on-failure' "$unit"
+grep -Fq 'SuccessExitStatus=143' "$unit"
 grep -Fq 'WantedBy=default.target' "$unit"
 grep -Fq 'ExecStart=%h/.config/shipyard/worktrees/ebookfactory/codex-ebook-factory-v2/scripts/serve-api.sh' "$unit"
 grep -Fq 'EBOOK_FACTORY_PORT=6969' "$unit"

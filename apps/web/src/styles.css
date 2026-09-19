@@ -168,7 +168,7 @@ h4 { margin-bottom: 10px; font-size: 1rem; font-weight: 650; }
 .document-actions .muted { margin: 0; font-size: .65rem; text-align: right; }
 .panel-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
 .panel-heading h2 { margin-bottom: 0; }
-.panel-index { color: var(--accent); font-size: .56rem; }
+.panel-index { display: none; }
 .primary, .quiet { min-height: 44px; padding: 10px 15px; border-radius: var(--radius-small); font-size: .77rem; font-weight: 720; transition: background 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease, box-shadow 180ms ease; }
 .primary { border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); box-shadow: 0 10px 28px color-mix(in srgb, var(--accent) 16%, transparent); }
 .primary:hover { background: color-mix(in srgb, var(--accent) 82%, white); transform: translateY(-2px); }

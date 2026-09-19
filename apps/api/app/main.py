@@ -264,6 +264,13 @@ class BriefCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_target_ranges(self) -> "BriefCreateRequest":
+        output_formats = self.structured_brief.get("output_formats")
+        if output_formats is not None:
+            allowed_formats = {"epub", "pdf", "docx", "md", "markdown"}
+            if not isinstance(output_formats, list) or not output_formats:
+                raise ValueError("output formats must be a non-empty list")
+            if any(not isinstance(value, str) or value.strip().lower() not in allowed_formats for value in output_formats):
+                raise ValueError("output formats must use epub, pdf, docx, or markdown")
         pages = self.structured_brief.get("target_pages")
         words = self.structured_brief.get("target_length")
         if pages and words:
