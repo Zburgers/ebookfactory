@@ -9,6 +9,11 @@ state and labels it correctly. Evidence is at
 `evidence/P08/art-review-workflow.md`; this does not claim that the owner has
 performed the live review action.
 
+2026-09-19: After deployment, two authenticated Usage calls fetched live
+`codexctl status` data with distinct timestamps and left the PostgreSQL quota
+snapshot count unchanged at `2 -> 2`. Evidence is at
+`evidence/P07/quota-live-deployed-recheck.md`.
+
 2026-09-19: Telegram is configured and the poller is active, but the live audit
 still shows no owner-authored free-text message. The allowlisted chat is linked
 to `Live outline handoff verification`, so the owner must link the intended
