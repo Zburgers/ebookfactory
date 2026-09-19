@@ -24,9 +24,10 @@ tailscale ip -4
 ```
 
 The service binds separately to the current Tailscale IPv4 and detected private
-LAN IPv4 addresses, restarts on failure, and is enabled under the user manager's
-`default.target`. This host already has user lingering enabled, so it starts
-after reboot without a login session. The private-LAN listener intentionally
+LAN IPv4 addresses, waits briefly for configured LAN interfaces to receive a
+DHCP address during boot, restarts on failure, and is enabled under the user
+manager's `default.target`. This host already has user lingering enabled, so it
+starts after reboot without a login session. The private-LAN listener intentionally
 uses HTTP for this trusted local-network deployment: open
 `http://<private-lan-ip>:6969` (for this host,
 `http://192.168.29.14:6969`). This avoids an unusable CA warning for a raw

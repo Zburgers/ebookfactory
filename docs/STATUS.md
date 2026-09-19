@@ -1,5 +1,14 @@
 # Build status
 
+2026-09-19 19:06 UTC: Revision `eeec023` fixes a boot-time LAN binding
+race in `scripts/serve-api.sh`. The launcher now retries configured private
+interface discovery for up to 30 seconds, covering delayed DHCP/link readiness
+after restart or power loss. A red/green transport regression reproduces and
+then verifies delayed `eno1` discovery. A real systemd restart now exposes
+`127.0.0.1`, `192.168.29.14` over HTTP, and the Tailscale HTTPS listener; LAN
+and loopback `/ready` both return HTTP 200. User lingering and all three units
+are enabled for boot persistence.
+
 2026-09-19 17:12 UTC: Revision `104511c` is live on the branch worktree after
 an API restart. `http://192.168.29.14:6969/ready` returns healthy, the API,
 worker and Telegram units are active, the redesigned web modules and cover
