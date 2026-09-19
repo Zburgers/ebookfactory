@@ -59,6 +59,7 @@ from app.models import (
     Task,
     TelegramLink,
     TelegramState,
+    UsageCall,
     utc_now,
 )
 from app.providers import connection_test, save_provider_setting
@@ -478,6 +479,9 @@ class SectionView(BaseModel):
 
 class ArtifactView(BaseModel):
     artifact_id: UUID
+    run_id: UUID | None = None
+    attempt_id: UUID | None = None
+    usage_call_id: UUID | None = None
     revision_id: UUID | None
     relative_path: str
     mime_type: str
@@ -488,6 +492,9 @@ class ArtifactView(BaseModel):
     owner_review_note: str | None
     owner_reviewed_at: datetime | None
     download_path: str
+    generation_provider: str | None = None
+    generation_model: str | None = None
+    usage_outcome: str | None = None
 
 
 class ArtifactReviewRequest(BaseModel):
@@ -1445,9 +1452,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             rows = session.scalars(select(Artifact).order_by(Artifact.created_at.desc())).all()
             rows = [artifact for artifact in rows if artifact_belongs_to_project(session, artifact, project_id)]
+            usage_ids = {artifact.usage_call_id for artifact in rows if artifact.usage_call_id is not None}
+            usage_by_id = {
+                usage.id: usage
+                for usage in session.scalars(select(UsageCall).where(UsageCall.id.in_(usage_ids))).all()
+            } if usage_ids else {}
             return [
                 ArtifactView(
                     artifact_id=artifact.id,
+                    run_id=artifact.run_id,
+                    attempt_id=artifact.attempt_id,
+                    usage_call_id=artifact.usage_call_id,
                     revision_id=artifact.revision_id,
                     relative_path=artifact.relative_path,
                     mime_type=artifact.mime_type,
@@ -1458,6 +1473,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     owner_review_note=artifact.owner_review_note,
                     owner_reviewed_at=artifact.owner_reviewed_at,
                     download_path=f"/projects/{project_id}/artifacts/{artifact.id}/download",
+                    generation_provider=usage_by_id.get(artifact.usage_call_id).provider if usage_by_id.get(artifact.usage_call_id) else None,
+                    generation_model=usage_by_id.get(artifact.usage_call_id).model if usage_by_id.get(artifact.usage_call_id) else None,
+                    usage_outcome=usage_by_id.get(artifact.usage_call_id).outcome if usage_by_id.get(artifact.usage_call_id) else None,
                 )
                 for artifact in rows
             ]
@@ -1517,8 +1535,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         "revision_task_id": str(revision.task_id) if revision else None,
                     },
                 )
+            usage = session.get(UsageCall, artifact.usage_call_id) if artifact.usage_call_id else None
             return ArtifactReviewResponse(
                 artifact_id=artifact.id,
+                run_id=artifact.run_id,
+                attempt_id=artifact.attempt_id,
+                usage_call_id=artifact.usage_call_id,
                 revision_id=artifact.revision_id,
                 relative_path=artifact.relative_path,
                 mime_type=artifact.mime_type,
@@ -1531,6 +1553,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 download_path=f"/projects/{project_id}/artifacts/{artifact.id}/download",
                 revision_job_id=revision.job_id if revision else None,
                 revision_task_id=revision.task_id if revision else None,
+                generation_provider=usage.provider if usage else None,
+                generation_model=usage.model if usage else None,
+                usage_outcome=usage.outcome if usage else None,
             )
         finally:
             session.close()
@@ -1594,31 +1619,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def create_review_finding(project_id: UUID, payload: ReviewFindingRequest) -> ReviewFindingResponse:
         session = database.session()
         try:
-            if session.get(Project, project_id) is None:
-                raise HTTPException(status_code=404, detail="project not found")
-            finding_artifact = None
-            if payload.revision_id is not None:
-                valid = session.scalar(
-                    select(SectionRevision.id)
-                    .join(Section, Section.id == SectionRevision.section_id)
-                    .where(SectionRevision.id == payload.revision_id, Section.project_id == project_id)
-                )
-                if valid is None:
-                    raise HTTPException(status_code=404, detail="revision not found")
-            if payload.artifact_id is not None:
-                finding_artifact = session.get(Artifact, payload.artifact_id)
-                if finding_artifact is None or not artifact_belongs_to_project(session, finding_artifact, project_id):
-                    raise HTTPException(status_code=404, detail="artifact not found")
-            session.rollback()
-            finding_id = record_finding(
-                session,
-                revision_id=payload.revision_id,
-                artifact_id=payload.artifact_id,
-                severity=payload.severity,
-                criterion=payload.criterion,
-                evidence=payload.evidence,
-            )
             with session.begin():
+                if session.get(Project, project_id) is None:
+                    raise HTTPException(status_code=404, detail="project not found")
+                finding_artifact = None
+                if payload.revision_id is not None:
+                    valid = session.scalar(
+                        select(SectionRevision.id)
+                        .join(Section, SectionRevision.section_id == Section.id)
+                        .where(SectionRevision.id == payload.revision_id, Section.project_id == project_id)
+                    )
+                    if valid is None:
+                        raise HTTPException(status_code=404, detail="revision not found")
+                if payload.artifact_id is not None:
+                    finding_artifact = session.get(Artifact, payload.artifact_id)
+                    if finding_artifact is None or not artifact_belongs_to_project(session, finding_artifact, project_id):
+                        raise HTTPException(status_code=404, detail="artifact not found")
+                finding_id = record_finding(
+                    session,
+                    revision_id=payload.revision_id,
+                    artifact_id=payload.artifact_id,
+                    severity=payload.severity,
+                    criterion=payload.criterion,
+                    evidence=payload.evidence,
+                    manage_transaction=False,
+                )
                 append_event(
                     session,
                     project_id=project_id,

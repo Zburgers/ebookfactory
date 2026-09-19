@@ -34,6 +34,9 @@ export interface ArtifactReviewRequest {
 
 export interface ArtifactReviewResponse {
   artifact_id: string;
+  run_id?: string | null;
+  attempt_id?: string | null;
+  usage_call_id?: string | null;
   revision_id: string | null;
   relative_path: string;
   mime_type: string;
@@ -44,12 +47,18 @@ export interface ArtifactReviewResponse {
   owner_review_note: string | null;
   owner_reviewed_at: string | null;
   download_path: string;
+  generation_provider?: string | null;
+  generation_model?: string | null;
+  usage_outcome?: string | null;
   revision_job_id?: string | null;
   revision_task_id?: string | null;
 }
 
 export interface ArtifactView {
   artifact_id: string;
+  run_id?: string | null;
+  attempt_id?: string | null;
+  usage_call_id?: string | null;
   revision_id: string | null;
   relative_path: string;
   mime_type: string;
@@ -60,6 +69,9 @@ export interface ArtifactView {
   owner_review_note: string | null;
   owner_reviewed_at: string | null;
   download_path: string;
+  generation_provider?: string | null;
+  generation_model?: string | null;
+  usage_outcome?: string | null;
 }
 
 export interface BriefCreateRequest {

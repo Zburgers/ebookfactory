@@ -18,6 +18,7 @@ from app.models import (
     Attempt,
     Base,
     BriefRevision,
+    Event,
     ProductionRun,
     Project,
     ReviewFinding,
@@ -324,6 +325,12 @@ def test_review_artifacts_are_project_scoped_and_resolvable(tmp_path: Path) -> N
     assert findings.status_code == 200
     assert len(findings.json()) == 1
     assert resolved.status_code == 200
+    with Session(engine) as session:
+        event_kinds = session.scalars(
+            select(Event.kind).where(Event.project_id == project_ids[0]).order_by(Event.id)
+        ).all()
+    assert "review.finding.created" in event_kinds
+    assert "review.finding.resolved" in event_kinds
 
 
 def test_review_findings_reject_inconsistent_artifact_relationships(tmp_path: Path) -> None:

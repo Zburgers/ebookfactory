@@ -171,6 +171,18 @@
             "title": "Artifact Id",
             "type": "string"
           },
+          "attempt_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt Id"
+          },
           "byte_count": {
             "title": "Byte Count",
             "type": "integer"
@@ -178,6 +190,28 @@
           "download_path": {
             "title": "Download Path",
             "type": "string"
+          },
+          "generation_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation Model"
+          },
+          "generation_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation Provider"
           },
           "mime_type": {
             "title": "Mime Type",
@@ -250,9 +284,44 @@
             ],
             "title": "Revision Task Id"
           },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
           "sha256": {
             "title": "Sha256",
             "type": "string"
+          },
+          "usage_call_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage Call Id"
+          },
+          "usage_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage Outcome"
           },
           "validation_state": {
             "title": "Validation State",
@@ -282,6 +351,18 @@
             "title": "Artifact Id",
             "type": "string"
           },
+          "attempt_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt Id"
+          },
           "byte_count": {
             "title": "Byte Count",
             "type": "integer"
@@ -289,6 +370,28 @@
           "download_path": {
             "title": "Download Path",
             "type": "string"
+          },
+          "generation_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation Model"
+          },
+          "generation_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation Provider"
           },
           "mime_type": {
             "title": "Mime Type",
@@ -337,9 +440,44 @@
             ],
             "title": "Revision Id"
           },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
           "sha256": {
             "title": "Sha256",
             "type": "string"
+          },
+          "usage_call_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage Call Id"
+          },
+          "usage_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage Outcome"
           },
           "validation_state": {
             "title": "Validation State",
