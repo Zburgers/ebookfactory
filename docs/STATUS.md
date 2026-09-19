@@ -5,18 +5,21 @@ and an independent Luna-high GO review. Page-target approvals allocate 24
 turns for the outline, 8–15 section drafts, server assembly and review;
 blocked/failed runs are no longer claimable, sibling attempts close on
 terminal failure, review context is fenced to the current run, and assembly
-uses the exact section revision recorded by each task. The dashboard still
-does not claim a real 50–150-page provider run, so H4 and the score remain
-conservative. API evidence: 66 unit tests plus 21 PostgreSQL recovery tests;
-worker 28/28 and dashboard syntax checks pass.
+uses the exact section revision recorded by each task. The real 50-page replay
+now covers the sectioned long-book portion of H4; the overall score remains
+85 because unrelated external gates are still open. API evidence: 66 unit
+tests plus 21 PostgreSQL recovery tests; worker 28/28 and dashboard syntax
+checks pass.
 
 The first real 50-page probe completed all 13 section drafts but exposed a
 production assembly defect: provider section drafts contained nested `##`
 headings that collided with the manuscript section grammar. The run failed
 durably at assembly and propagated to review; no partial manuscript was
 accepted. Assembly now nests those internal headings as `###`, with a red/green
-regression and an independent Luna-high GO review. A replay is required before
-H4 is credited.
+regression and an independent Luna-high GO review. The corrected replay is
+recorded at `evidence/P05/long-book-live.md` and supplies the multi-section
+long-book evidence; H4 is now PASS in combination with the prior
+fiction/nonfiction and owner-revision evidence. H5–H7 remain open.
 
 2026-09-19: The editorial graph now includes a durable review task after
 production, with role-specific configured models, bounded persisted section

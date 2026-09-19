@@ -15,8 +15,9 @@ from the H1 provider-call gate.
 The outline-stage packet now adds a durable dependency-gated outline handoff,
 terminal dependency failure propagation, typed worker context contracts and
 separate outline/manuscript lineage. A real systemd run is recorded at
-`evidence/P05/outline-stage-live.md`; the score remains 85 because this is not
-yet a 50–150 page, browser-close, or full research/review/publishing proof.
+`evidence/P05/outline-stage-live.md`; the score remains 85 because the real
+50-page sectioned replay is now evidenced, but Telegram and external
+publishing/quota gates remain open.
 
 Revision `25268b1` plus `3a029c7` now prove a real bounded Codex image output
 and dashboard-visible production artifact. Revision `2ad955e` proves a real
@@ -42,9 +43,10 @@ Hard gates: H1 PASS at the API/integration boundary from
 `evidence/P04/reconciliation-correction.md`; H8 PASS from
 `evidence/P08/art-live.md`; H9 PASS from
 `evidence/P10/isolated-restore.md`; H2 PASS is evidenced by
-`evidence/P05/browser-close-restart-live.md`. H4–H7 remain NOT RUN. H4 now
-has a real ordered review-stage run plus owner-review evidence but still needs a real multi-section
-long-book run and the complete autonomous task graph. Streaming relay evidence is in
+`evidence/P05/browser-close-restart-live.md`. H4 PASS is now supported by the
+real 50-page sectioned replay at `evidence/P05/long-book-live.md`, the prior
+fiction/nonfiction runs and owner-revision evidence. H5–H7 remain NOT RUN.
+Streaming relay evidence is in
 `evidence/P06/streaming-live.md`, while the latest security review remains
 NO-GO because default self-signed TLS can be bypassed by a client. Independent Luna critics are now available
 for the latest packets; earlier lead critiques remain recorded at `evidence/P00/critique.md`,
