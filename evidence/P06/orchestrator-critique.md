@@ -43,3 +43,18 @@ response, and the focused regression suite.
   was also repaired in `a433983` with a redacted `account_index` and test.
 
 Earlier findings and repairs remain below.
+
+## 2026-09-19 security and streaming re-review
+
+Critic: `01a0b715-61f3-7352-aedb-edb5d96fd2f8`, actual GPT-5 Codex runtime
+(requested Luna high; no Luna identity claimed), read-only review of
+`c165d43` and the uncommitted follow-up before `952bfc2`.
+
+Decision: NO-GO. The critic verified active services, HTTPS on non-loopback
+listeners, loopback worker compatibility, owner/worker separation, the login
+limiter, and focused tests. It found that default self-signed TLS does not
+authenticate the server, failure redaction needed broader patterns, OpenAPI
+security needed exact AND/header contracts, and in-memory login limits were
+per-listener. The code repairs for the latter three are in `952bfc2`; the
+self-signed trust limitation remains explicitly open in
+`evidence/P10/security-repair.md`.

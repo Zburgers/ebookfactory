@@ -1,5 +1,20 @@
 # Build status
 
+2026-09-19: Revision `952bfc2` closes the dashboard token-streaming hole at
+the durable boundary. Pi JSON `message_update` text deltas are forwarded by
+the trusted worker, fenced by turn generation, persisted as replayable events,
+and rendered by an authenticated reconnecting SSE reader; the final
+`message_end` remains authoritative. The live no-provider-cost integration
+check is recorded at `evidence/P06/streaming-live.md`. The same follow-up
+adds shared short-lived login throttling, stronger durable failure redaction,
+and accurate OpenAPI owner/worker/capability metadata. Non-loopback port 6969
+listeners now use TLS while loopback remains HTTP for the local worker.
+Default TLS is self-signed and therefore does not prove server identity until
+the certificate is trusted or replaced; H1 remains open and the latest
+independent critic is NO-GO. The 50–150 page path is staged but still lacks a
+real long-book run, Telegram same-conversation proof, art usage attribution,
+and restart-through-production evidence.
+
 2026-09-19: Revisions `1508766` and `25268b1` repair the live Codex
 app-server art boundary: current snake_case `saved_path` events are accepted,
 provider-qualified model names are normalized at `thread/start`, and focused

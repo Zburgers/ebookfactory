@@ -4,6 +4,11 @@ Current score: **82/100 — durable runtime/containment, real production with
 reviewed revision lineage, live usage attribution, dashboard document flow and
 structural publishing packages are evidenced; external hard gates remain.**
 
+The latest implementation adds live orchestrator delta relay and owner-boundary
+repairs, but the score is unchanged until the corresponding hard-gate evidence
+is complete. In particular, the default generated TLS certificate is encrypted
+transport without authenticated server identity; H1 is not marked passed.
+
 Revision `25268b1` plus `3a029c7` now prove a real bounded Codex image output
 and dashboard-visible production artifact. Revision `2ad955e` proves a real
 durable dashboard-to-Luna completion and live
@@ -28,7 +33,9 @@ from `evidence/P08/art-live.md`; H9 PASS from
 `evidence/P10/isolated-restore.md`; H1, H2, H4–H7 remain NOT RUN. H4 now has real output and owner-review evidence but
 still needs a restart-through-production proof; the worker lease boundary is
 now directly tested in `evidence/P05/worker-supervisor.md`, but that is not a
-full H2 production restart proof. Independent Luna critics are now available
+full H2 production restart proof. Streaming relay evidence is in
+`evidence/P06/streaming-live.md`, while the latest security review remains
+NO-GO because default self-signed TLS can be bypassed by a client. Independent Luna critics are now available
 for the latest packets; earlier lead critiques remain recorded at `evidence/P00/critique.md`,
 `evidence/P01/critique.md`, `evidence/P02/critique.md`,
 `evidence/P03/critique.md`, `evidence/P04/critique.md`,
