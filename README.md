@@ -1,7 +1,8 @@
 # Ebook Factory v2
 
-Status: DEPLOYED CANDIDATE / PARTIAL ACCEPTANCE. Revision `f04effc` is the
-reviewed v2 candidate used by the local services. The runtime, database, worker,
+Status: DEPLOYED CANDIDATE / PARTIAL ACCEPTANCE. The reviewed v2 candidate is
+the `codex/ebook-factory-v2` branch used by the local services; the current
+verification and live evidence are maintained in `docs/STATUS.md`. The runtime, database, worker,
 dashboard and Telegram paths are provisioned; Kindle preview, live owner art
 approval and unsupported provider billing/quota sources remain external gates.
 For the trusted local network, open `http://192.168.29.14:6969`; the private-LAN

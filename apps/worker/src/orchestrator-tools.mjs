@@ -56,7 +56,12 @@ export default function registerOrchestratorTools(pi) {
         gate: { type: "string", enum: ["brief", "outline", "draft", "review", "art", "export", "kindle_preview", "owner"] },
         status: { type: "string", enum: ["pending", "in_progress", "complete", "blocked", "needs_review"] },
         note: stringSchema("Short explanation of the gate status"),
-        evidence: stringSchema("Short evidence reference, such as an artifact or event"),
+        evidence: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 20,
+          description: "Bounded evidence references, such as artifacts or events",
+        },
       },
       required: ["gate", "status"],
       additionalProperties: false,

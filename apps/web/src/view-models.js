@@ -49,6 +49,18 @@ export function artifactFilename(artifact) {
   return artifact.filename || String(artifact.relative_path || "").split("/").pop() || "artifact";
 }
 
+export function artifactIsAvailable(artifact = {}) {
+  return !artifact.availability_state || artifact.availability_state === "available";
+}
+
+export function artifactAvailabilityLabel(artifact = {}) {
+  if (artifactIsAvailable(artifact)) return "Available";
+  if (artifact.availability_state === "integrity_failed") return "Integrity failed";
+  if (artifact.availability_state === "invalid_path") return "Invalid path";
+  if (artifact.availability_state === "unreadable") return "Unreadable";
+  return "Unavailable";
+}
+
 export function artifactPresentation(artifact) {
   const filename = artifactFilename(artifact);
   const extensionKey = filename.includes(".") ? filename.split(".").pop().toLowerCase() : "";
@@ -113,6 +125,32 @@ export function usageEstimateLabel({ estimated_cost: estimatedCost, reported_bil
   return "Billing unavailable";
 }
 
+export function usageScopeCopy({ workspaceCalls = 0, projectCalls = null, projectTitle = "" } = {}) {
+  const workspaceCount = Number(workspaceCalls) || 0;
+  if (!workspaceCount) return "No provider calls recorded in this workspace yet.";
+  const workspace = `${workspaceCount.toLocaleString()} ${workspaceCount === 1 ? "call" : "calls"} in this workspace`;
+  if (projectTitle && projectCalls != null) {
+    const projectCount = Number(projectCalls) || 0;
+    return `${workspace} · ${projectCount.toLocaleString()} in ${projectTitle}`;
+  }
+  return workspace;
+}
+
+export function githubBillingStatusCopy(report = {}) {
+  if (report.status === "not_configured") {
+    return "Set GITHUB_AUTH_TOKEN in the API service environment for live personal, organization, or enterprise AI-credit usage.";
+  }
+  const account = report.account?.identifier;
+  const identity = report.identity_verified && account ? `PAT authenticated as ${account}. ` : "";
+  if (report.http_status === 404) {
+    return `${identity}GitHub has no personal billable Copilot record for this account, or Copilot billing is managed by an organization. Set GITHUB_BILLING_ACCOUNT_TYPE=organization and GITHUB_BILLING_ORGANIZATION when that is the billing owner.`;
+  }
+  if (report.http_status === 403) {
+    return `${identity}GitHub rejected the billing request. The PAT needs Plan: read permission for personal billing, or Administration: read permission on the billing organization.`;
+  }
+  return `${identity}${report.error || "GitHub did not return billing data."}`;
+}
+
 function modelRate(value, prefix = "$", suffix = "/M") {
   if (value == null || Number.isNaN(Number(value))) return null;
   const amount = Number(value);
@@ -134,6 +172,8 @@ export function modelCatalogLabel(model = {}) {
     const output = modelRate(pricing.output_per_million);
     if (input) pricingParts.push(`${input} input`);
     if (output) pricingParts.push(`${output} output`);
+  } else {
+    pricingParts.push("pricing unavailable");
   }
   const context = model.context ? `context ${model.context}` : null;
   const maximum = model.max_output ? `max ${model.max_output}` : null;
@@ -234,6 +274,33 @@ export function executionEventPresentation(event = {}) {
   if (event.kind === "orchestrator.tool.failed") {
     return { label: "Orchestrator tool failed", detail: `${payload.tool_name || "A project tool"} could not complete.`, tone: "review" };
   }
+  if (event.kind === "agent.tool.started") {
+    return { label: "Agent tool started", detail: `${payload.task_type || "A bounded agent"} called ${payload.tool_name || "a tool"}.`, tone: "active" };
+  }
+  if (event.kind === "agent.tool.updated") {
+    return { label: "Agent tool updated", detail: `${payload.task_type || "A bounded agent"} reported tool progress.`, tone: "active" };
+  }
+  if (event.kind === "agent.tool.completed") {
+    return { label: "Agent tool completed", detail: `${payload.task_type || "A bounded agent"} received a tool result.`, tone: "complete" };
+  }
+  if (event.kind === "agent.tool.failed") {
+    return { label: "Agent tool failed", detail: `${payload.task_type || "A bounded agent"} hit a tool error.`, tone: "review" };
+  }
+  if (event.kind === "agent.message.started") {
+    return { label: "Agent message started", detail: `${payload.task_type || "A bounded agent"} is composing its bounded result.`, tone: "active" };
+  }
+  if (event.kind === "agent.message.delta") {
+    return { label: "Agent message streaming", detail: `${payload.task_type || "A bounded agent"} is returning observable output.`, tone: "active" };
+  }
+  if (event.kind === "agent.message.completed") {
+    return { label: "Agent message completed", detail: `${payload.task_type || "A bounded agent"} returned a bounded result.`, tone: "complete" };
+  }
+  if (event.kind === "agent.session.started") {
+    return { label: "Agent session started", detail: `${payload.task_type || "A bounded agent"} session started.`, tone: "active" };
+  }
+  if (event.kind === "agent.session.completed") {
+    return { label: "Agent session completed", detail: `${payload.task_type || "A bounded agent"} session completed.`, tone: "complete" };
+  }
   if (event.kind === "orchestrator.message.started") {
     return { label: "Orchestrator message started", detail: "The main orchestrator is composing a response.", tone: "active" };
   }
@@ -253,8 +320,8 @@ export function executionEventPresentation(event = {}) {
 
 export function conversationEmptyState(execution = {}) {
   if ((execution.conversation || []).length) return "";
-  if ((execution.runs || []).length) return "No owner chat turn was used for this production run. The durable task trace below is the source of truth.";
-  return "No conversation yet. Start with the book idea or fill in the brief to begin.";
+  if ((execution.runs || []).length) return "This run began from the brief; no owner chat turn has been recorded yet. Send a direction here to make decisions visible alongside the durable task trace.";
+  return "Start here with the book idea. The main orchestrator will answer in this conversation and its tools, gates, and delegated work will appear in the live trace.";
 }
 
 function hasDraft(sections) {
@@ -366,6 +433,8 @@ export function deriveStageStates(project, { sections = [], reviews = [], artifa
     const gate = gateUpdates.get(stage.key);
     if (!gate) return;
     const status = { in_progress: "In progress", needs_review: "Needs review", complete: "Complete", blocked: "Blocked", pending: "Pending" }[gate.status] || "Updated";
+    const stageStatus = { in_progress: "current", needs_review: "needs_review", complete: "complete", blocked: "blocked", pending: "waiting" }[gate.status];
+    if (stageStatus && stage.status !== "not_applicable") stage.status = stageStatus;
     stage.detail = `Orchestrator gate: ${status}${gate.note ? ` · ${gate.note}` : ""} ${stage.detail}`.trim();
   });
 

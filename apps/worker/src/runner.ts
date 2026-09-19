@@ -9,6 +9,24 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const MAX_ART_BYTES = 10 * 1024 * 1024;
 const ART_MIME_BY_EXTENSION = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
 
+function activityFromPiEvent(event, taskType) {
+  if (!event?.type) return null;
+  const payload = { task_type: taskType };
+  if (event.type === "tool_execution_start") {
+    return { activity_type: "tool.started", payload: { ...payload, tool_call_id: event.toolCallId, tool_name: event.toolName, arguments: event.args } };
+  }
+  if (event.type === "tool_execution_update") {
+    return { activity_type: "tool.updated", payload: { ...payload, tool_call_id: event.toolCallId, tool_name: event.toolName, result: event.result } };
+  }
+  if (event.type === "tool_execution_end") {
+    return { activity_type: event.isError ? "tool.failed" : "tool.completed", payload: { ...payload, tool_call_id: event.toolCallId, tool_name: event.toolName, result: event.result, error: event.isError || undefined } };
+  }
+  if (event.type === "message_start") return { activity_type: "message.started", payload };
+  if (event.type === "message_update" && event.delta) return { activity_type: "message.delta", payload: { ...payload, delta: event.delta } };
+  if (event.type === "message_end") return { activity_type: "message.completed", payload: { ...payload, text: event.text } };
+  return null;
+}
+
 function normalizeUsage(usage) {
   if (!usage) return null;
   return {
@@ -87,7 +105,29 @@ export function createProductionExecutor({
       });
       return { terminal: true };
     }
-    const result = await runProduction({ context, model, thinking: "low", taskType: context.task_type, signal });
+    const result = await runProduction({
+      context,
+      model,
+      thinking: "low",
+      taskType: context.task_type,
+      signal,
+      onEvent: async (event) => {
+        const activity = activityFromPiEvent(event, context.task_type);
+        if (!activity) return;
+        await requestJson(baseUrl, token, "/private/worker/activity", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            job_id: lease.job_id,
+            worker_id: workerId,
+            generation: lease.generation,
+            ...activity,
+          }),
+          signal,
+          requestTimeoutMs,
+        });
+      },
+    });
     if (!result?.text || !result.callId) {
       throw new Error("Pi production returned an incomplete result");
     }
@@ -96,7 +136,7 @@ export function createProductionExecutor({
     if ((result.provider && result.provider !== provider) || !modelMatches) {
       throw new Error("Pi production provider or model conflicted with saved configuration");
     }
-    if (context.task_type === "outline" || context.task_type === "review" || context.task_type === "section-draft") {
+    if (context.task_type === "outline" || context.task_type === "review" || context.task_type === "section-draft" || context.task_type === "orchestrator-research") {
       await requestJson(baseUrl, token, "/private/worker/task-result", {
         method: "POST",
         headers: { "content-type": "application/json" },

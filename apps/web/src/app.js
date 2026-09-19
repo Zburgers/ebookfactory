@@ -1,7 +1,7 @@
 import { fetchProtectedArtifact } from "./artifact-client.js";
-import { artifactFilename, artifactPresentation, conversationEmptyState, deriveStageStates, executionEventPresentation, executionTaskTree, formatArtifactSize, formatBriefLength, formatUsageCost, formatUsageTokens, groupArtifact, kindlePreviewCheckpoint, modelCatalogLabel, usageBasisLabel, usageEstimateLabel } from "./view-models.js";
+import { artifactAvailabilityLabel, artifactFilename, artifactIsAvailable, artifactPresentation, conversationEmptyState, deriveStageStates, executionEventPresentation, executionTaskTree, formatArtifactSize, formatBriefLength, formatUsageCost, formatUsageTokens, groupArtifact, kindlePreviewCheckpoint, modelCatalogLabel, usageBasisLabel, usageEstimateLabel, usageScopeCopy, githubBillingStatusCopy } from "./view-models.js";
 
-const state = { projects: [], selected: null, sections: [], reviews: [], artifacts: [], events: [], messages: [], execution: null, packageResult: null, providers: [], catalog: null, usage: null, githubBilling: null, eventCursor: 0, streamController: null, liveAssistant: null, replayingEvents: false, artifactUrls: [] };
+const state = { projects: [], selected: null, sections: [], reviews: [], artifacts: [], events: [], messages: [], execution: null, packageResult: null, providers: [], catalog: null, usage: null, projectUsage: null, githubBilling: null, eventCursor: 0, streamController: null, liveAssistant: null, replayingEvents: false, artifactUrls: [] };
 const $ = (selector) => document.querySelector(selector);
 const ownerToken = () => sessionStorage.getItem("ebook-factory-owner-token") || "";
 const applyTheme = (theme) => { document.documentElement.dataset.theme = theme; $("#theme-label").textContent = theme === "dark" ? "Light surface" : "Night surface"; $("#theme-icon").textContent = theme === "dark" ? "○" : "●"; localStorage.setItem("ebook-factory-theme", theme); };
@@ -57,6 +57,7 @@ async function selectProject(project) {
   state.packageResult = null;
   state.reviews = [];
   state.artifacts = [];
+  state.projectUsage = null;
   $("#studio-project-label").textContent = `${project.title} · ${project.state}`;
   document.querySelector('[data-view="studio"]').click();
   renderStageBoard();
@@ -93,7 +94,7 @@ function renderOrchestratorActivity() {
   if (!box) return;
   clearSkeleton(box);
   box.replaceChildren();
-  const events = state.events.filter((event) => event.kind?.startsWith("orchestrator.") && !["orchestrator.turn.queued", "orchestrator.turn.claimed", "orchestrator.turn.completed", "orchestrator.turn.failed", "orchestrator.turn.delta"].includes(event.kind));
+  const events = state.events.filter((event) => (event.kind?.startsWith("orchestrator.") || event.kind?.startsWith("agent.")) && !["orchestrator.turn.queued", "orchestrator.turn.claimed", "orchestrator.turn.completed", "orchestrator.turn.failed", "orchestrator.turn.delta"].includes(event.kind));
   if (!events.length) {
     const empty = document.createElement("p");
     empty.className = "muted orchestrator-activity-empty";
@@ -118,7 +119,7 @@ function renderOrchestratorActivity() {
     row.append(top, detail);
     const payload = event.payload || {};
     const trace = {};
-    ["tool_name", "role", "gate", "status", "note", "text", "delta", "arguments", "result", "error"].forEach((key) => {
+    ["task_type", "tool_call_id", "tool_name", "role", "gate", "status", "note", "text", "delta", "arguments", "result", "error", "worker_id", "attempt_id", "generation"].forEach((key) => {
       if (payload[key] != null && payload[key] !== "") trace[key] = payload[key];
     });
     if (Object.keys(trace).length) {
@@ -132,6 +133,23 @@ function renderOrchestratorActivity() {
     }
     box.append(row);
   });
+}
+
+function prepareConversationPanel() {
+  const label = document.querySelector("#conversation-heading")?.closest(".section-heading")?.querySelector(".muted");
+  if (label) label.textContent = "Primary workspace";
+}
+
+function placeActivityRail() {
+  const grid = document.querySelector(".studio-grid");
+  const panel = grid?.querySelector(".orchestrator-activity-panel");
+  if (!grid || !panel || panel.parentElement?.classList.contains("studio-trace-rail")) return;
+  const rail = document.createElement("aside");
+  rail.className = "studio-trace-rail";
+  rail.setAttribute("aria-label", "Live orchestrator trace");
+  panel.classList.add("panel", "studio-trace-panel");
+  rail.append(panel);
+  grid.append(rail);
 }
 
 async function loadMessages() {
@@ -475,6 +493,9 @@ function appendArtifactDetails(item, artifact, presentation) {
   const details = document.createElement("details"); details.className = "artifact-details";
   const summary = document.createElement("summary"); summary.textContent = "File details"; details.append(summary);
   const path = document.createElement("p"); path.className = "muted"; path.textContent = `${artifact.relative_path || presentation.filename} · ${artifact.mime_type || presentation.label}`; details.append(path);
+  if (!artifactIsAvailable(artifact)) {
+    const availability = document.createElement("p"); availability.className = "artifact-availability-note"; availability.textContent = artifact.availability_reason || "This file is not available on the configured artifact store."; details.append(availability);
+  }
   if (presentation.isImage && (artifact.generation_provider || artifact.generation_model || artifact.usage_call_id)) {
     const provenance = document.createElement("p");
     provenance.className = "artifact-provenance";
@@ -487,22 +508,24 @@ function appendArtifactDetails(item, artifact, presentation) {
 }
 function createArtifactTile(artifact) {
   const presentation = artifactPresentation(artifact);
-  const item = document.createElement("article"); item.className = `artifact-tile artifact-${presentation.kind}`;
+  const available = artifactIsAvailable(artifact);
+  const item = document.createElement("article"); item.className = `artifact-tile artifact-${presentation.kind}${available ? "" : " artifact-tile-unavailable"}`;
   const top = document.createElement("div"); top.className = "artifact-tile-top";
   const icon = document.createElement("span"); icon.className = "artifact-icon"; icon.textContent = presentation.icon; icon.setAttribute("aria-hidden", "true");
-  const stateLabel = document.createElement("span"); stateLabel.className = "artifact-state"; stateLabel.textContent = artifact.owner_review_state ? reviewStateLabel(artifact.owner_review_state) : artifact.validation_state === "generated" ? "Generated" : "Package member";
+  const stateLabel = document.createElement("span"); stateLabel.className = "artifact-state"; stateLabel.textContent = available ? (artifact.owner_review_state ? reviewStateLabel(artifact.owner_review_state) : artifact.validation_state === "generated" ? "Generated" : "Package member") : artifactAvailabilityLabel(artifact);
   top.append(icon, stateLabel);
   const heading = document.createElement("h4"); heading.textContent = presentation.label;
   const filename = document.createElement("p"); filename.className = "artifact-filename"; filename.textContent = presentation.filename;
   const meta = document.createElement("p"); meta.className = "muted artifact-meta"; meta.textContent = `${artifact.mime_type || presentation.extension} · ${formatArtifactSize(artifact.byte_count)}`;
   const actions = document.createElement("div"); actions.className = "artifact-actions";
-  const button = document.createElement("button"); button.type = "button"; button.className = "quiet artifact-download"; button.textContent = "Download";
+  const button = document.createElement("button"); button.type = "button"; button.className = "quiet artifact-download"; button.textContent = available ? "Download" : "Unavailable"; button.disabled = !available;
   const result = document.createElement("p"); result.className = "muted artifact-download-result"; result.setAttribute("role", "status"); result.setAttribute("aria-live", "polite");
-  button.addEventListener("click", () => downloadArtifact(artifact.download_path, artifactFilename(artifact), button, result)); actions.append(button, result);
+  if (!available) result.textContent = artifact.availability_reason || "This file must be regenerated before it can be downloaded.";
+  else button.addEventListener("click", () => downloadArtifact(artifact.download_path, artifactFilename(artifact), button, result)); actions.append(button, result);
   item.append(top, heading, filename, meta, actions);
-  if (presentation.isImage && artifact.download_path) { const preview = document.createElement("div"); preview.className = "artifact-preview-frame"; const image = document.createElement("img"); image.className = "artifact-preview"; image.alt = `${presentation.filename} preview`; image.loading = "lazy"; preview.append(image); item.append(preview); loadProtectedPreview(image, artifact.download_path, presentation.filename); }
+  if (presentation.isImage && artifact.download_path && available) { const preview = document.createElement("div"); preview.className = "artifact-preview-frame"; const image = document.createElement("img"); image.className = "artifact-preview"; image.alt = `${presentation.filename} preview`; image.loading = "lazy"; preview.append(image); item.append(preview); loadProtectedPreview(image, artifact.download_path, presentation.filename); }
   if (artifact.relative_path || artifact.sha256) appendArtifactDetails(item, artifact, presentation);
-  const isReviewableImage = presentation.isImage && !presentation.isExport && artifact.artifact_id;
+  const isReviewableImage = available && presentation.isImage && !presentation.isExport && artifact.artifact_id;
   if (isReviewableImage) appendArtifactReview(item, artifact);
   return item;
 }
@@ -692,14 +715,14 @@ function appendUsagePair(parent, label, value, detail = "") {
   if (detail) { const copy = document.createElement("small"); copy.textContent = detail; item.append(copy); }
   parent.append(item);
 }
-function renderUsageStats(usage, githubBilling) {
+function renderUsageStats(usage, githubBilling, projectUsage) {
   const box = $("#usage-stat-cards"); if (!box) return;
   clearSkeleton(box); box.replaceChildren();
   const cards = [
-    ["Tracked tokens", formatUsageTokens(usage?.processed_tokens), `${usage?.calls || 0} ${state.selected ? "project" : "workspace"} calls`, true],
+    ["Tracked tokens", formatUsageTokens(usage?.processed_tokens), usageScopeCopy({ workspaceCalls: usage?.calls, projectCalls: projectUsage?.calls, projectTitle: state.selected?.title }), true],
     ["Reference estimate", formatUsageCost(usage?.estimated_cost), usage?.estimated_cost_complete ? "All reported dimensions priced" : "Partial: unknown models or dimensions remain", false],
     ["Cache savings", usage?.estimated_cache_savings == null ? "Unavailable" : formatUsageCost(usage.estimated_cache_savings), "Reference value from cache reads", false],
-    ["Copilot credits", usage?.estimated_copilot_ai_credits == null ? "Unavailable" : Number(usage.estimated_copilot_ai_credits).toLocaleString(), "Reference credits from GitHub-priced calls", false],
+    ["Reference Copilot credits", usage?.estimated_copilot_ai_credits == null ? "Unavailable" : Number(usage.estimated_copilot_ai_credits).toLocaleString(), "Local estimate; live account report is in the provider rail", false],
     ["Recorded calls", Number(usage?.calls || 0).toLocaleString(), "Durable provider call records", false],
   ];
   cards.forEach(([label, value, detail, accent]) => {
@@ -710,15 +733,16 @@ function renderUsageStats(usage, githubBilling) {
     card.append(eyebrow, headline, copy); box.append(card);
   });
 }
-function renderUsageSummary(usage) {
+function renderUsageSummary(usage, projectUsage) {
   const box = $("#usage-summary"); if (!box) return;
   clearSkeleton(box); box.replaceChildren();
-  if (!usage || !usage.calls) { const empty = document.createElement("p"); empty.className = "muted"; empty.textContent = `No provider calls recorded for this ${state.selected ? "project" : "workspace"} yet.`; box.append(empty); return; }
+  if (!usage || !usage.calls) { const empty = document.createElement("p"); empty.className = "muted"; empty.textContent = usageScopeCopy({ workspaceCalls: usage?.calls }); box.append(empty); return; }
   const heading = document.createElement("div"); heading.className = "usage-summary-heading";
   const count = document.createElement("strong"); count.textContent = `${usage.calls} ${usage.calls === 1 ? "call" : "calls"}`;
-  const label = document.createElement("span"); label.textContent = state.selected ? `for ${state.selected.title}` : "in this workspace";
+  const label = document.createElement("span"); label.textContent = "in this workspace";
   heading.append(count, label);
-  const line = document.createElement("p"); line.className = "muted"; line.textContent = `${formatUsageTokens(usage.processed_tokens)} tracked tokens · ${usage.estimated_cost_complete ? "complete rate coverage" : "estimate has unknowns"}`;
+  const projectDetail = state.selected && projectUsage ? ` · ${projectUsage.calls || 0} in ${state.selected.title}` : "";
+  const line = document.createElement("p"); line.className = "muted"; line.textContent = `${formatUsageTokens(usage.processed_tokens)} tracked tokens${projectDetail} · ${usage.estimated_cost_complete ? "complete rate coverage" : "estimate has unknowns"}`;
   box.append(heading, line);
 }
 function renderUsageTokens(usage) {
@@ -816,11 +840,11 @@ function renderGithubBilling(report) {
   const box = $("#github-billing-summary"); clearSkeleton(box); box.replaceChildren();
   if (!report || report.status === "not_configured") {
     const heading = document.createElement("strong"); heading.textContent = "Not connected";
-    const copy = document.createElement("p"); copy.className = "muted"; copy.textContent = "Set GITHUB_AUTH_TOKEN in the API service environment for live personal, organization, or enterprise AI-credit usage.";
+    const copy = document.createElement("p"); copy.className = "muted"; copy.textContent = githubBillingStatusCopy(report || { status: "not_configured" });
     const source = document.createElement("a"); source.href = "https://docs.github.com/en/rest/billing/usage"; source.target = "_blank"; source.rel = "noreferrer"; source.textContent = "GitHub billing API ↗";
     box.append(heading, copy, source); return;
   }
-  if (report.status !== "ok") { const heading = document.createElement("strong"); heading.textContent = "Live read unavailable"; const copy = document.createElement("p"); copy.className = "muted"; copy.textContent = report.http_status === 404 ? "GitHub has no personal billable Copilot record for this account, or Copilot billing is managed by an organization. Set GITHUB_BILLING_ACCOUNT_TYPE=organization and GITHUB_BILLING_ORGANIZATION when that is the billing owner." : report.error || "GitHub did not return billing data."; box.append(heading, copy); return; }
+  if (report.status !== "ok") { const heading = document.createElement("strong"); heading.textContent = "Live read unavailable"; const copy = document.createElement("p"); copy.className = "muted"; copy.textContent = githubBillingStatusCopy(report); box.append(heading, copy); return; }
   const account = document.createElement("p"); account.className = "usage-note"; account.textContent = `${report.account.type} · ${report.account.identifier} · ${report.period.year}-${String(report.period.month).padStart(2, "0")}`;
   const totals = document.createElement("div"); totals.className = "github-total-grid";
   appendUsagePair(totals, "Net reported", report.totals.net_amount == null ? "Unavailable" : `$${Number(report.totals.net_amount).toFixed(2)}`);
@@ -845,13 +869,14 @@ async function loadUsage() {
   const projectId = state.selected?.project_id;
   showSkeleton("#usage-stat-cards", "stats", 4); showSkeleton("#usage-summary", "block", 1); showSkeleton("#usage-tokens", "rows", 5); showSkeleton("#usage-model-breakdown", "rows", 3); showSkeleton("#usage-daily-breakdown", "rows", 3); showSkeleton("#usage-calls", "rows", 4); showSkeleton("#codex-pricing-summary", "rows", 5); showSkeleton("#github-billing-summary", "rows", 3);
   const scope = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
-  const [usageResult, callsResult, billingResult] = await Promise.allSettled([api(`/usage${scope}`), api(`/usage/calls${scope}`), api("/usage/github-billing")]);
+  const [usageResult, projectUsageResult, callsResult, billingResult] = await Promise.allSettled([api("/usage"), projectId ? api(`/usage${scope}`) : Promise.resolve(null), api(`/usage/calls${scope}`), api("/usage/github-billing")]);
   if (state.selected?.project_id !== projectId) return;
   const usage = usageResult.status === "fulfilled" ? usageResult.value : null;
+  const projectUsage = projectUsageResult.status === "fulfilled" ? projectUsageResult.value : null;
   const calls = callsResult.status === "fulfilled" ? callsResult.value : [];
   const billing = billingResult.status === "fulfilled" ? billingResult.value : { status: "error", error: billingResult.reason?.message || "request failed" };
-  state.usage = usage; state.githubBilling = billing;
-  if (usage) { renderUsageStats(usage, billing); renderUsageSummary(usage); renderUsageTokens(usage); renderUsageModelBreakdown(usage); renderUsageDailyBreakdown(usage); renderCodexPricing(usage); renderUsagePricingNote(usage); }
+  state.usage = usage; state.projectUsage = projectUsage; state.githubBilling = billing;
+  if (usage) { renderUsageStats(usage, billing, projectUsage); renderUsageSummary(usage, projectUsage); renderUsageTokens(usage); renderUsageModelBreakdown(usage); renderUsageDailyBreakdown(usage); renderCodexPricing(usage); renderUsagePricingNote(usage); }
   else { renderUsageError(usageResult.reason?.message || "Usage unavailable. Refresh to try again."); }
   renderUsageCalls(calls); renderGithubBilling(billing); await loadQuota();
 }
@@ -922,6 +947,6 @@ $("#refresh-telegram").addEventListener("click", () => loadTelegramStatus());
 $("#telegram-link-form").addEventListener("submit", async (event) => { event.preventDefault(); const result = $("#telegram-link-result"); const button = $("#telegram-link-button"); const input = $("#telegram-chat-id"); result.textContent = ""; input.setAttribute("aria-invalid", "false"); if (!state.selected) { result.textContent = "Select a project in Studio first, then try linking again."; return; } const project = state.selected; const chatId = Number(new FormData(event.target).get("chat_id")); if (!Number.isSafeInteger(chatId)) { input.setAttribute("aria-invalid", "true"); result.textContent = "Enter a valid numeric Telegram chat ID."; return; } button.disabled = true; result.textContent = `Setting ${project.title} active for chat ${chatId}…`; try { const telegram = await api(`/projects/${project.project_id}/telegram/link`, { method: "POST", body: JSON.stringify({ chat_id: chatId }) }); result.textContent = `Chat ${chatId} now uses ${project.title}; all projects remain linked. ${telegram.linked_project_count} project link(s) active.`; await loadTelegramStatus(); } catch (error) { let detail = error.message || "request failed"; try { const parsed = JSON.parse(detail); detail = parsed.detail || detail; } catch { /* API may return plain text */ } result.textContent = `Could not set chat ${chatId}: ${detail}`; } finally { button.disabled = false; } });
 document.querySelectorAll("#brief-form [name=length_mode]").forEach((radio) => radio.addEventListener("change", (event) => { $("#page-target-fields").classList.toggle("hidden", event.target.value !== "pages"); $("#word-target-fields").classList.toggle("hidden", event.target.value !== "words"); }));
 document.querySelectorAll("#brief-form input, #brief-form textarea, #brief-form select").forEach((control) => control.addEventListener("input", () => { $("#brief-form").dataset.dirty = "true"; }));
-async function boot() { $("#auth-view").classList.add("hidden"); $("#app-shell").classList.remove("hidden"); bindCatalogCoherence(); await loadProjects(); await loadCatalog(); await loadProviders(); const savedProviders = await api("/providers"); const saved = savedProviders.find((provider) => provider.provider === $("#provider-select").value) || savedProviders[0] || {}; populateCatalogSelects(saved); savedProviders.slice(1).forEach((provider) => addSavedOption($("#provider-select"), provider.provider, "Provider")); if (saved.provider) filterCatalogModels(saved.provider); await loadTelegramStatus(); }
+async function boot() { $("#auth-view").classList.add("hidden"); $("#app-shell").classList.remove("hidden"); prepareConversationPanel(); placeActivityRail(); bindCatalogCoherence(); await loadProjects(); await loadCatalog(); await loadProviders(); const savedProviders = await api("/providers"); const saved = savedProviders.find((provider) => provider.provider === $("#provider-select").value) || savedProviders[0] || {}; populateCatalogSelects(saved); savedProviders.slice(1).forEach((provider) => addSavedOption($("#provider-select"), provider.provider, "Provider")); if (saved.provider) filterCatalogModels(saved.provider); await loadTelegramStatus(); }
 $("#auth-form").addEventListener("submit", async (event) => { event.preventDefault(); const error = $("#auth-error"); error.textContent = ""; const token = $("#owner-token").value; try { await fetch("/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }) }).then(async (response) => { if (!response.ok) throw new Error((await response.text()).slice(0, 240)); }); sessionStorage.setItem("ebook-factory-owner-token", token); $("#owner-token").value = ""; await boot(); } catch (reason) { error.textContent = reason.message || "Sign in failed"; } });
 if (ownerToken()) { api("/auth/verify").then(boot).catch(() => sessionStorage.removeItem("ebook-factory-owner-token")); }

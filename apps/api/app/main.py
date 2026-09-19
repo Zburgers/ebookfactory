@@ -28,7 +28,7 @@ from app.orchestrator import append_delta, claim_turn, complete_turn, enqueue_tu
 from app.documents import create_brief_revision, create_section, save_section_revision
 from app.exports import MIME_TYPES, PACKAGE_FILES, _resolve_manuscript_scope, _verify_export_provenance, _verify_source_artifact_review, export_book, verify_export_members
 from app.events import append_event, replay_events
-from app.execution import build_execution_snapshot
+from app.execution import _event_view, build_execution_snapshot
 from app.jobs import (
     ApprovalConflict,
     CancellationRejected,
@@ -70,7 +70,7 @@ from app import codex_quota
 from app.github_billing import fetch_github_billing
 from app.production import accept_production_output, assemble_section_revisions, expand_outline_sections
 from app.reviews import record_finding
-from app.artifacts import reconcile_pending_artifacts, safe_artifact_path, write_artifact
+from app.artifacts import artifact_file_status, reconcile_pending_artifacts, safe_artifact_path, write_artifact
 from app.budget import enforce_budget
 from app.tools import InvalidCapability, issue_capability, verify_capability
 from app.usage import finalize_usage_call, list_usage_calls, record_usage_call, usage_overview
@@ -541,6 +541,8 @@ class ArtifactView(BaseModel):
     owner_review_note: str | None
     owner_reviewed_at: datetime | None
     download_path: str
+    availability_state: str
+    availability_reason: str | None = None
     generation_provider: str | None = None
     generation_model: str | None = None
     usage_outcome: str | None = None
@@ -1760,28 +1762,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 usage.id: usage
                 for usage in session.scalars(select(UsageCall).where(UsageCall.id.in_(usage_ids))).all()
             } if usage_ids else {}
-            return [
-                ArtifactView(
-                    artifact_id=artifact.id,
-                    run_id=artifact.run_id,
-                    attempt_id=artifact.attempt_id,
-                    usage_call_id=artifact.usage_call_id,
-                    revision_id=artifact.revision_id,
+            views: list[ArtifactView] = []
+            for artifact in rows:
+                availability_state, availability_reason = artifact_file_status(
+                    resolved_settings.artifact_root,
                     relative_path=artifact.relative_path,
-                    mime_type=artifact.mime_type,
                     byte_count=artifact.byte_count,
                     sha256=artifact.sha256,
-                    validation_state=artifact.validation_state,
-                    owner_review_state=artifact.owner_review_state,
-                    owner_review_note=artifact.owner_review_note,
-                    owner_reviewed_at=artifact.owner_reviewed_at,
-                    download_path=f"/projects/{project_id}/artifacts/{artifact.id}/download",
-                    generation_provider=usage_by_id.get(artifact.usage_call_id).provider if usage_by_id.get(artifact.usage_call_id) else None,
-                    generation_model=usage_by_id.get(artifact.usage_call_id).model if usage_by_id.get(artifact.usage_call_id) else None,
-                    usage_outcome=usage_by_id.get(artifact.usage_call_id).outcome if usage_by_id.get(artifact.usage_call_id) else None,
                 )
-                for artifact in rows
-            ]
+                usage = usage_by_id.get(artifact.usage_call_id)
+                views.append(
+                    ArtifactView(
+                        artifact_id=artifact.id,
+                        run_id=artifact.run_id,
+                        attempt_id=artifact.attempt_id,
+                        usage_call_id=artifact.usage_call_id,
+                        revision_id=artifact.revision_id,
+                        relative_path=artifact.relative_path,
+                        mime_type=artifact.mime_type,
+                        byte_count=artifact.byte_count,
+                        sha256=artifact.sha256,
+                        validation_state=artifact.validation_state,
+                        owner_review_state=artifact.owner_review_state,
+                        owner_review_note=artifact.owner_review_note,
+                        owner_reviewed_at=artifact.owner_reviewed_at,
+                        download_path=f"/projects/{project_id}/artifacts/{artifact.id}/download",
+                        availability_state=availability_state,
+                        availability_reason=availability_reason,
+                        generation_provider=usage.provider if usage else None,
+                        generation_model=usage.model if usage else None,
+                        usage_outcome=usage.outcome if usage else None,
+                    )
+                )
+            return views
         finally:
             session.close()
 
@@ -1839,6 +1852,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     },
                 )
             usage = session.get(UsageCall, artifact.usage_call_id) if artifact.usage_call_id else None
+            availability_state, availability_reason = artifact_file_status(
+                resolved_settings.artifact_root,
+                relative_path=artifact.relative_path,
+                byte_count=artifact.byte_count,
+                sha256=artifact.sha256,
+            )
             return ArtifactReviewResponse(
                 artifact_id=artifact.id,
                 run_id=artifact.run_id,
@@ -1854,6 +1873,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 owner_review_note=artifact.owner_review_note,
                 owner_reviewed_at=artifact.owner_reviewed_at,
                 download_path=f"/projects/{project_id}/artifacts/{artifact.id}/download",
+                availability_state=availability_state,
+                availability_reason=availability_reason,
                 revision_job_id=revision.job_id if revision else None,
                 revision_task_id=revision.task_id if revision else None,
                 generation_provider=usage.provider if usage else None,
@@ -1870,11 +1891,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             artifact = session.get(Artifact, artifact_id)
             if artifact is None or not artifact_belongs_to_project(session, artifact, project_id):
                 raise HTTPException(status_code=404, detail="artifact not found")
+            availability_state, availability_reason = artifact_file_status(
+                resolved_settings.artifact_root,
+                relative_path=artifact.relative_path,
+                byte_count=artifact.byte_count,
+                sha256=artifact.sha256,
+            )
+            if availability_state != "available":
+                raise HTTPException(status_code=409, detail=f"artifact is not available: {availability_reason}")
             path = safe_artifact_path(resolved_settings.artifact_root, artifact.relative_path)
-            if not path.is_file() or path.stat().st_size != artifact.byte_count:
-                raise HTTPException(status_code=409, detail="artifact is not available")
-            if hashlib.sha256(path.read_bytes()).hexdigest() != artifact.sha256:
-                raise HTTPException(status_code=409, detail="artifact integrity check failed")
             return FileResponse(path, media_type=artifact.mime_type, filename=Path(artifact.relative_path).name)
         finally:
             session.close()
@@ -2106,19 +2131,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def events(project_id: UUID, after: int = 0, limit: int = 100) -> list[dict[str, Any]]:
         session = database.session()
         try:
-            return [
-                {
-                    "id": event.id,
-                    "version": 1,
-                    "timestamp": event.created_at,
-                    "project_id": event.project_id,
-                    "run_id": event.run_id,
-                    "task_id": event.task_id,
-                    "kind": event.kind,
-                    "payload": event.data,
-                }
-                for event in replay_events(session, project_id=project_id, after_id=after, limit=limit)
-            ]
+            return [_event_view(event) for event in replay_events(session, project_id=project_id, after_id=after, limit=limit)]
         finally:
             session.close()
 
@@ -2152,19 +2165,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 session = database.session()
                 try:
                     replay = replay_events(session, project_id=project_id, after_id=cursor, limit=limit)
-                    envelopes = [
-                        {
-                            "id": event.id,
-                            "version": 1,
-                            "timestamp": event.created_at,
-                            "project_id": event.project_id,
-                            "run_id": event.run_id,
-                            "task_id": event.task_id,
-                            "kind": event.kind,
-                            "payload": event.data,
-                        }
-                        for event in replay
-                    ]
+                    envelopes = [_event_view(event) for event in replay]
                 finally:
                     session.close()
                 if envelopes:

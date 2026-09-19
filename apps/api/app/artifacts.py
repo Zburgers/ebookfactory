@@ -60,6 +60,31 @@ def safe_artifact_path(root: Path, relative_path: str) -> Path:
     return target
 
 
+def artifact_file_status(
+    root: Path,
+    *,
+    relative_path: str,
+    byte_count: int,
+    sha256: str,
+) -> tuple[str, str | None]:
+    """Return a bounded availability result for one immutable artifact file."""
+
+    try:
+        path = safe_artifact_path(root, relative_path)
+    except InvalidArtifactPath:
+        return "invalid_path", "Artifact path is invalid for the configured artifact store."
+    if not path.is_file():
+        return "missing", "Artifact file is not present on the configured artifact store."
+    try:
+        if path.stat().st_size != byte_count:
+            return "integrity_failed", "Artifact size does not match the recorded immutable value."
+        if hashlib.sha256(path.read_bytes()).hexdigest() != sha256:
+            return "integrity_failed", "Artifact bytes do not match the recorded immutable hash."
+    except OSError:
+        return "unreadable", "Artifact file could not be read from the configured artifact store."
+    return "available", None
+
+
 def write_artifact(
     session: Session,
     *,

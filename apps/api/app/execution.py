@@ -202,9 +202,13 @@ def build_execution_snapshot(
             "started_at": call.started_at,
             "ended_at": call.ended_at,
             "input_tokens": call.input_tokens,
+            "cache_read_tokens": call.cache_read_tokens,
+            "cache_write_tokens": call.cache_write_tokens,
             "output_tokens": call.output_tokens,
             "reasoning_tokens": call.reasoning_tokens,
+            "processed_tokens": sum(value for value in (call.input_tokens, call.cache_read_tokens, call.cache_write_tokens, call.output_tokens) if value is not None) or None,
             "estimated_cost": call.estimated_cost,
+            "provider_credit_units": call.provider_credit_units,
             "reported_billed_cost": call.reported_billed_cost,
             "source_metadata": _safe_value(call.source_metadata or {}, limit=2_000),
         }

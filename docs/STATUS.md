@@ -1,5 +1,28 @@
 # Build status
 
+2026-09-20: The usage/observability reconciliation is integrated and being
+verified against the live LAN service. The Usage page now keeps workspace
+totals visible even when a book is selected, while the selected project's
+call ledger remains available for drill-down. The live workspace audit returned
+60 durable calls, 121,310 tracked tokens and a `~$0.0552` API-equivalent
+estimate; completeness remains explicitly partial because historical unknown
+provider/model dimensions are still present. The live model catalog returned
+15 models: 14 with source-attributed pricing and the GPT-5.3 Codex Spark
+preview model intentionally marked pricing-unavailable rather than guessed.
+
+The configured `GITHUB_AUTH_TOKEN` was accepted by GitHub's identity endpoint,
+but the personal AI-credit usage endpoint returned HTTP 404. The UI now says
+that directly and gives the organization/enterprise configuration and required
+permission path; no credits are fabricated. The live artifact audit found 35
+available and 37 missing files across 72 recorded artifacts. Available download
+returned HTTP 200; a missing file now returns a clear HTTP 409 and a disabled
+tile instead of a dead link. The orchestrator repair was exercised end to end:
+the initial live probe exposed a missing `orchestrator-research` task-result
+route, the regression was repaired, and a second live turn persisted the full
+owner response, tool calls, gate update and successful bounded research child.
+The score remains 89/100 because Kindle visual preview and live owner-art
+decisions still require external owner action.
+
 2026-09-19 21:16 UTC: Final post-commit verification of `1995d32` passed
 `make verify`: 104 API tests, 33 worker tests, 11 web tests, 21 explicit
 PostgreSQL recovery skips, generated contracts, service lifecycle, transport,

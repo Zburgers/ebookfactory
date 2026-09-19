@@ -53,6 +53,47 @@ test("production leases pass bounded outline context and retain production resul
   assert.equal(received.content, "# book");
 });
 
+test("production leases persist Pi message and tool lifecycle activity before the task result", async () => {
+  const { createProductionExecutor } = await import("../src/runner.ts");
+  const activity = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options = {}) => {
+    if (url.endsWith("/context")) return Response.json({ task_type: "outline", project_id: "p", run_id: "r", task_id: "t", job_id: "j", brief: {}, budget: {} });
+    if (url.endsWith("/providers")) return Response.json([{ provider: "openai-codex", scope: "app", protocol: "pi-native", orchestration_model: "outline-model" }]);
+    if (url.endsWith("/private/worker/activity")) {
+      activity.push(JSON.parse(options.body));
+      return new Response(null, { status: 204 });
+    }
+    if (url.endsWith("/task-result")) return Response.json({ accepted: true });
+    throw new Error(`unexpected ${url}`);
+  };
+  try {
+    await createProductionExecutor({
+      baseUrl: "http://api", token: "secret", workerId: "w",
+      runProduction: async ({ onEvent }) => {
+        await onEvent({ type: "message_start" });
+        await onEvent({ type: "tool_execution_start", toolCallId: "call-1", toolName: "factory_read_state", args: { focus: "gates" } });
+        await onEvent({ type: "tool_execution_end", toolCallId: "call-1", toolName: "factory_read_state", result: { gates: [] }, isError: false });
+        await onEvent({ type: "message_update", delta: "Outline ready" });
+        await onEvent({ type: "message_end", text: "Outline ready" });
+        return { text: "Outline ready", callId: "outline-call" };
+      },
+    })({ job_id: "j", generation: 3 });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.deepEqual(activity.map((entry) => entry.activity_type), [
+    "message.started",
+    "tool.started",
+    "tool.completed",
+    "message.delta",
+    "message.completed",
+  ]);
+  assert.equal(activity[1].generation, 3);
+  assert.equal(activity[1].payload.tool_name, "factory_read_state");
+  assert.equal(activity[4].payload.text, "Outline ready");
+});
+
 test("art revision leases call Codex art with owner feedback and use the art result route", async () => {
   const { createProductionExecutor } = await import("../src/runner.ts");
   const dir = await mkdtemp(path.join(tmpdir(), "ebook-art-revision-"));
@@ -157,6 +198,43 @@ test("section-draft jobs use the task-result route with bounded section context"
     await createProductionExecutor({ baseUrl: "http://api", token: "secret", workerId: "w", runProduction: async ({ context }) => { assert.equal(context.section.heading, "Opening"); return { text: "Draft", callId: "section-call", model: "drafter" }; } })({ job_id: "j", generation: 1 });
   } finally { globalThis.fetch = originalFetch; }
   assert.equal(received[0].result, "Draft");
+});
+
+test("orchestrator research jobs use the task-result route", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, options = {}) => {
+    requests.push({ url, options });
+    if (url.endsWith("/context")) return Response.json({
+      task_type: "orchestrator-research",
+      project_id: "p",
+      run_id: "r",
+      task_id: "t",
+      job_id: "j",
+      brief: { promise_or_premise: "A bounded ebook" },
+      budget: {},
+      instruction: "Assess Kindle preview readiness.",
+      agent_context: { artifact_id: "artifact-1" },
+    });
+    if (url.endsWith("/providers")) return Response.json([{ provider: "openai-codex", scope: "app", protocol: "pi-native", drafting_model: "drafter" }]);
+    if (url.endsWith("/task-result")) return Response.json({ accepted: true });
+    throw new Error(`unexpected ${url}`);
+  };
+  try {
+    const { createProductionExecutor } = await import("../src/runner.ts");
+    await createProductionExecutor({
+      baseUrl: "http://api", token: "secret", workerId: "w",
+      runProduction: async ({ context }) => {
+        assert.equal(context.task_type, "orchestrator-research");
+        assert.equal(context.instruction, "Assess Kindle preview readiness.");
+        return { text: "EPUB hash and preview checks are pending.", callId: "research-call", model: "drafter" };
+      },
+    })({ job_id: "j", generation: 1 });
+  } finally { globalThis.fetch = originalFetch; }
+  const taskResult = requests.find(({ url }) => url.endsWith("/task-result"));
+  assert.ok(taskResult);
+  assert.equal(JSON.parse(taskResult.options.body).result, "EPUB hash and preview checks are pending.");
+  assert.equal(requests.some(({ url }) => url.endsWith("/production-result")), false);
 });
 
 test("assembly-ready production jobs call the server assembly route without book content", async () => {

@@ -75,6 +75,23 @@ MCP adapters expose only selected tools. Third-party tool descriptions and retri
 
 `POST /projects`, `GET /projects/{id}`, `POST /projects/{id}/messages` (returns durable message/turn ID), `GET /projects/{id}/events?after=<event_id>` (SSE replay), `GET /projects/{id}/execution?after=<event_id>&limit=<n>` (bounded owner-only control-room aggregate), brief approve/revise endpoints, run pause/resume/cancel, section edit with expected revision, draft/art approve/revise, export creation/status/download, export preview evidence recording, usage queries, provider catalog/config/auth/test, Telegram status/link configuration. An image `request_revision` decision appends `artifact.owner_reviewed`, creates a deduplicated fenced art-revision task/job, and leaves the source artifact immutable. Preview evidence appends `package.preview_reviewed` only after exact EPUB hash/package/provenance verification; it never means Amazon accepted or published the book.
 
+The owner event stream also carries the main orchestrator's fenced
+`orchestrator.message.*`, `orchestrator.tool.*`, `orchestrator.gate.updated`,
+`orchestrator.subagent.queued`, and streamed `orchestrator.turn.delta` events.
+The dashboard assembles the deltas into the owner-facing assistant bubble and
+keeps the tool, gate, child-task, review, and failure records in the replay and
+control-room surfaces. Child-agent activity is bounded and project-scoped; it
+is visible as activity/result evidence but does not become a second owner-facing
+conversation. Artifact list/review responses include `availability_state` and
+`availability_reason`; downloads fail closed with a descriptive `409` when the
+recorded immutable file is absent or its hash/size no longer matches.
+
+Usage responses expose uncached input, cache read/write, output, reasoning,
+processed-token totals, model/day breakdowns, source-attributed reference
+estimates, Copilot AI-credit equivalents, reported billing, and completeness
+flags. Unknown provider dimensions remain null/labelled unknown and are never
+rendered as free usage.
+
 Private supervisor endpoints: claim/heartbeat/checkpoint/complete/fail plus scoped tool invocation. Local transport/private token; never public unauthenticated worker callbacks. SSE event envelope: id, version, timestamp, project_id, run_id?, task_id?, kind, payload. Reconnect replays without double-counting or rerunning work. A closed HTTP stream never cancels a production job.
 
 ## Sandbox boundary

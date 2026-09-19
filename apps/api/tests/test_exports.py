@@ -741,11 +741,19 @@ def test_project_artifacts_includes_production_run_outputs(tmp_path: Path) -> No
 
     assert response.status_code == 200
     assert response.json()[0]["relative_path"] == f"{run_id}/cover.png"
+    assert response.json()[0]["availability_state"] == "available"
     assert download.status_code == 200
     assert download.content == content
     artifact_root.joinpath(str(run_id), "cover.png").write_bytes(b"tampered!")
     tampered = client.get(response.json()[0]["download_path"])
     assert tampered.status_code == 409
+    assert client.get(f"/projects/{project_id}/artifacts").json()[0]["availability_state"] == "integrity_failed"
+    artifact_root.joinpath(str(run_id), "cover.png").unlink()
+    missing = client.get(f"/projects/{project_id}/artifacts")
+    assert missing.json()[0]["availability_state"] == "missing"
+    unavailable = client.get(response.json()[0]["download_path"])
+    assert unavailable.status_code == 409
+    assert "not present" in unavailable.json()["detail"]
 
 
 def test_export_api_enforces_art_selection_and_member_integrity(tmp_path: Path) -> None:

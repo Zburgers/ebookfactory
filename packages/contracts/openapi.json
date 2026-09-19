@@ -183,6 +183,21 @@
             ],
             "title": "Attempt Id"
           },
+          "availability_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Availability Reason"
+          },
+          "availability_state": {
+            "title": "Availability State",
+            "type": "string"
+          },
           "byte_count": {
             "title": "Byte Count",
             "type": "integer"
@@ -339,7 +354,8 @@
           "owner_review_state",
           "owner_review_note",
           "owner_reviewed_at",
-          "download_path"
+          "download_path",
+          "availability_state"
         ],
         "title": "ArtifactReviewResponse",
         "type": "object"
@@ -362,6 +378,21 @@
               }
             ],
             "title": "Attempt Id"
+          },
+          "availability_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Availability Reason"
+          },
+          "availability_state": {
+            "title": "Availability State",
+            "type": "string"
           },
           "byte_count": {
             "title": "Byte Count",
@@ -495,7 +526,8 @@
           "owner_review_state",
           "owner_review_note",
           "owner_reviewed_at",
-          "download_path"
+          "download_path",
+          "availability_state"
         ],
         "title": "ArtifactView",
         "type": "object"

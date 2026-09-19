@@ -175,6 +175,7 @@ def record_worker_activity(
             payload={
                 **bounded_payload,
                 "job_id": str(job.id),
+                "worker_id": worker_id,
                 "attempt_id": str(attempt.id),
                 "generation": generation,
             },

@@ -47,6 +47,8 @@ export interface ArtifactReviewResponse {
   owner_review_note: string | null;
   owner_reviewed_at: string | null;
   download_path: string;
+  availability_state: string;
+  availability_reason?: string | null;
   generation_provider?: string | null;
   generation_model?: string | null;
   usage_outcome?: string | null;
@@ -69,6 +71,8 @@ export interface ArtifactView {
   owner_review_note: string | null;
   owner_reviewed_at: string | null;
   download_path: string;
+  availability_state: string;
+  availability_reason?: string | null;
   generation_provider?: string | null;
   generation_model?: string | null;
   usage_outcome?: string | null;

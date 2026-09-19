@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.artifacts import InvalidArtifactPath, reconcile_pending_artifacts, safe_artifact_path, write_artifact
+from app.artifacts import InvalidArtifactPath, artifact_file_status, reconcile_pending_artifacts, safe_artifact_path, write_artifact
 from app.main import ProductionArtRequest, _decode_production_art
 from app.models import Artifact, Base, UsageCall, utc_now
 from app.main import _verify_existing_production_artifact
@@ -22,6 +22,37 @@ def test_artifact_paths_reject_traversal_and_symlink(tmp_path: Path) -> None:
         safe_artifact_path(root, "../outside.txt")
     with pytest.raises(InvalidArtifactPath):
         safe_artifact_path(root, "link/escape.txt")
+
+
+def test_artifact_file_status_distinguishes_available_missing_and_tampered(tmp_path: Path) -> None:
+    root = tmp_path / "artifacts"
+    relative_path = "run-1/book.md"
+    content = b"# A book\n"
+    path = root / relative_path
+    path.parent.mkdir(parents=True)
+    path.write_bytes(content)
+
+    assert artifact_file_status(
+        root,
+        relative_path=relative_path,
+        byte_count=len(content),
+        sha256=hashlib.sha256(content).hexdigest(),
+    ) == ("available", None)
+    path.unlink()
+    assert artifact_file_status(
+        root,
+        relative_path=relative_path,
+        byte_count=len(content),
+        sha256=hashlib.sha256(content).hexdigest(),
+    ) == ("missing", "Artifact file is not present on the configured artifact store.")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"tampered!")
+    assert artifact_file_status(
+        root,
+        relative_path=relative_path,
+        byte_count=len(content),
+        sha256=hashlib.sha256(content).hexdigest(),
+    ) == ("integrity_failed", "Artifact bytes do not match the recorded immutable hash.")
 
 
 def test_artifact_write_is_hashed_and_immutable(tmp_path: Path) -> None:

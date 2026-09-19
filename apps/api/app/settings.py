@@ -46,6 +46,37 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("EBOOK_FACTORY_TELEGRAM_ALLOWED_SENDER_IDS", "TELEGRAM_ALLOWED_SENDER_IDS"),
     )
+    github_billing_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "EBOOK_FACTORY_GITHUB_BILLING_TOKEN",
+            "GITHUB_BILLING_TOKEN",
+            "GITHUB_AUTH_TOKEN",
+            "GITHUB_PAT",
+            "GITHUB_TOKEN",
+            "GH_TOKEN",
+        ),
+    )
+    github_billing_account_type: str = Field(
+        default="user",
+        validation_alias=AliasChoices("EBOOK_FACTORY_GITHUB_BILLING_ACCOUNT_TYPE", "GITHUB_BILLING_ACCOUNT_TYPE"),
+    )
+    github_billing_username: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("EBOOK_FACTORY_GITHUB_BILLING_USERNAME", "GITHUB_BILLING_USERNAME"),
+    )
+    github_billing_organization: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("EBOOK_FACTORY_GITHUB_BILLING_ORGANIZATION", "GITHUB_BILLING_ORGANIZATION"),
+    )
+    github_billing_enterprise: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("EBOOK_FACTORY_GITHUB_BILLING_ENTERPRISE", "GITHUB_BILLING_ENTERPRISE"),
+    )
+    github_billing_timeout_seconds: float = Field(
+        default=8.0,
+        validation_alias=AliasChoices("EBOOK_FACTORY_GITHUB_BILLING_TIMEOUT_SECONDS", "GITHUB_BILLING_TIMEOUT_SECONDS"),
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -22,7 +22,7 @@ export function buildProductionPrompt(context) {
   if (Array.isArray(context.messages)) {
     return [
       "You are the Ebook Factory dashboard orchestrator. Answer the user's latest message directly.",
-      "Use the conversation context, do not invoke tools, and do not claim work was performed unless it was.",
+      "Use the conversation context and the trusted project tools when they are needed. Only claim work after a tool result confirms it. Keep the owner-facing answer concise and useful.",
       JSON.stringify({ project_id: context.project_id, messages: context.messages }),
     ].join("\n\n");
   }

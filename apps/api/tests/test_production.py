@@ -202,3 +202,4 @@ def test_generic_worker_activity_is_fenced_and_redacted(tmp_path) -> None:
         events = session.scalars(select(Event).where(Event.project_id == UUID(project["project_id"]), Event.kind == "agent.tool.started")).all()
         assert len(events) == 1
         assert events[0].data["arguments"]["api_token"] == "[redacted]"
+        assert events[0].data["worker_id"] == "trace-worker"

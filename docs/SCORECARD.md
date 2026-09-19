@@ -1,5 +1,16 @@
 # Delivery scorecard
 
+2026-09-20 reconciliation evidence: the live Usage page now presents
+workspace-wide totals alongside selected-project drill-down, source-attributed
+OpenAI/Copilot estimates, daily/model rollups, and explicit unknowns. The live
+GitHub PAT identity check succeeds, while the personal billing endpoint returns
+404 with no billable personal Copilot record; this is reported as unavailable,
+not as zero. The live orchestrator path has persisted owner chat deltas, tool
+calls, gate updates, delegated research, and the child result after repairing a
+real research-result routing hole. Artifact availability is now honest at the
+API and UI boundaries. None of these changes closes Kindle visual preview or
+owner art judgment, so the conservative score remains **89/100**.
+
 Current score: **89/100 — durable runtime/containment, real production with
 reviewed revision lineage, live usage attribution, dashboard document flow,
 structural publishing packages and the live Telegram owner loop are evidenced;

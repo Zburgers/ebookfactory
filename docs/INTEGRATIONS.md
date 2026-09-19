@@ -44,6 +44,32 @@ Pi streaming usage can be cumulative. Upsert one current aggregate per call/mess
 
 Expose three distinct figures: provider-reported consumption, estimated API-equivalent cost with dated unit prices, and actual billed money when supplied. Subscription cost is not reconstructed from tokens. GitHub credit/premium-request multipliers and conversions require provider evidence. Account-wide quota changes may include unrelated Pi/Codex activity and must not be assigned to a book.
 
+### Reference pricing and live GitHub billing
+
+The application keeps a pinned `2026-09-20` reference-price registry for the
+enabled OpenAI Codex and GitHub Copilot model families. It prices observed
+uncached input, cached input, cache writes when the source publishes them, and
+output separately, applies the published long-context tier when the observed
+input exceeds its threshold, and records the source URL and rate version with
+each estimate. These are API-equivalent/reference figures, not a Codex
+subscription invoice. The OpenAI cards are based on the [official model
+pricing pages](https://developers.openai.com/api/docs/pricing/); Copilot cards
+are based on [GitHub's model and AI-credit pricing](https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing),
+where one AI credit is documented as `$0.01 USD`.
+
+GitHub account billing is a separate live read. The adapter accepts
+`GITHUB_AUTH_TOKEN` (plus the explicit aliases documented in `Settings`), never
+persists or returns the token, and queries the official [AI-credit usage REST
+endpoint](https://docs.github.com/en/rest/billing/usage) for the current
+month. A personal 404 means that the token may be valid while Copilot billing
+is owned by an organization/enterprise or no personal billable Copilot record
+exists; it is not converted to zero. For an organization-owned plan, set
+`GITHUB_BILLING_ACCOUNT_TYPE=organization` and
+`GITHUB_BILLING_ORGANIZATION`, using a token with the documented
+`Administration: read` permission. A 403 is shown as a permission problem.
+If no official account report exists, project-local token estimates remain
+available and are labelled as estimates.
+
 Quota snapshot: provider/account/bucket, source, observed_at, stale_after, used/remaining, units, window length, resets_at, plan label, capability state (supported/unavailable/auth_required/stale), error. Render real returned windows; never hardcode every account to five hours. Refresh on provider feedback and a bounded periodic interval, not per streaming token. Show stale age and a provider-dashboard link when unsupported.
 
 Codex official app-server documents `account/rateLimits/read` and `account/rateLimits/updated`; version-probe the installed server. GitHub documents quota and billing in its own Copilot SDK; this does NOT prove Pi emits those fields. Prefer Pi metadata; a small read-only quota adapter may use an officially supported provider surface if compatible with existing auth. No second generation runtime and no scraping undocumented endpoints as a hidden dependency.

@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  artifactAvailabilityLabel,
+  artifactIsAvailable,
   artifactPresentation,
   deriveStageStates,
   executionEventPresentation,
@@ -15,9 +17,17 @@ import {
   formatUsageTokens,
   usageBasisLabel,
   usageEstimateLabel,
+  usageScopeCopy,
+  githubBillingStatusCopy,
   modelCatalogLabel,
   kindlePreviewCheckpoint,
 } from "../src/view-models.js";
+
+test("artifact availability keeps legacy package responses usable and flags missing files", () => {
+  assert.equal(artifactIsAvailable({ relative_path: "exports/revision/book.epub" }), true);
+  assert.equal(artifactIsAvailable({ availability_state: "missing" }), false);
+  assert.equal(artifactAvailabilityLabel({ availability_state: "integrity_failed" }), "Integrity failed");
+});
 
 test("artifactPresentation turns storage paths into readable file cards", () => {
   assert.deepEqual(
@@ -90,6 +100,7 @@ test("stage details include the latest orchestrator gate decision", () => {
     { sections: [{ latest_revision_id: "revision-1" }], events: [{ kind: "orchestrator.gate.updated", payload: { gate: "draft", status: "needs_review", note: "Readability pass requested." } }] },
   );
 
+  assert.equal(stages.find((stage) => stage.key === "draft").status, "needs_review");
   assert.match(stages.find((stage) => stage.key === "draft").detail, /^Orchestrator gate: Needs review · Readability pass requested\./);
 });
 
@@ -118,6 +129,12 @@ test("model catalog labels expose provider pricing in selector-friendly text", (
     max_output: "128K",
     pricing: { pricing_basis: "api_equivalent", input_per_million: 0.2, output_per_million: 1.2 },
   }), /\$0\.20\/M input/);
+  assert.match(modelCatalogLabel({
+    qualified_model: "openai-codex/gpt-5.3-codex-spark",
+    context: "128K",
+    max_output: "128K",
+    pricing: null,
+  }), /pricing unavailable/);
 });
 
 test("executionTaskTree preserves parent and dependency relationships", () => {
@@ -159,6 +176,13 @@ test("execution event presentation explains reviews and agent lifecycle", () => 
     }),
     { label: "Draft gate updated", detail: "Needs review · Owner review is required.", tone: "review" },
   );
+  assert.deepEqual(
+    executionEventPresentation({
+      kind: "agent.tool.completed",
+      payload: { task_type: "orchestrator-research", tool_name: "factory_read_state" },
+    }),
+    { label: "Agent tool completed", detail: "orchestrator-research received a tool result.", tone: "complete" },
+  );
 });
 
 test("kindle preview checkpoint follows the package hash and durable review event", () => {
@@ -194,7 +218,7 @@ test("brief length and artifact grouping keep metadata useful", () => {
 test("empty conversation tells the owner when approval bypassed chat", () => {
   assert.equal(
     conversationEmptyState({ conversation: [], runs: [{ state: "draft_review" }] }),
-    "No owner chat turn was used for this production run. The durable task trace below is the source of truth.",
+    "This run began from the brief; no owner chat turn has been recorded yet. Send a direction here to make decisions visible alongside the durable task trace.",
   );
 });
 
@@ -208,4 +232,23 @@ test("usage helpers distinguish token scale, reference estimates, and billing ev
   assert.equal(usageEstimateLabel({ estimated_cost: 1.25, reported_billed_cost: null }), "~$1.25 reference estimate");
   assert.equal(usageEstimateLabel({ estimated_cost: null, reported_billed_cost: 1.1 }), "$1.10 reported");
   assert.equal(usageEstimateLabel({ estimated_cost: null, reported_billed_cost: null }), "Billing unavailable");
+});
+
+test("usage scope copy keeps workspace totals visible beside the selected project", () => {
+  assert.equal(
+    usageScopeCopy({ workspaceCalls: 60, projectCalls: 4, projectTitle: "Luna Low Demo Nonfiction" }),
+    "60 calls in this workspace · 4 in Luna Low Demo Nonfiction",
+  );
+  assert.equal(usageScopeCopy({ workspaceCalls: 0 }), "No provider calls recorded in this workspace yet.");
+});
+
+test("GitHub billing copy distinguishes an accepted PAT from a missing billing scope", () => {
+  assert.match(
+    githubBillingStatusCopy({ status: "error", http_status: 404, identity_verified: true, account: { identifier: "owner" } }),
+    /PAT authenticated as owner.*no personal billable Copilot record/,
+  );
+  assert.match(
+    githubBillingStatusCopy({ status: "error", http_status: 403, identity_verified: true, account: { identifier: "owner" } }),
+    /Plan: read permission/,
+  );
 });
