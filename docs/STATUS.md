@@ -1,5 +1,13 @@
 # Build status
 
+2026-09-19: A real disposable production restart probe reclaimed one job from
+fencing generation 1 to generation 2 after the worker service was killed and
+automatically restarted. The probe then found an unbounded Codex art
+app-server subprocess; the run was cancelled durably before retry. The
+follow-up adds a 120-second timeout, parent abort handling and bounded redacted
+errors with seven focused tests. H2/H4 are not claimed from this failed probe;
+evidence is at `evidence/P05/restart-live.md`.
+
 2026-09-19: Independent re-review of the page/artifact packet found six
 concrete gaps. Revision `6cfdb5d` repairs four: page-target manuscripts now
 enforce estimated 100–180 words/page bounds, downloads verify SHA-256 as well

@@ -3,7 +3,39 @@ import { test } from "node:test";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { EventEmitter } from "node:events";
 import { buildCodexArtTurn, buildCodexInitialize, buildCodexThreadStart, parseCodexArtEvent, runCodexArt } from "../src/codex-art.ts";
+
+function fakeChild() {
+  const child = new EventEmitter();
+  child.stdin = { write() {} };
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.killed = false;
+  child.killSignals = [];
+  child.kill = signal => { child.killed = true; child.killSignals.push(signal); };
+  return child;
+}
+
+test("aborting an in-flight image request terminates the child and rejects", async () => {
+  const child = fakeChild();
+  const controller = new AbortController();
+  const request = runCodexArt({ prompt: "hang", signal: controller.signal, timeoutMs: 1000, spawnProcess: () => child });
+  controller.abort();
+  await assert.rejects(request, /Codex art request aborted/);
+  assert.deepEqual(child.killSignals, ["SIGTERM"]);
+});
+
+test("timed-out image request terminates the child with a bounded error", async () => {
+  const child = fakeChild();
+  const request = runCodexArt({ prompt: "hang", timeoutMs: 5, spawnProcess: () => child });
+  await assert.rejects(request, error => {
+    assert.match(error.message, /timed out after 5ms/);
+    assert.ok(error.message.length <= 500);
+    return true;
+  });
+  assert.deepEqual(child.killSignals, ["SIGTERM"]);
+});
 
 test("builds the experimental app-server handshake and image turn", () => {
   assert.deepEqual(buildCodexInitialize().params.capabilities, { experimentalApi: true });
