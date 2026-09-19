@@ -260,6 +260,28 @@ export interface OwnerLoginRequest {
   token: string;
 }
 
+export interface PackagePreviewReviewRequest {
+  decision: string;
+  surface: string;
+  tool_version: string;
+  artifact_sha256: string;
+  notes?: string | null;
+}
+
+export interface PackagePreviewReviewResponse {
+  project_id: string;
+  revision_id: string;
+  artifact_id: string;
+  artifact_sha256: string;
+  byte_count: number;
+  decision: string;
+  surface: string;
+  tool_version: string;
+  notes: string | null;
+  reviewed_at: string;
+  package_state: string;
+}
+
 export interface ProductionArtRequest {
   filename: string;
   mime_type: string;

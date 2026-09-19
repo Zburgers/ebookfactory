@@ -805,7 +805,143 @@ def test_export_api_enforces_art_selection_and_member_integrity(tmp_path: Path) 
         assert downloaded.status_code == 200
         (root / f"exports/{revision_id}/book.md").write_bytes(b"tampered")
         tampered = client.get(download_path)
-        assert tampered.status_code == 409
+    assert tampered.status_code == 409
+
+
+def test_kindles_preview_review_is_bound_to_the_exact_epub_and_replayed(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'preview-review.db'}"
+    engine = create_engine(database_url)
+    Base.metadata.create_all(engine)
+    project_id, revision_id = uuid4(), uuid4()
+    root = tmp_path / "artifacts"
+    with Session(engine) as session:
+        project = Project(id=project_id, title="Preview Fixture", profile="fiction", language="en")
+        section = Section(project_id=project_id, order_no=1, heading="Opening")
+        session.add_all([project, section])
+        session.flush()
+        session.add(SectionRevision(
+            id=revision_id,
+            section_id=section.id,
+            revision=1,
+            content="# Preview Fixture\n\n## A chapter\n\nA complete manuscript.",
+            content_hash="a" * 64,
+        ))
+        session.commit()
+        export_book(
+            session,
+            root=root,
+            project_id=project_id,
+            revision_id=revision_id,
+            language="en",
+            profile="fiction",
+            structured_brief={"output_formats": ["epub"]},
+        )
+
+    epub_sha256 = hashlib.sha256((root / f"exports/{revision_id}/book.epub").read_bytes()).hexdigest()
+    with TestClient(
+        create_app(Settings(database_url=database_url, owner_token="owner", artifact_root=root)),
+        headers={"Authorization": "Bearer owner"},
+    ) as client:
+        verified = client.post(
+            f"/projects/{project_id}/exports/{revision_id}/preview-review",
+            json={
+                "decision": "verified",
+                "surface": "kindle_previewer",
+                "tool_version": "Kindle Previewer 3.​0",
+                "artifact_sha256": epub_sha256,
+                "notes": "Checked phone and tablet layouts.",
+            },
+        )
+        wrong_hash = client.post(
+            f"/projects/{project_id}/exports/{revision_id}/preview-review",
+            json={
+                "decision": "verified",
+                "surface": "kdp_online_previewer",
+                "tool_version": "KDP Online Previewer",
+                "artifact_sha256": "0" * 64,
+            },
+        )
+        missing_note = client.post(
+            f"/projects/{project_id}/exports/{revision_id}/preview-review",
+            json={
+                "decision": "issues_found",
+                "surface": "kindle_previewer",
+                "tool_version": "Kindle Previewer 3",
+                "artifact_sha256": epub_sha256,
+            },
+        )
+
+    assert verified.status_code == 200
+    body = verified.json()
+    assert body["decision"] == "verified"
+    assert body["artifact_sha256"] == epub_sha256
+    assert body["package_state"] == "kindle_preview_verified"
+    assert wrong_hash.status_code == 409
+    assert missing_note.status_code == 422
+    with Session(engine) as session:
+        event = session.scalar(
+            select(Event).where(Event.project_id == project_id, Event.kind == "package.preview_reviewed")
+        )
+    assert event is not None
+    assert event.data["artifact_sha256"] == epub_sha256
+    assert event.data["decision"] == "verified"
+
+
+def test_kindles_preview_review_requires_a_scoped_epub_package(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'preview-scope.db'}"
+    engine = create_engine(database_url)
+    Base.metadata.create_all(engine)
+    project_id, revision_id = uuid4(), uuid4()
+    root = tmp_path / "artifacts"
+    with Session(engine) as session:
+        project = Project(id=project_id, title="Markdown Only", profile="fiction", language="en")
+        section = Section(project_id=project_id, order_no=1, heading="Opening")
+        session.add_all([project, section])
+        session.flush()
+        session.add(SectionRevision(
+            id=revision_id,
+            section_id=section.id,
+            revision=1,
+            content="# Markdown Only\n\nA package without an EPUB.",
+            content_hash="b" * 64,
+        ))
+        session.commit()
+        export_book(
+            session,
+            root=root,
+            project_id=project_id,
+            revision_id=revision_id,
+            language="en",
+            profile="fiction",
+            structured_brief={"output_formats": ["markdown"]},
+        )
+
+    with TestClient(
+        create_app(Settings(database_url=database_url, owner_token="owner", artifact_root=root)),
+        headers={"Authorization": "Bearer owner"},
+    ) as client:
+        missing_epub = client.post(
+            f"/projects/{project_id}/exports/{revision_id}/preview-review",
+            json={
+                "decision": "verified",
+                "surface": "kindle_previewer",
+                "tool_version": "Kindle Previewer 3",
+                "artifact_sha256": "0" * 64,
+            },
+        )
+        wrong_project = client.post(
+            f"/projects/{uuid4()}/exports/{revision_id}/preview-review",
+            json={
+                "decision": "verified",
+                "surface": "kindle_previewer",
+                "tool_version": "Kindle Previewer 3",
+                "artifact_sha256": "0" * 64,
+            },
+        )
+
+    assert missing_epub.status_code == 409
+    assert "does not contain an EPUB" in missing_epub.json()["detail"]
+    assert wrong_project.status_code == 409
 
 
 def test_existing_legacy_placeholder_provenance_fails_closed(tmp_path: Path) -> None:

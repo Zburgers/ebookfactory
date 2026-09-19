@@ -1368,6 +1368,144 @@
         "title": "OwnerLoginRequest",
         "type": "object"
       },
+      "PackagePreviewReviewRequest": {
+        "description": "Record an owner-run external Kindle preview against one immutable EPUB.",
+        "properties": {
+          "artifact_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Artifact Sha256",
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "verified",
+              "issues_found"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "surface": {
+            "enum": [
+              "kindle_previewer",
+              "kdp_online_previewer"
+            ],
+            "title": "Surface",
+            "type": "string"
+          },
+          "tool_version": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Tool Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "surface",
+          "tool_version",
+          "artifact_sha256"
+        ],
+        "title": "PackagePreviewReviewRequest",
+        "type": "object"
+      },
+      "PackagePreviewReviewResponse": {
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "artifact_sha256": {
+            "title": "Artifact Sha256",
+            "type": "string"
+          },
+          "byte_count": {
+            "title": "Byte Count",
+            "type": "integer"
+          },
+          "decision": {
+            "enum": [
+              "verified",
+              "issues_found"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "package_state": {
+            "enum": [
+              "kindle_preview_verified",
+              "kindle_preview_issues_found"
+            ],
+            "title": "Package State",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "reviewed_at": {
+            "format": "date-time",
+            "title": "Reviewed At",
+            "type": "string"
+          },
+          "revision_id": {
+            "format": "uuid",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "surface": {
+            "enum": [
+              "kindle_previewer",
+              "kdp_online_previewer"
+            ],
+            "title": "Surface",
+            "type": "string"
+          },
+          "tool_version": {
+            "title": "Tool Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "revision_id",
+          "artifact_id",
+          "artifact_sha256",
+          "byte_count",
+          "decision",
+          "surface",
+          "tool_version",
+          "notes",
+          "reviewed_at",
+          "package_state"
+        ],
+        "title": "PackagePreviewReviewResponse",
+        "type": "object"
+      },
       "ProductionArtRequest": {
         "properties": {
           "byte_count": {
@@ -5436,6 +5574,75 @@
           }
         ],
         "summary": "Create Export",
+        "tags": [
+          "publishing"
+        ]
+      }
+    },
+    "/projects/{project_id}/exports/{revision_id}/preview-review": {
+      "post": {
+        "description": "Persist a bounded external preview result for the exact exported EPUB.",
+        "operationId": "review_export_preview_projects__project_id__exports__revision_id__preview_review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Revision Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PackagePreviewReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackagePreviewReviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OwnerBearer": []
+          }
+        ],
+        "summary": "Review Export Preview",
         "tags": [
           "publishing"
         ]

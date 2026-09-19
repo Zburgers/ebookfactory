@@ -6,6 +6,34 @@ Observed installed package in this conversation: `@earendil-works/pi-coding-agen
 
 Global catalog/auth may be reused by the trusted host adapter. Use explicit resources to load only the model/provider adapter and approved MCP adapter; no inherited coding prompts, arbitrary global tools, skills or extensions. Store application sessions separately. Use Pi credential APIs/locking; do not implement ad hoc token refresh or copy credentials into logs/DB. Dashboard settings default to an app-specific overlay, with explicit action required to alter global configuration.
 
+### Trusted KDP workflow reference
+
+The KDP workflow references were installed with Skillfish from
+`queelius/claude-anvil`: `kdp-publish` at
+`8b451755e4945502c24ee97e95f068728543f59d`, `kdp-audit` at
+`c79a117f55216b00004b95efdc01e2c6f365629a`, and `kdp-listing` at
+`6f891605d8f0e6484bd764136a81ed874e646680`. The installed copies are
+currently at `~/.codex/skills/kdp-{publish,audit,listing}` and contain only
+reviewed `SKILL.md` files; no executable scripts, extensions or MCP servers
+were installed with them.
+
+The systemd worker sets
+`EBOOK_FACTORY_ORCHESTRATOR_SKILL_PATHS` to the three explicit directories.
+The Pi adapter still passes `--no-skills` and then explicitly adds those paths
+only for the main orchestrator queue. Production child workers receive no
+skill path. This keeps global skill discovery, inherited prompts and arbitrary
+tools out of production execution.
+
+The reference is advisory, not an authorization boundary. It helps the main
+orchestrator explain and sequence KDP audit, listing, preparation, preview and
+owner-controlled submission, but the worker has no browser/filesystem tools.
+It must not claim to have run the referenced `/kdp-audit` or `/kdp-listing`
+skills, and it must not upload to KDP, change account/tax/bank settings, buy a
+proof, enroll in KDP Select, set pricing, or publish without a separate owner
+decision. The source skill's referenced sibling skills are not present in the
+installed copy; this is recorded as a capability gap rather than hidden
+scaffolding.
+
 Provider dashboard must list actual available models, auth status, last successful connection check, selected orchestration/drafting/review models, and configuration scope. Support subscription login/reconnect through Pi-supported flows, API key save/remove and custom endpoint/model setup. Custom URLs are explicit operator configuration, support local endpoints, and require transport/protocol choice and a real call test. Never forward credentials across redirect origins. Store secrets through Pi's credential mechanism with restricted file permissions, or an encrypted app vault with key outside DB; never return them from GET APIs. Model switching affects new attempts only.
 
 ## Usage: exact when observed, honest when unavailable

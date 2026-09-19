@@ -1,7 +1,7 @@
 import { fetchProtectedArtifact } from "./artifact-client.js";
-import { artifactFilename, artifactPresentation, conversationEmptyState, deriveStageStates, executionEventPresentation, executionTaskTree, formatArtifactSize, formatBriefLength, groupArtifact } from "./view-models.js";
+import { artifactFilename, artifactPresentation, conversationEmptyState, deriveStageStates, executionEventPresentation, executionTaskTree, formatArtifactSize, formatBriefLength, groupArtifact, kindlePreviewCheckpoint } from "./view-models.js";
 
-const state = { projects: [], selected: null, sections: [], reviews: [], artifacts: [], events: [], messages: [], execution: null, providers: [], catalog: null, eventCursor: 0, streamController: null, liveAssistant: null, replayingEvents: false, artifactUrls: [] };
+const state = { projects: [], selected: null, sections: [], reviews: [], artifacts: [], events: [], messages: [], execution: null, packageResult: null, providers: [], catalog: null, eventCursor: 0, streamController: null, liveAssistant: null, replayingEvents: false, artifactUrls: [] };
 const $ = (selector) => document.querySelector(selector);
 const ownerToken = () => sessionStorage.getItem("ebook-factory-owner-token") || "";
 const applyTheme = (theme) => { document.documentElement.dataset.theme = theme; $("#theme-label").textContent = theme === "dark" ? "Light surface" : "Night surface"; $("#theme-icon").textContent = theme === "dark" ? "○" : "●"; localStorage.setItem("ebook-factory-theme", theme); };
@@ -26,6 +26,7 @@ async function selectProject(project) {
   state.events = [];
   state.messages = [];
   state.execution = null;
+  state.packageResult = null;
   state.reviews = [];
   state.artifacts = [];
   $("#studio-project-label").textContent = `${project.title} · ${project.state}`;
@@ -221,7 +222,7 @@ function renderExecutionTree() {
     box.append(section);
   });
 }
-function stageStatusLabel(status) { return ({ complete: "Complete", current: "In progress", needs_review: "Needs review", waiting: "Waiting", blocked: "Blocked" })[status] || status; }
+function stageStatusLabel(status) { return ({ complete: "Complete", current: "In progress", needs_review: "Needs review", waiting: "Waiting", blocked: "Blocked", not_applicable: "Not applicable" })[status] || status; }
 function renderStageBoard() {
   const rail = $("#stage-rail");
   const summary = $("#stage-summary");
@@ -277,7 +278,7 @@ function renderTimelineEmpty() {
 }
 function applyEvent(event) {
   if (!state.selected || event.project_id !== state.selected.project_id || event.id <= state.eventCursor) return;
-  state.events.push(event); state.eventCursor = event.id; appendTimelineEvent(event); renderStageBoard();
+  state.events.push(event); state.eventCursor = event.id; appendTimelineEvent(event); renderStageBoard(); renderPackageCheckpoint();
   const payload = event.payload || {};
   if (event.kind === "orchestrator.turn.delta" && payload.delta) { if (!state.liveAssistant || state.liveAssistant.turnId !== payload.turn_id) { const element = document.createElement("div"); element.className = "message assistant streaming"; element.setAttribute("aria-live", "polite"); $("#messages").append(element); state.liveAssistant = { turnId: payload.turn_id, text: "", element }; } state.liveAssistant.text += payload.delta; state.liveAssistant.element.textContent = state.liveAssistant.text; }
   if (["orchestrator.turn.completed", "orchestrator.turn.failed"].includes(event.kind)) { state.liveAssistant = null; loadMessages().catch(() => {}); }
@@ -293,7 +294,7 @@ async function loadEvents() {
   const list = $("#events"); list.replaceChildren(); state.events = []; state.eventCursor = 0; state.replayingEvents = true;
   let events = [];
   do { events = await api(`/projects/${state.selected.project_id}/events?after=${state.eventCursor}&limit=100`); events.forEach(applyEvent); } while (events.length === 100);
-  state.replayingEvents = false; renderTimelineEmpty(); renderStageBoard(); renderBookOverview(); if (restartStream) startEventStream();
+  state.replayingEvents = false; renderTimelineEmpty(); renderStageBoard(); renderBookOverview(); renderPackageCheckpoint(); if (restartStream) startEventStream();
 }
 function parseSseBlock(block) { const data = block.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n"); return data ? JSON.parse(data) : null; }
 async function startEventStream() { const projectId = state.selected?.project_id; if (!projectId) return; const controller = new AbortController(); state.streamController = controller; while (!controller.signal.aborted && state.selected?.project_id === projectId) { try { const response = await fetch(`/projects/${projectId}/events/stream?after=${state.eventCursor}&follow=true`, { headers: { Authorization: `Bearer ${ownerToken()}` }, signal: controller.signal }); if (!response.ok) throw new Error(`event stream ${response.status}`); const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = ""; while (!controller.signal.aborted) { const { done, value } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const blocks = buffer.split("\n\n"); buffer = blocks.pop() || ""; blocks.forEach((block) => { try { const event = parseSseBlock(block); if (event) applyEvent(event); } catch { /* reconnect from the durable cursor */ } }); } } catch (error) { if (controller.signal.aborted) break; await new Promise((resolve) => setTimeout(resolve, 1000)); } } }
@@ -397,11 +398,83 @@ function createArtifactTile(artifact) {
   if (isReviewableImage) appendArtifactReview(item, artifact);
   return item;
 }
+function packageArtifactMime(filename) {
+  return ({ epub: "application/epub+zip", pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", md: "text/markdown" })[String(filename).split(".").pop().toLowerCase()] || "application/octet-stream";
+}
+function normalizedPackageArtifacts(packageResult) {
+  return (packageResult?.artifacts || []).map((artifact) => ({
+    ...artifact,
+    filename: artifact.filename || artifactFilename(artifact),
+    revision_id: artifact.revision_id || packageResult.revision_id,
+    relative_path: artifact.relative_path || `exports/${packageResult.revision_id}/${artifact.filename}`,
+    mime_type: artifact.mime_type || packageArtifactMime(artifact.filename),
+  }));
+}
+function previewField(labelText, control) {
+  const label = document.createElement("label"); label.textContent = labelText; label.append(control); return label;
+}
+function createPreviewReviewForm(epubArtifact, revisionId, checkpoint) {
+  const form = document.createElement("form"); form.className = "preview-review-form";
+  const surface = document.createElement("select");
+  [["kindle_previewer", "Kindle Previewer (desktop)"], ["kdp_online_previewer", "KDP Online Previewer"]].forEach(([value, label]) => { const option = document.createElement("option"); option.value = value; option.textContent = label; surface.append(option); });
+  surface.value = checkpoint.review?.payload?.surface || "kindle_previewer";
+  const version = document.createElement("input"); version.type = "text"; version.required = true; version.maxLength = 128; version.placeholder = "e.g. Kindle Previewer 3"; version.value = checkpoint.review?.payload?.tool_version || "";
+  const notes = document.createElement("textarea"); notes.rows = 3; notes.maxLength = 4000; notes.placeholder = "Record device, orientation, and any visible issue (required for issues found)."; notes.value = checkpoint.review?.payload?.notes || "";
+  const actions = document.createElement("div"); actions.className = "form-actions preview-review-actions";
+  const verified = document.createElement("button"); verified.type = "submit"; verified.className = "primary"; verified.textContent = "Record verified preview";
+  const issues = document.createElement("button"); issues.type = "button"; issues.className = "quiet"; issues.textContent = "Record issues found";
+  const status = document.createElement("p"); status.className = "muted preview-review-status"; status.setAttribute("role", "status"); status.setAttribute("aria-live", "polite");
+  const submit = async (decision) => {
+    if (!version.value.trim() || (decision === "issues_found" && !notes.value.trim())) { status.textContent = decision === "issues_found" ? "Add notes describing the preview issue before saving." : "Enter the preview tool/version before saving."; return; }
+    actions.querySelectorAll("button").forEach((button) => { button.disabled = true; }); status.textContent = "Saving the preview checkpoint…";
+    try {
+      await api(`/projects/${state.selected.project_id}/exports/${revisionId}/preview-review`, { method: "POST", body: JSON.stringify({ decision, surface: surface.value, tool_version: version.value.trim(), artifact_sha256: epubArtifact.sha256, notes: notes.value.trim() || null }) });
+      status.textContent = "Preview result recorded in the durable replay.";
+      await Promise.all([loadEvents(), loadExecution(), loadArtifacts()]);
+    } catch (error) { status.textContent = `Could not save preview result: ${error.message}`; actions.querySelectorAll("button").forEach((button) => { button.disabled = false; }); }
+  };
+  form.addEventListener("submit", (event) => { event.preventDefault(); submit("verified"); }); issues.addEventListener("click", () => submit("issues_found"));
+  actions.append(verified, issues); form.append(previewField("Preview surface", surface), previewField("Tool/version used", version), previewField("Notes", notes), actions, status);
+  return form;
+}
+function appendPreviewCheckpoint(box, epubArtifact, revisionId) {
+  if (!epubArtifact || !revisionId || !state.selected) return;
+  const checkpoint = kindlePreviewCheckpoint([epubArtifact], state.events);
+  const panel = document.createElement("section"); panel.className = "preview-review";
+  const heading = document.createElement("h4"); heading.textContent = "Kindle preview checkpoint";
+  const explanation = document.createElement("p"); explanation.className = "muted"; explanation.textContent = "Open the generated EPUB in Kindle Previewer or KDP Online Previewer, then record what you saw against this exact file. This is owner evidence, not Amazon acceptance.";
+  const hash = document.createElement("code"); hash.className = "preview-review-hash"; hash.textContent = `EPUB SHA-256 ${epubArtifact.sha256}`;
+  panel.append(heading, explanation, hash);
+  if (checkpoint.review) {
+    const previous = document.createElement("p"); previous.className = `preview-review-result preview-review-${checkpoint.status}`;
+    const payload = checkpoint.review.payload || {};
+    const surface = payload.surface === "kdp_online_previewer" ? "KDP Online Previewer" : "Kindle Previewer";
+    previous.textContent = `Last result: ${payload.decision === "verified" ? "Verified" : "Issues found"} in ${surface}${checkpoint.review.timestamp ? ` · ${new Date(checkpoint.review.timestamp).toLocaleString()}` : ""}.${payload.notes ? ` ${payload.notes}` : ""}`;
+    panel.append(previous);
+  }
+  panel.append(createPreviewReviewForm(epubArtifact, revisionId, checkpoint)); box.append(panel);
+}
 function renderExports(packageResult) {
-  const box = $("#exports"); box.replaceChildren();
+  const box = $("#exports"); box.replaceChildren(); state.packageResult = packageResult;
+  const artifacts = normalizedPackageArtifacts(packageResult);
   const heading = document.createElement("h4"); heading.textContent = `Export package · ${packageResult.title}`;
-  const status = document.createElement("p"); status.className = "muted export-status"; status.textContent = `${packageResult.package_state} · ${packageResult.artifacts.length} protected files. The same files are grouped in the Delivery package shelf above.`;
+  const status = document.createElement("p"); status.className = "muted export-status"; status.textContent = `${packageResult.package_state} · ${artifacts.length} protected files. The same files are grouped in the Delivery package shelf above.`;
   box.append(heading, status);
+  appendPreviewCheckpoint(box, artifacts.find((artifact) => artifact.filename === "book.epub"), packageResult.revision_id);
+}
+function renderPackageCheckpoint() {
+  const packageArtifacts = state.artifacts.filter((artifact) => String(artifact.relative_path || "").startsWith("exports/"));
+  if (packageArtifacts.length) {
+    const revisionId = packageArtifacts.find((artifact) => artifact.filename === "book.epub" || artifactFilename(artifact) === "book.epub")?.revision_id || packageArtifacts[0].revision_id;
+    renderExports({
+      revision_id: revisionId,
+      title: state.packageResult?.title || state.execution?.brief?.title || state.selected?.title || "Book",
+      package_state: state.packageResult?.package_state || "structurally_validated",
+      artifacts: packageArtifacts,
+    });
+  } else if (!state.packageResult?.artifacts?.length) {
+    $("#exports")?.replaceChildren();
+  }
 }
 function reviewStateLabel(state) { return ({ approved: "Approved", revision_requested: "Revision requested", pending: "Review pending" })[state] || "Review pending"; }
 function appendArtifactReview(item, artifact) {
@@ -459,10 +532,13 @@ async function loadArtifacts() {
   const box = $("#artifacts"); revokeArtifactUrls();
   try {
     state.artifacts = await api(`/projects/${state.selected.project_id}/artifacts`);
+    state.packageResult = state.artifacts.some((artifact) => String(artifact.relative_path || "").startsWith("exports/"))
+      ? { revision_id: state.artifacts.find((artifact) => String(artifact.relative_path || "").startsWith("exports/"))?.revision_id, title: state.execution?.brief?.title || state.selected.title, package_state: "structurally_validated" }
+      : null;
     renderArtifactGroups(box, state.artifacts, "No production artifacts loaded. Approve a brief to create the first package.");
-    renderStageBoard(); renderBookOverview();
+    renderStageBoard(); renderBookOverview(); renderPackageCheckpoint();
   } catch (error) {
-    state.artifacts = []; box.className = "artifact-empty"; box.textContent = `Artifacts unavailable: ${error.message}`; renderStageBoard();
+    state.artifacts = []; state.packageResult = null; box.className = "artifact-empty"; box.textContent = `Artifacts unavailable: ${error.message}`; renderStageBoard();
   }
 }
 async function loadReviews() { if (!state.selected) return; const reviews = await api(`/projects/${state.selected.project_id}/reviews`); state.reviews = reviews; const box = $("#reviews"); box.replaceChildren(); if (!reviews.length) { renderStageBoard(); return; } const heading = document.createElement("h4"); heading.textContent = "Review findings"; box.append(heading); reviews.forEach((finding) => { const item = document.createElement("p"); item.className = "review-finding"; item.textContent = `${finding.severity} · ${finding.criterion}: ${finding.evidence}${finding.resolution_revision_id ? " · resolved" : " · open"}`; box.append(item); }); renderStageBoard(); }

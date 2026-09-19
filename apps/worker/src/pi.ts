@@ -8,9 +8,13 @@ const RESOURCE_FLAGS = [
   "--no-session",
 ];
 
-export function buildPiArgs({ prompt, systemPrompt, model, thinking = "low" }) {
+export function buildPiArgs({ prompt, systemPrompt, model, thinking = "low", skillPaths = [] }) {
   if (!prompt) throw new Error("prompt is required");
   const args = [...RESOURCE_FLAGS];
+  for (const skillPath of skillPaths) {
+    if (typeof skillPath !== "string" || !skillPath.trim()) throw new Error("skill paths must be non-empty strings");
+    args.push("--skill", skillPath);
+  }
   args.push("--mode", "json", "--print", "--thinking", thinking);
   if (model) args.push("--model", model);
   if (systemPrompt) args.push("--system-prompt", systemPrompt);

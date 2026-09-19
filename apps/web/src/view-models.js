@@ -39,6 +39,7 @@ const EVENT_LABELS = {
   "art.generated": "Artwork generated",
   "review.finding.created": "Review finding recorded",
   "review.finding.resolved": "Review finding resolved",
+  "package.preview_reviewed": "Kindle preview recorded",
 };
 
 const TERMINAL_STATES = new Set(["blocked", "failed", "cancelled"]);
@@ -161,6 +162,12 @@ export function executionEventPresentation(event = {}) {
   if (event.kind === "review.finding.resolved") {
     return { label: "Review finding resolved", detail: "A later source revision was recorded as the resolution.", tone: "complete" };
   }
+  if (event.kind === "package.preview_reviewed") {
+    const decision = payload.decision === "verified" ? "verified" : "issues found";
+    const surface = payload.surface === "kdp_online_previewer" ? "KDP Online Previewer" : "Kindle Previewer";
+    const hash = payload.artifact_sha256 ? ` · EPUB ${String(payload.artifact_sha256).slice(0, 12)}…` : "";
+    return { label: "Kindle preview recorded", detail: `${surface} · ${decision}${hash}`, tone: payload.decision === "verified" ? "complete" : "review" };
+  }
   return { label: formatEventKind(event.kind), detail: "", tone: "neutral" };
 }
 
@@ -178,6 +185,20 @@ function sourceImages(artifacts) {
   return artifacts.filter((artifact) => artifact.mime_type?.startsWith("image/") && !String(artifact.relative_path || "").startsWith("exports/"));
 }
 
+export function kindlePreviewCheckpoint(artifacts = [], events = []) {
+  const epub = artifacts.find((artifact) => {
+    const filename = artifactFilename(artifact).toLowerCase();
+    return filename === "book.epub" && String(artifact.relative_path || "").startsWith("exports/");
+  }) || null;
+  if (!epub) return { status: "not_applicable", artifact: null, review: null };
+  const review = [...events]
+    .reverse()
+    .find((event) => event.kind === "package.preview_reviewed" && event.payload?.artifact_sha256 === epub.sha256) || null;
+  if (review?.payload?.decision === "verified") return { status: "verified", artifact: epub, review };
+  if (review?.payload?.decision === "issues_found") return { status: "issues_found", artifact: epub, review };
+  return { status: "pending", artifact: epub, review: null };
+}
+
 export function deriveStageStates(project, { sections = [], reviews = [], artifacts = [], events = [] } = {}) {
   const state = project?.state || "brainstorming";
   const terminal = TERMINAL_STATES.has(state);
@@ -188,6 +209,7 @@ export function deriveStageStates(project, { sections = [], reviews = [], artifa
   const pendingImages = images.some((artifact) => artifact.owner_review_state !== "approved");
   const exportsExist = artifacts.some((artifact) => String(artifact.relative_path || "").startsWith("exports/"));
   const openFindings = reviews.some((finding) => !finding.resolution_revision_id);
+  const preview = kindlePreviewCheckpoint(artifacts, events);
 
   const stages = [
     {
@@ -225,6 +247,28 @@ export function deriveStageStates(project, { sections = [], reviews = [], artifa
       label: "Export",
       status: exportsExist ? "complete" : state === "packaging" ? "current" : "waiting",
       detail: exportsExist ? "Validated package artifacts are available." : "Package generation follows review and art.",
+    },
+    {
+      key: "kindle_preview",
+      label: "Kindle preview",
+      status: preview.status === "not_applicable"
+        ? "not_applicable"
+        : preview.status === "verified"
+          ? "complete"
+          : preview.status === "issues_found"
+            ? "needs_review"
+            : exportsExist
+              ? "current"
+              : "waiting",
+      detail: preview.status === "not_applicable"
+        ? "No EPUB was requested for this package."
+        : preview.status === "verified"
+          ? "The owner recorded an external visual preview for this exact EPUB."
+          : preview.status === "issues_found"
+            ? "Preview issues are recorded; rebuild the package after correcting the source."
+            : exportsExist
+              ? "Open Kindle Previewer or KDP Online Previewer and record the result against this EPUB hash."
+              : "External Kindle preview follows an EPUB export.",
     },
     {
       key: "owner",

@@ -11,6 +11,7 @@ import {
   conversationEmptyState,
   formatArtifactSize,
   formatEventKind,
+  kindlePreviewCheckpoint,
 } from "../src/view-models.js";
 
 test("artifactPresentation turns storage paths into readable file cards", () => {
@@ -72,6 +73,7 @@ test("stage states expose the owner checkpoint from durable project data", () =>
       { key: "review", status: "needs_review" },
       { key: "art", status: "needs_review" },
       { key: "export", status: "complete" },
+      { key: "kindle_preview", status: "current" },
       { key: "owner", status: "needs_review" },
     ],
   );
@@ -102,6 +104,34 @@ test("execution event presentation explains reviews and agent lifecycle", () => 
     { label: "Owner reviewed artwork", detail: "Revision requested · Use a stronger scene.", tone: "review" },
   );
   assert.equal(executionEventPresentation({ kind: "agent.started", payload: { task_type: "art-revision" } }).label, "Agent started");
+  assert.deepEqual(
+    executionEventPresentation({
+      kind: "package.preview_reviewed",
+      payload: { decision: "verified", surface: "kindle_previewer", artifact_sha256: "a".repeat(64) },
+    }),
+    { label: "Kindle preview recorded", detail: "Kindle Previewer · verified · EPUB aaaaaaaaaaaa…", tone: "complete" },
+  );
+});
+
+test("kindle preview checkpoint follows the package hash and durable review event", () => {
+  const artifact = {
+    artifact_id: "epub-1",
+    revision_id: "revision-1",
+    relative_path: "exports/revision-1/book.epub",
+    filename: "book.epub",
+    mime_type: "application/epub+zip",
+    sha256: "b".repeat(64),
+  };
+  assert.equal(kindlePreviewCheckpoint([artifact], []).status, "pending");
+  assert.equal(
+    kindlePreviewCheckpoint([artifact], [{ id: 4, kind: "package.preview_reviewed", payload: { artifact_sha256: artifact.sha256, decision: "verified" } }]).status,
+    "verified",
+  );
+  assert.equal(
+    kindlePreviewCheckpoint([artifact], [{ id: 5, kind: "package.preview_reviewed", payload: { artifact_sha256: artifact.sha256, decision: "issues_found" } }]).status,
+    "issues_found",
+  );
+  assert.equal(kindlePreviewCheckpoint([{ relative_path: "exports/revision-1/book.pdf" }], []).status, "not_applicable");
 });
 
 test("brief length and artifact grouping keep metadata useful", () => {

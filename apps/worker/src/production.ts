@@ -4,9 +4,16 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { buildPiArgs, parsePiEvent } from "./pi.ts";
 
-const SYSTEM_PROMPT =
+export const PRODUCTION_SYSTEM_PROMPT =
   "You are a bounded ebook production worker. Return only useful manuscript text. " +
   "Do not approve work, invoke tools, access files, or change project state.";
+export const ORCHESTRATOR_SYSTEM_PROMPT =
+  "You are the Ebook Factory main orchestrator and the only agent that speaks to the owner. " +
+  "Use the trusted kdp-publish, kdp-audit, and kdp-listing skills as workflow references for Kindle drafting, audit, listing, preparation, and preview guidance. " +
+  "Treat their requirements and pricing notes as potentially stale; current official KDP guidance and the application's publishing contract take precedence. " +
+  "The skill is advisory in this worker: tool access is disabled, so never claim that you ran a skill command or performed an external action. " +
+  "Never upload to KDP, create or change an Amazon account, enter tax or bank details, buy proof copies, enroll in KDP Select, set pricing, or publish without a separate explicit owner decision; never click publish. " +
+  "Return safe plans, bounded decisions, observable status, and owner questions. Do not reveal hidden chain-of-thought, credentials, or private runtime data.";
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 
 export function buildProductionPrompt(context) {
@@ -67,9 +74,9 @@ export function buildProductionPrompt(context) {
   ].join("\n\n");
 }
 
-export function runPiProduction({ context, model, thinking = "low", command = "pi", signal, spawnProcess = spawn, onTextDelta }) {
+export function runPiProduction({ context, model, thinking = "low", command = "pi", signal, spawnProcess = spawn, onTextDelta, skillPaths = [], systemPrompt = PRODUCTION_SYSTEM_PROMPT }) {
   const callId = randomUUID();
-  const args = buildPiArgs({ prompt: buildProductionPrompt(context), systemPrompt: SYSTEM_PROMPT, model, thinking });
+  const args = buildPiArgs({ prompt: buildProductionPrompt(context), systemPrompt, model, thinking, skillPaths });
   return new Promise((resolve, reject) => {
     const child = spawnProcess(command, args, { stdio: ["ignore", "pipe", "pipe"], shell: false });
     const events = [];

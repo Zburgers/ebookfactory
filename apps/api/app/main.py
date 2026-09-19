@@ -683,6 +683,83 @@ class ExportRequest(BaseModel):
     art_artifact_id: UUID | None = None
 
 
+class PackagePreviewReviewRequest(BaseModel):
+    """Record an owner-run external Kindle preview against one immutable EPUB."""
+
+    decision: Literal["verified", "issues_found"]
+    surface: Literal["kindle_previewer", "kdp_online_previewer"]
+    tool_version: str = Field(min_length=1, max_length=128)
+    artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    notes: str | None = Field(default=None, max_length=4000)
+
+    @model_validator(mode="after")
+    def issues_require_notes(self) -> "PackagePreviewReviewRequest":
+        if self.decision == "issues_found" and not (self.notes or "").strip():
+            raise ValueError("notes are required when preview issues are found")
+        return self
+
+
+class PackagePreviewReviewResponse(BaseModel):
+    project_id: UUID
+    revision_id: UUID
+    artifact_id: UUID
+    artifact_sha256: str
+    byte_count: int
+    decision: Literal["verified", "issues_found"]
+    surface: Literal["kindle_previewer", "kdp_online_previewer"]
+    tool_version: str
+    notes: str | None
+    reviewed_at: datetime
+    package_state: Literal["kindle_preview_verified", "kindle_preview_issues_found"]
+
+
+def _verified_preview_artifact(
+    session: Any,
+    *,
+    root: Path,
+    project_id: UUID,
+    revision_id: UUID,
+) -> Artifact:
+    """Resolve and validate the EPUB before accepting external preview evidence."""
+
+    try:
+        scope = _resolve_manuscript_scope(session, project_id=project_id, revision_id=revision_id)
+        members = verify_export_members(session, root=root, revision_id=revision_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    epub_artifact = next(
+        (member for member in members if Path(member.relative_path).name == "book.epub"),
+        None,
+    )
+    if epub_artifact is None:
+        raise HTTPException(status_code=409, detail="this package does not contain an EPUB")
+    metadata = next(
+        (member for member in members if Path(member.relative_path).name == "metadata.json"),
+        None,
+    )
+    validation = next(
+        (member for member in members if Path(member.relative_path).name == "validation.json"),
+        None,
+    )
+    if metadata is None:
+        raise HTTPException(status_code=409, detail="package metadata is missing")
+    if validation is None:
+        raise HTTPException(status_code=409, detail="package validation evidence is missing")
+    try:
+        validation_value = json.loads(safe_artifact_path(root, validation.relative_path).read_text(encoding="utf-8"))
+        if not isinstance(validation_value, dict) or validation_value.get("package_state") != "structurally_validated":
+            raise ValueError("package is not structurally validated")
+        _verify_export_provenance(
+            safe_artifact_path(root, metadata.relative_path),
+            revision_id,
+            expected_revision_ids=scope.revision_ids,
+        )
+        _verify_source_artifact_review(session, safe_artifact_path(root, metadata.relative_path))
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return epub_artifact
+
+
 def _require_worker_token(settings: Settings, supplied: str) -> None:
     """Reject private callbacks unless a local operator configured the token."""
 
@@ -1353,6 +1430,67 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as exc:
             session.rollback()
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            session.close()
+
+    @application.post(
+        "/projects/{project_id}/exports/{revision_id}/preview-review",
+        response_model=PackagePreviewReviewResponse,
+        tags=["publishing"],
+    )
+    def review_export_preview(
+        project_id: UUID,
+        revision_id: UUID,
+        payload: PackagePreviewReviewRequest,
+    ) -> PackagePreviewReviewResponse:
+        """Persist a bounded external preview result for the exact exported EPUB."""
+
+        session = database.session()
+        try:
+            with session.begin():
+                epub_artifact = _verified_preview_artifact(
+                    session,
+                    root=resolved_settings.artifact_root,
+                    project_id=project_id,
+                    revision_id=revision_id,
+                )
+                if payload.artifact_sha256 != epub_artifact.sha256:
+                    raise HTTPException(status_code=409, detail="preview evidence is bound to a different EPUB hash")
+                reviewed_at = utc_now()
+                append_event(
+                    session,
+                    project_id=project_id,
+                    kind="package.preview_reviewed",
+                    payload={
+                        "revision_id": str(revision_id),
+                        "artifact_id": str(epub_artifact.id),
+                        "artifact_sha256": epub_artifact.sha256,
+                        "byte_count": epub_artifact.byte_count,
+                        "decision": payload.decision,
+                        "surface": payload.surface,
+                        "tool_version": payload.tool_version,
+                        "notes": (payload.notes or "")[:4_000] or None,
+                        "reviewed_at": reviewed_at.isoformat(),
+                        "amazon_acceptance": False,
+                    },
+                )
+                return PackagePreviewReviewResponse(
+                    project_id=project_id,
+                    revision_id=revision_id,
+                    artifact_id=epub_artifact.id,
+                    artifact_sha256=epub_artifact.sha256,
+                    byte_count=epub_artifact.byte_count,
+                    decision=payload.decision,
+                    surface=payload.surface,
+                    tool_version=payload.tool_version,
+                    notes=(payload.notes or "").strip() or None,
+                    reviewed_at=reviewed_at,
+                    package_state=(
+                        "kindle_preview_verified"
+                        if payload.decision == "verified"
+                        else "kindle_preview_issues_found"
+                    ),
+                )
         finally:
             session.close()
 

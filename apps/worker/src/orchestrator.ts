@@ -1,10 +1,10 @@
-import { runPiProduction } from "./production.ts";
+import { ORCHESTRATOR_SYSTEM_PROMPT, runPiProduction } from "./production.ts";
 import { requestJson } from "./runner.ts";
 
 const DEFAULT_POLL_MS = 1000;
 const DEFAULT_PROVIDER = "openai-codex";
 
-export function createOrchestratorExecutor({ baseUrl, token, workerId, provider = DEFAULT_PROVIDER, runProduction = runPiProduction }) {
+export function createOrchestratorExecutor({ baseUrl, token, workerId, provider = DEFAULT_PROVIDER, runProduction = runPiProduction, skillPaths = [] }) {
   if (!baseUrl || !token || !workerId) throw new Error("baseUrl, token, and workerId are required");
   return async (lease, { signal } = {}) => {
     const headers = { "x-worker-id": workerId, "x-generation": String(lease.generation) };
@@ -17,6 +17,8 @@ export function createOrchestratorExecutor({ baseUrl, token, workerId, provider 
     const result = await runProduction({
       context,
       model,
+      skillPaths,
+      systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
       signal,
       onTextDelta: (delta) => requestJson(baseUrl, token, "/private/orchestrator/delta", {
         method: "POST",
@@ -39,8 +41,8 @@ export function createOrchestratorExecutor({ baseUrl, token, workerId, provider 
   };
 }
 
-export async function runOrchestratorWorker({ baseUrl, token, workerId, provider, runProduction, pollMs = DEFAULT_POLL_MS, signal }) {
-  const execute = createOrchestratorExecutor({ baseUrl, token, workerId, provider, runProduction });
+export async function runOrchestratorWorker({ baseUrl, token, workerId, provider, runProduction, skillPaths = [], pollMs = DEFAULT_POLL_MS, signal }) {
+  const execute = createOrchestratorExecutor({ baseUrl, token, workerId, provider, runProduction, skillPaths });
   while (!signal?.aborted) {
     const lease = await requestJson(baseUrl, token, "/private/orchestrator/claim", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ worker_id: workerId }) });
     if (!lease) { await new Promise((resolve) => setTimeout(resolve, pollMs)); continue; }

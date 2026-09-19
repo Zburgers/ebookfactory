@@ -10,6 +10,7 @@ EnvironmentFile=-%h/.config/shipyard/worktrees/ebookfactory/codex-ebook-factory-
 EnvironmentFile=-%h/ebookfactory/.env
 Environment=EBOOK_FACTORY_API_URL=http://127.0.0.1:6969
 Environment=EBOOK_FACTORY_RUN_WORKER=1
+Environment=EBOOK_FACTORY_ORCHESTRATOR_SKILL_PATHS=%h/.codex/skills/kdp-publish:%h/.codex/skills/kdp-audit:%h/.codex/skills/kdp-listing
 Environment=PATH=%h/.npm-global/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStartPre=/usr/bin/sh -c 'for attempt in $(/usr/bin/seq 1 30); do /usr/bin/curl --fail --silent http://127.0.0.1:6969/health >/dev/null && exit 0; /usr/bin/sleep 1; done; exit 1'
 ExecStart=/usr/bin/node apps/worker/src/main.ts

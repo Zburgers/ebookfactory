@@ -10,7 +10,8 @@ delivery packages, selected delivery formats, and clean graceful service
 shutdown), `572517e` (authenticated artifact
 downloads/previews, compact artifact tiles and persisted production stages) and
 `104511c` (EPUB heading navigation, PDF metadata, current KDP cover-size
-preflight and manual package QA). These repair usability and package quality;
+preflight and manual package QA), plus the preview-evidence and trusted
+orchestrator-skill wiring packet. These repair usability and package evidence;
 they do not fabricate Kindle Previewer or owner-art decisions, so the score is
 unchanged.
 
@@ -19,7 +20,8 @@ dashboard and operational gates. The only skipped cases are 21 isolated
 PostgreSQL recovery tests without `EBOOK_FACTORY_TEST_DATABASE_URL`; no
 external gate is counted as passed from that omission. The remaining work is
 deliberately owner- or provider-gated: authenticated live visual QA and an art
-decision, Kindle Previewer/Online Previewer evidence for the exact final EPUB,
+decision, actual Kindle Previewer/Online Previewer evidence for the exact final
+EPUB (the dashboard can now record it),
 and provider-specific billing/quota evidence where the provider does not expose
 it locally.
 

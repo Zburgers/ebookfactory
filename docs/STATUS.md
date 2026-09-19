@@ -1,5 +1,15 @@
 # Build status
 
+2026-09-20: The final ebook handoff now has a durable Kindle preview
+checkpoint. The owner can record Kindle Previewer or KDP Online Previewer
+results against the exact immutable EPUB hash; the Studio journey and replay
+show the result, and mismatched/tampered packages are rejected. The pinned
+Skillfish `kdp-publish` reference is explicitly loaded only by the trusted main
+orchestrator, while production child workers retain `--no-skills`; its external
+KDP actions remain owner-gated. API/web/worker focused tests pass. The actual
+visual preview still requires the owner's Kindle Previewer/KDP access, so the
+score remains 89 until that external gate is evidenced.
+
 2026-09-19 20:42 UTC: Final reconciliation verification for the functional
 factory slice passed. `make verify` returned 102 API tests, 29 worker tests,
 10 web tests, migrations/contracts, service lifecycle, private-LAN/Tailscale

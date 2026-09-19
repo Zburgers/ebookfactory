@@ -55,6 +55,16 @@ agree with metadata.
 2. Reader review: render opening/middle/end, TOC, chapter breaks, long headings, lists, links, illustrations and citations. Verify no missing or repeated content. Retain redacted screenshots and tool/version output.
 3. Kindle review: use Kindle Previewer or KDP's preview surface with owner-authorized access. Record exact artifact hash and observed result. On Linux where Previewer is unavailable, retain status `kindle_preview_pending`; never relabel EPUBCheck as Kindle certification.
 
+The Studio's `Kindle preview` checkpoint records `verified` or `issues_found`
+through `POST /projects/{project_id}/exports/{revision_id}/preview-review`.
+The API accepts only an allowed preview surface, bounded tool/version text,
+bounded notes and the exact SHA-256 of `book.epub`; it re-verifies the
+immutable package and provenance before appending `package.preview_reviewed`.
+Replay and the journey rail show the result. A later package hash has no
+inherited result, and an issue remains attached to the reviewed package until
+the owner generates a new package. The checkpoint is owner evidence, not an
+Amazon acceptance or publication result.
+
 Package states: `generated`, `structurally_validated`, `kindle_preview_pending`, `kindle_preview_verified`, `owner_approved`. Do not claim Amazon acceptance before an actual acceptance result. KDP submission/publication remains a human action.
 
 Current KDP guidelines require disclosure of AI-generated text/images/translations. Track provenance so the owner can answer the publishing form accurately. Do not auto-submit disclosures or claim medical/legal accuracy from an AI reviewer.
