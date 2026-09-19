@@ -591,6 +591,7 @@ def test_artifact_owner_review_is_project_scoped_and_durable(tmp_path: Path) -> 
             json={"decision": "approve", "note": "Cover composition is readable."},
         )
         listed = client.get(f"/projects/{project_id}/artifacts")
+        listed_after_approval = client.get(f"/projects/{project_id}/artifacts")
         revision_requested = client.post(
             f"/projects/{project_id}/artifacts/{artifact_id}/review",
             json={"decision": "request_revision", "note": "Increase title contrast."},
@@ -600,6 +601,8 @@ def test_artifact_owner_review_is_project_scoped_and_durable(tmp_path: Path) -> 
     assert approved.json()["owner_review_state"] == "approved"
     assert approved.json()["owner_review_note"] == "Cover composition is readable."
     assert listed.status_code == 200
-    assert listed.json()[0]["owner_review_state"] == "pending"
+    assert listed.json()[0]["owner_review_state"] == "approved"
+    assert listed_after_approval.status_code == 200
+    assert listed_after_approval.json()[0]["owner_review_state"] == "approved"
     assert revision_requested.status_code == 200
     assert revision_requested.json()["owner_review_state"] == "revision_requested"

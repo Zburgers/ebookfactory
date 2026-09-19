@@ -1395,9 +1395,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     byte_count=artifact.byte_count,
                     sha256=artifact.sha256,
                     validation_state=artifact.validation_state,
-                    # The artifact feed is the pending-review queue; the review
-                    # response and durable record expose the decision itself.
-                    owner_review_state="pending",
+                    owner_review_state=artifact.owner_review_state,
                     owner_review_note=artifact.owner_review_note,
                     owner_reviewed_at=artifact.owner_reviewed_at,
                     download_path=f"/projects/{project_id}/artifacts/{artifact.id}/download",
