@@ -9,6 +9,15 @@ errors with process-group SIGTERM/SIGKILL escalation and eleven focused tests.
 H2/H4 are not claimed from this failed probe;
 evidence is at `evidence/P05/restart-live.md`.
 
+2026-09-19: A follow-up no-art nonfiction production recovered successfully
+through worker restart: duplicate approvals converged to one job, generation 1
+was reclaimed as generation 2, and the job completed with six manuscript
+sections and Luna usage lineage. A separate fiction run completed five
+sections; both profiles now have owner revisions preserving their parents.
+This improves H2/H4 evidence but does not claim browser-close or the full
+outline/research/review task graph. Evidence is at
+`evidence/P05/restart-success-live.md`.
+
 2026-09-19: Independent re-review of the page/artifact packet found six
 concrete gaps. Revision `6cfdb5d` repairs four: page-target manuscripts now
 enforce estimated 100–180 words/page bounds, downloads verify SHA-256 as well

@@ -6,6 +6,10 @@ from app.production import parse_production_sections, validate_production_text
 from app.main import BriefCreateRequest
 
 
+def _page_sections(count: int, body: str = "prose") -> str:
+    return "\n\n".join(f"## Section {index}\n\n{body}" for index in range(1, count + 1))
+
+
 def test_page_manuscript_is_split_into_ordered_sections() -> None:
     text = "# The Book\n\n## Opening\n\nFirst chapter prose.\n\n## Turning Point\n\nSecond chapter prose."
     sections = parse_production_sections(text, page_target=True)
@@ -22,13 +26,24 @@ def test_page_manuscript_rejects_placeholder_or_incomplete_output() -> None:
         validate_production_text("# Book\n\nThis has no chapter headings.", page_target=True)
 
 
+def test_page_manuscript_requires_eight_to_fifteen_sections() -> None:
+    with pytest.raises(ValueError, match="8 to 15 sections"):
+        validate_production_text(_page_sections(7), page_target=True)
+    with pytest.raises(ValueError, match="8 to 15 sections"):
+        validate_production_text(_page_sections(16), page_target=True)
+
+    validate_production_text(_page_sections(8), page_target=True)
+    validate_production_text(_page_sections(15), page_target=True)
+
+
 def test_page_manuscript_enforces_estimated_page_word_bounds() -> None:
+    short = _page_sections(8, "short text")
     with pytest.raises(ValueError, match="short for the requested page range"):
-        validate_production_text("## One\n\nshort\n\n## Two\n\ntext", page_target=True, target_pages={"minimum": 50, "maximum": 150})
-    enough = "word " * 5000
-    validate_production_text(f"## One\n\n{enough}\n\n## Two\n\n{enough}", page_target=True, target_pages={"minimum": 50, "maximum": 150})
+        validate_production_text(short, page_target=True, target_pages={"minimum": 50, "maximum": 150})
+    enough = "word " * 2500
+    validate_production_text(_page_sections(8, enough), page_target=True, target_pages={"minimum": 50, "maximum": 150})
     with pytest.raises(ValueError, match="long for the requested page range"):
-        validate_production_text(f"## One\n\n{'word ' * 28000}\n\n## Two\n\ntext", page_target=True, target_pages={"minimum": 50, "maximum": 150})
+        validate_production_text(_page_sections(8, 'word ' * 28000), page_target=True, target_pages={"minimum": 50, "maximum": 150})
 
 
 def test_word_target_keeps_single_document_compatibility() -> None:

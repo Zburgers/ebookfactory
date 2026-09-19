@@ -36,8 +36,10 @@ def validate_production_text(content: str, *, page_target: bool, target_pages: d
     lowered = content.lower()
     if any(marker in lowered for marker in ("todo:", "[insert", "lorem ipsum", "tbd", "write this later")):
         raise ValueError("production output contains a placeholder")
-    if page_target and len(parse_production_sections(content, page_target=True)) < 2:
-        raise ValueError("page-target production requires multiple manuscript sections")
+    if page_target:
+        section_count = len(parse_production_sections(content, page_target=True))
+        if not 8 <= section_count <= 15:
+            raise ValueError("page-target production requires 8 to 15 sections")
     if page_target and target_pages:
         word_count = len(re.findall(r"\b[\w'-]+\b", content))
         minimum_words = int(target_pages["minimum"]) * 100
