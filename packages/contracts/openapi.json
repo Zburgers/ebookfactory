@@ -2522,6 +2522,17 @@
             "title": "Accepted",
             "type": "boolean"
           },
+          "callback_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Callback Id"
+          },
           "duplicate": {
             "title": "Duplicate",
             "type": "boolean"

@@ -212,6 +212,7 @@ class TelegramUpdate(CreatedMixin, Base):
     chat_id: Mapped[int | None] = mapped_column(BigInteger)
     sender_id: Mapped[int | None] = mapped_column(BigInteger)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    processing_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
 

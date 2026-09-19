@@ -28,11 +28,14 @@ def get_next_update_id(session) -> int:
     return state.next_update_id if state else 0
 
 
-def _process_updates(database: Database, config: TelegramConfig, updates: list[dict]) -> None:
+def _process_updates(database: Database, bot: TelegramBotClient, config: TelegramConfig, updates: list[dict]) -> None:
     for update in updates:
         session = database.session()
         try:
-            process_update(session, config=config, update=update)
+            result = process_update(session, config=config, update=update)
+            callback_id = getattr(result, "callback_id", None)
+            if callback_id:
+                bot.answer_callback_query(callback_id=callback_id)
         finally:
             session.close()
 
@@ -76,7 +79,7 @@ def poll_once(database: Database, bot: TelegramBotClient, config: TelegramConfig
     finally:
         session.close()
     updates = bot.get_updates(offset=offset, timeout=timeout)
-    _process_updates(database, config, updates)
+    _process_updates(database, bot, config, updates)
     drain_outbox(database, bot)
     return len(updates)
 

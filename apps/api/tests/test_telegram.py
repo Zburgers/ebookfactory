@@ -6,9 +6,9 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from fastapi.testclient import TestClient
 
-from app.models import Base, Conversation, Message, OrchestratorTurn, Project, TelegramLink, TelegramOutbox, TelegramState, TelegramUpdate
+from app.models import Base, Conversation, Message, OrchestratorTurn, Project, TelegramLink, TelegramOutbox, TelegramState, TelegramUpdate, utc_now
 import app.telegram as telegram_module
-from app.telegram import TelegramConfig, link_configured_chats, link_chat, process_update, record_outbox_failure, record_outbox_sent
+from app.telegram import TelegramBotClient, TelegramConfig, link_configured_chats, link_chat, process_update, record_outbox_failure, record_outbox_sent
 from app.main import create_app
 from app.settings import Settings
 
@@ -137,14 +137,19 @@ def test_new_project_route_auto_links_configured_chat(tmp_path: Path) -> None:
     )
     bootstrap = create_engine(settings.database_url)
     Base.metadata.create_all(bootstrap)
+    with Session(bootstrap) as session:
+        first = _project(session, "First")
+        second = _project(session, "Second")
+        first_id = first.id
+        second_id = second.id
+        session.commit()
     bootstrap.dispose()
     with TestClient(create_app(settings), headers={"Authorization": "Bearer owner"}) as client:
-        response = client.post("/projects", json={"title": "New", "profile": "fiction", "language": "en"})
-        assert response.status_code == 201
-        project_id = response.json()["project_id"]
+        response = client.post(f"/projects/{first_id}/telegram/link", json={"chat_id": 10})
+        assert response.status_code == 200
         with client.app.state.database.session() as session:
-            link = session.scalar(select(TelegramLink).where(TelegramLink.project_id == UUID(project_id), TelegramLink.chat_id == 10))
-            assert link is not None
+            links = session.scalars(select(TelegramLink).where(TelegramLink.chat_id == 10)).all()
+            assert {link.project_id for link in links} == {first_id, second_id}
 
 
 def test_help_menu_and_allowlisted_callback_switch_are_durable_and_replay_safe(tmp_path: Path) -> None:
@@ -179,3 +184,51 @@ def test_help_callback_respects_chat_and_sender_allowlists(tmp_path: Path) -> No
         assert result.accepted is False
         assert result.reason == "sender_not_allowed"
         assert session.scalar(select(TelegramLink).where(TelegramLink.project_id == project.id)) is None
+
+
+def test_invalid_switch_is_acknowledged_and_does_not_block_later_updates(tmp_path: Path) -> None:
+    with _session(tmp_path) as session:
+        config = TelegramConfig(token_configured=True, allowed_chat_ids=frozenset({10}), allowed_sender_ids=frozenset({20}))
+        invalid = process_update(
+            session,
+            config=config,
+            update={"update_id": 20, "message": {"chat": {"id": 10}, "from": {"id": 20}, "text": f"/use {uuid4()}"}},
+        )
+
+        assert invalid.accepted is False
+        assert session.get(TelegramUpdate, 20).processed_at is not None
+        assert session.get(TelegramState, 1).next_update_id == 21
+
+
+def test_callback_answer_payload_is_bounded(tmp_path: Path, monkeypatch) -> None:
+    calls = []
+    client = TelegramBotClient("token")
+    monkeypatch.setattr(client, "_call", lambda method, payload: calls.append((method, payload)) or {})
+
+    client.answer_callback_query(callback_id="callback-1", text="Switched")
+
+    assert calls == [("answerCallbackQuery", {"callback_query_id": "callback-1", "text": "Switched"})]
+
+
+def test_inflight_update_claim_prevents_concurrent_rerouting(tmp_path: Path, monkeypatch) -> None:
+    with _session(tmp_path) as session:
+        config = TelegramConfig(token_configured=True, allowed_chat_ids=frozenset({10}), allowed_sender_ids=frozenset({20}))
+        session.add(TelegramUpdate(
+            update_id=30,
+            chat_id=10,
+            sender_id=20,
+            payload={"update_id": 30},
+            processing_at=utc_now(),
+        ))
+        session.commit()
+        monkeypatch.setattr(telegram_module, "_response_for_command", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("rerouted")))
+
+        result = process_update(
+            session,
+            config=config,
+            update={"update_id": 30, "message": {"chat": {"id": 10}, "from": {"id": 20}, "text": "hello"}},
+        )
+
+        assert result.accepted is True
+        assert result.duplicate is True
+        assert session.get(TelegramUpdate, 30).processed_at is None

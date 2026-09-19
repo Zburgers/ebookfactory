@@ -29,6 +29,7 @@ class FakeDatabase:
 class FakeBot:
     def __init__(self):
         self.sent = []
+        self.answered = []
 
     def send_message(self, *, chat_id, text):
         self.sent.append((chat_id, text))
@@ -36,6 +37,9 @@ class FakeBot:
 
     def get_updates(self, *, offset, timeout):
         return []
+
+    def answer_callback_query(self, *, callback_id):
+        self.answered.append(callback_id)
 
 
 def test_poll_once_uses_durable_offset_and_drains_outbox(monkeypatch):
@@ -55,3 +59,15 @@ def test_poll_once_uses_durable_offset_and_drains_outbox(monkeypatch):
     assert observed["update"]["update_id"] == 42
     assert observed["sent"] == ("out-1", "telegram-1")
     assert all(session.closed for session in database.sessions)
+
+
+def test_poll_once_answers_callback_queries(monkeypatch):
+    database = FakeDatabase()
+    bot = FakeBot()
+    monkeypatch.setattr(worker, "get_next_update_id", lambda session: 0)
+    monkeypatch.setattr(worker, "process_update", lambda session, config, update: type("Result", (), {"callback_id": "callback-1"})())
+    monkeypatch.setattr(bot, "get_updates", lambda offset, timeout: [{"update_id": 1, "callback_query": {"id": "callback-1"}}])
+
+    worker.poll_once(database, bot, worker.TelegramConfig(False, frozenset(), frozenset()), timeout=1)
+
+    assert bot.answered == ["callback-1"]

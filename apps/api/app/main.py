@@ -137,6 +137,7 @@ class TelegramUpdateResponse(BaseModel):
     duplicate: bool
     reason: str | None = None
     message_id: UUID | None = None
+    callback_id: str | None = None
 
 
 class ApprovalRequest(BaseModel):
@@ -894,6 +895,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session = database.session()
         try:
             link_chat(session, chat_id=payload.chat_id, project_id=project_id)
+            link_configured_chats(session, chat_ids={payload.chat_id})
         except ValueError as exc:
             session.rollback()
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -920,6 +922,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 duplicate=result.duplicate,
                 reason=result.reason,
                 message_id=result.message_id,
+                callback_id=result.callback_id,
             )
         except ValueError as exc:
             session.rollback()

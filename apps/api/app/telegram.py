@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -33,6 +33,7 @@ from app.jobs import approve_brief_and_enqueue
 MAX_UPDATE_BYTES = 128 * 1024
 MAX_MESSAGE_LENGTH = 4096
 MAX_OUTBOX_ATTEMPTS = 5
+UPDATE_CLAIM_TIMEOUT = timedelta(minutes=5)
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,7 @@ class TelegramUpdateResult:
     duplicate: bool = False
     reason: str | None = None
     message_id: UUID | None = None
+    callback_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -127,6 +129,7 @@ def _ack_update(session: Session, update_id: int, *, error: str | None = None) -
         if stored is None:
             return
         stored.processed_at = utc_now()
+        stored.processing_at = None
         stored.last_error = error
         state = _ensure_state(session)
         pending = session.scalar(
@@ -297,7 +300,7 @@ def _response_for_command(session: Session, *, chat_id: int, update_id: int, tex
         return _queue_response(session, chat_id=chat_id, update_id=update_id, text=text)
 
     if command == "/help":
-        projects = session.scalars(select(Project).where(Project.conversation_id.is_not(None)).order_by(Project.updated_at.desc()).limit(20)).all()
+        projects = session.scalars(select(Project).where(Project.conversation_id.is_not(None)).order_by(Project.updated_at.desc())).all()
         keyboard = {"inline_keyboard": [[{"text": project.title[:64], "callback_data": f"switch:{project.id}"}] for project in projects]}
         return _queue_response(
             session,
@@ -373,15 +376,23 @@ def process_update(session: Session, *, config: TelegramConfig, update: dict[str
     encoded_size = len(json.dumps(update, separators=(",", ":")).encode())
     if encoded_size > MAX_UPDATE_BYTES:
         raise ValueError("Telegram update exceeds size limit")
-    update_id, chat_id, sender_id, text, _ = _update_parts(update)
+    update_id, chat_id, sender_id, text, callback_id = _update_parts(update)
     with session.begin():
+        _ensure_state(session)
         existing = session.get(TelegramUpdate, update_id, with_for_update=True)
         duplicate = existing is not None
         if existing is not None and existing.processed_at is not None:
-            return TelegramUpdateResult(accepted=True, duplicate=True)
+            return TelegramUpdateResult(accepted=True, duplicate=True, callback_id=callback_id)
+        if existing is not None and existing.processing_at is not None:
+            processing_at = existing.processing_at
+            if processing_at.tzinfo is None:
+                processing_at = processing_at.replace(tzinfo=timezone.utc)
+            if utc_now() - processing_at < UPDATE_CLAIM_TIMEOUT:
+                return TelegramUpdateResult(accepted=True, duplicate=True, callback_id=callback_id)
         if existing is None:
             existing = TelegramUpdate(update_id=update_id, chat_id=chat_id, sender_id=sender_id, payload=update)
             session.add(existing)
+        existing.processing_at = utc_now()
         allowed = config.configured and chat_id in config.allowed_chat_ids and sender_id in config.allowed_sender_ids
         if not allowed:
             reason = "telegram_not_configured" if not config.configured else (
@@ -389,20 +400,21 @@ def process_update(session: Session, *, config: TelegramConfig, update: dict[str
             )
     if not allowed:
         _ack_update(session, update_id, error=reason)
-        return TelegramUpdateResult(accepted=False, duplicate=duplicate, reason=reason)
+        return TelegramUpdateResult(accepted=False, duplicate=duplicate, reason=reason, callback_id=callback_id)
     if chat_id is None or text is None:
         reason = "unsupported_update"
         _ack_update(session, update_id, error=reason)
-        return TelegramUpdateResult(accepted=False, duplicate=duplicate, reason=reason)
+        return TelegramUpdateResult(accepted=False, duplicate=duplicate, reason=reason, callback_id=callback_id)
     try:
         message_id = _response_for_command(session, chat_id=chat_id, update_id=update_id, text=text)
     except (ApprovalConflict, ValueError, KeyError) as exc:
         with session.begin():
             stored = session.get(TelegramUpdate, update_id)
             stored.last_error = str(exc)
-        return TelegramUpdateResult(accepted=False, duplicate=duplicate, reason=str(exc))
+        _ack_update(session, update_id, error=str(exc))
+        return TelegramUpdateResult(accepted=False, duplicate=duplicate, reason=str(exc), callback_id=callback_id)
     _ack_update(session, update_id)
-    return TelegramUpdateResult(accepted=True, duplicate=duplicate, message_id=message_id)
+    return TelegramUpdateResult(accepted=True, duplicate=duplicate, message_id=message_id, callback_id=callback_id)
 
 
 def claim_outbox(session: Session, *, now=None) -> OutboxDelivery | None:
@@ -487,3 +499,9 @@ class TelegramBotClient:
             payload["reply_markup"] = reply_markup
         result = self._call("sendMessage", payload)
         return str(result.get("message_id", "unknown"))
+
+    def answer_callback_query(self, *, callback_id: str, text: str | None = None) -> None:
+        payload: dict[str, Any] = {"callback_query_id": callback_id}
+        if text:
+            payload["text"] = text[:200]
+        self._call("answerCallbackQuery", payload)

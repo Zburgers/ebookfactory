@@ -458,6 +458,7 @@ export interface TelegramUpdateResponse {
   duplicate: boolean;
   reason?: string | null;
   message_id?: string | null;
+  callback_id?: string | null;
 }
 
 export interface UsageCallRequest {
