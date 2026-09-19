@@ -584,8 +584,9 @@ def _verify_existing_production_artifact(*, artifact: Artifact, path: Path, run_
         or hashlib.sha256(path.read_bytes()).hexdigest() != artifact.sha256
         or artifact.mime_type != mime_type or artifact.run_id != run_id
         or artifact.revision_id != revision_id
-        or (attempt_id is not None and artifact.attempt_id != attempt_id)
-        or (usage_call_id is not None and artifact.usage_call_id != usage_call_id)):
+        or (attempt_id is not None and (
+            artifact.attempt_id != attempt_id or artifact.usage_call_id != usage_call_id
+        ))):
         raise ValueError("existing artifact does not match production result")
 
 

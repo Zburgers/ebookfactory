@@ -88,6 +88,29 @@ def test_existing_production_artifact_usage_binding_is_rejected(tmp_path: Path) 
                 usage_call_id=expected_usage_call_id,
             )
 
+    artifact = Artifact(
+        run_id=run_id,
+        revision_id=revision_id,
+        attempt_id=expected_attempt_id,
+        usage_call_id=uuid4(),
+        relative_path="cover.png",
+        mime_type="image/png",
+        byte_count=len(content),
+        sha256=hashlib.sha256(content).hexdigest(),
+        validation_state="generated",
+    )
+    with pytest.raises(ValueError, match="does not match"):
+        _verify_existing_production_artifact(
+            artifact=artifact,
+            path=path,
+            run_id=run_id,
+            revision_id=revision_id,
+            content=content,
+            mime_type="image/png",
+            attempt_id=expected_attempt_id,
+            usage_call_id=None,
+        )
+
 
 def test_pending_artifact_commits_and_reconciles_after_crash(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'pending.db'}")
