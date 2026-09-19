@@ -70,6 +70,16 @@ export function runPiProduction({ context, model, command = "pi", signal, spawnP
       child.kill("SIGTERM");
       killTimer = setTimeout(() => child.kill("SIGKILL"), 250);
     };
+    const recordEvent = (line) => {
+      const event = parsePiEvent(line);
+      if (!event) return;
+      events.push(event);
+      if (event.delta && onTextDelta) {
+        deltaQueue = deltaQueue.then(() => onTextDelta(event.delta)).catch((error) => {
+          deltaError ||= error;
+        });
+      }
+    };
     const onStdout = (chunk) => {
       if (settled || signal?.aborted) return;
       const textChunk = chunk.toString();
@@ -77,15 +87,7 @@ export function runPiProduction({ context, model, command = "pi", signal, spawnP
       if (outputBytes > MAX_OUTPUT_BYTES) return rejectOutputLimit();
       stdout += textChunk;
       for (const line of stdout.split("\n").slice(0, -1)) {
-        const event = parsePiEvent(line);
-        if (event) {
-          events.push(event);
-          if (event.delta && onTextDelta) {
-            deltaQueue = deltaQueue.then(() => onTextDelta(event.delta)).catch((error) => {
-              deltaError ||= error;
-            });
-          }
-        }
+        recordEvent(line);
       }
       stdout = stdout.split("\n").at(-1) || "";
     };
@@ -94,6 +96,7 @@ export function runPiProduction({ context, model, command = "pi", signal, spawnP
     const onClose = async (code) => {
       if (settled || signal?.aborted) return settleReject(new Error("Pi production aborted"));
       if (code !== 0) return settleReject(new Error(`Pi production exited with code ${code}: ${stderr.replaceAll(/\s+/g, " ").trim()}`));
+      if (stdout.trim()) recordEvent(stdout.trim());
       await deltaQueue;
       if (deltaError) return settleReject(deltaError);
       const finalEvent = [...events].reverse().find((event) => event.type === "message_end" && event.text);

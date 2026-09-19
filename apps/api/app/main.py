@@ -698,6 +698,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     security = [{"OwnerBearer": []}]
                 if isinstance(operation, dict):
                     operation["security"] = security
+                    if path == "/providers/{provider}/connection-test" and method == "post":
+                        operation["x-ebook-factory-access-policy"] = "owner-bearer-and-loopback-or-worker-token"
+                        operation["description"] = "Requires owner bearer authentication and either a loopback client or the trusted worker token."
         application.openapi_schema = schema
         return schema
 
@@ -1336,6 +1339,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             path = safe_artifact_path(resolved_settings.artifact_root, artifact.relative_path)
             if not path.is_file() or path.stat().st_size != artifact.byte_count:
                 raise HTTPException(status_code=409, detail="artifact is not available")
+            if hashlib.sha256(path.read_bytes()).hexdigest() != artifact.sha256:
+                raise HTTPException(status_code=409, detail="artifact integrity check failed")
             return FileResponse(path, media_type=artifact.mime_type, filename=Path(artifact.relative_path).name)
         finally:
             session.close()

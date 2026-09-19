@@ -66,3 +66,4 @@ def test_openapi_declares_owner_and_worker_auth_contracts() -> None:
     assert schema["paths"]["/private/orchestrator/claim"]["post"]["security"] == [{"WorkerToken": []}]
     assert schema["paths"]["/usage/calls"]["post"]["security"] == [{"OwnerBearer": [], "WorkerToken": []}]
     assert schema["paths"]["/private/tools/{tool}"]["post"]["security"] == [{"ToolCapability": []}]
+    assert schema["paths"]["/providers/{provider}/connection-test"]["post"]["x-ebook-factory-access-policy"] == "owner-bearer-and-loopback-or-worker-token"

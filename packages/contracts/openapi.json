@@ -5087,6 +5087,7 @@
     },
     "/providers/{provider}/connection-test": {
       "post": {
+        "description": "Requires owner bearer authentication and either a loopback client or the trusted worker token.",
         "operationId": "test_provider_connection_providers__provider__connection_test_post",
         "parameters": [
           {
@@ -5136,7 +5137,8 @@
             "OwnerBearer": []
           }
         ],
-        "summary": "Test Provider Connection"
+        "summary": "Test Provider Connection",
+        "x-ebook-factory-access-policy": "owner-bearer-and-loopback-or-worker-token"
       }
     },
     "/quota": {

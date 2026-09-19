@@ -49,3 +49,19 @@ test("runPiProduction forwards deltas and uses the authoritative final message o
   assert.equal(result.text, "Hello world");
   assert.deepEqual(deltas, ["Hello ", "world"]);
 });
+
+test("runPiProduction flushes a final JSON event without a trailing newline", async () => {
+  const spawnProcess = () => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => {};
+    queueMicrotask(() => {
+      child.stdout.emit("data", Buffer.from(JSON.stringify({ type: "message_end", message: { role: "assistant", content: "final record" } })));
+      child.emit("close", 0);
+    });
+    return child;
+  };
+  const result = await runPiProduction({ context: { project_id: "p", messages: [] }, model: "test-model", spawnProcess });
+  assert.equal(result.text, "final record");
+});

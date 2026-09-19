@@ -30,7 +30,7 @@ class ParsedSection:
     content: str
 
 
-def validate_production_text(content: str, *, page_target: bool) -> None:
+def validate_production_text(content: str, *, page_target: bool, target_pages: dict | None = None) -> None:
     if not content.strip():
         raise ValueError("production output is empty")
     lowered = content.lower()
@@ -38,6 +38,14 @@ def validate_production_text(content: str, *, page_target: bool) -> None:
         raise ValueError("production output contains a placeholder")
     if page_target and len(parse_production_sections(content, page_target=True)) < 2:
         raise ValueError("page-target production requires multiple manuscript sections")
+    if page_target and target_pages:
+        word_count = len(re.findall(r"\b[\w'-]+\b", content))
+        minimum_words = int(target_pages["minimum"]) * 100
+        maximum_words = int(target_pages["maximum"]) * 180
+        if word_count < minimum_words:
+            raise ValueError("production output is too short for the requested page range")
+        if word_count > maximum_words:
+            raise ValueError("production output is too long for the requested page range")
 
 
 def parse_production_sections(content: str, *, page_target: bool) -> list[ParsedSection]:
@@ -95,7 +103,7 @@ def accept_production_output(
         brief = session.get(BriefRevision, run.approved_brief_id)
         structured_brief = brief.structured_brief if brief else {}
         page_target = bool(structured_brief.get("target_pages"))
-        validate_production_text(content, page_target=page_target)
+        validate_production_text(content, page_target=page_target, target_pages=structured_brief.get("target_pages"))
         parsed_sections = parse_production_sections(content, page_target=page_target)
         if provider:
             task.provider = provider

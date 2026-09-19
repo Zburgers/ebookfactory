@@ -22,6 +22,15 @@ def test_page_manuscript_rejects_placeholder_or_incomplete_output() -> None:
         validate_production_text("# Book\n\nThis has no chapter headings.", page_target=True)
 
 
+def test_page_manuscript_enforces_estimated_page_word_bounds() -> None:
+    with pytest.raises(ValueError, match="short for the requested page range"):
+        validate_production_text("## One\n\nshort\n\n## Two\n\ntext", page_target=True, target_pages={"minimum": 50, "maximum": 150})
+    enough = "word " * 5000
+    validate_production_text(f"## One\n\n{enough}\n\n## Two\n\n{enough}", page_target=True, target_pages={"minimum": 50, "maximum": 150})
+    with pytest.raises(ValueError, match="long for the requested page range"):
+        validate_production_text(f"## One\n\n{'word ' * 28000}\n\n## Two\n\ntext", page_target=True, target_pages={"minimum": 50, "maximum": 150})
+
+
 def test_word_target_keeps_single_document_compatibility() -> None:
     sections = parse_production_sections("A short existing manuscript.", page_target=False)
     assert len(sections) == 1

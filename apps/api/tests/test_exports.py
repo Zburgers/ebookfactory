@@ -154,3 +154,6 @@ def test_project_artifacts_includes_production_run_outputs(tmp_path: Path) -> No
     assert response.json()[0]["relative_path"] == f"{run_id}/cover.png"
     assert download.status_code == 200
     assert download.content == content
+    artifact_root.joinpath(str(run_id), "cover.png").write_bytes(b"tampered!")
+    tampered = client.get(response.json()[0]["download_path"])
+    assert tampered.status_code == 409
