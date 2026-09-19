@@ -6,6 +6,7 @@ port="${EBOOK_FACTORY_PORT:-6969}"
 
 tls_cert="${EBOOK_FACTORY_TLS_CERT:-}"
 tls_key="${EBOOK_FACTORY_TLS_KEY:-}"
+tailscale_address_value=""
 
 is_private_ipv4() {
   local address="$1"
@@ -14,20 +15,24 @@ is_private_ipv4() {
      "$address" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]{1,3}\.[0-9]{1,3}$ ]]
 }
 
-resolve_addresses() {
+resolve_tailscale_address() {
   local tailscale_bin="${TAILSCALE_BIN:-$(command -v tailscale || true)}"
+  [[ -n "$tailscale_bin" ]] || {
+    echo "tailscale is required for the production API bind" >&2
+    return 1
+  }
+  local address
+  address="$($tailscale_bin ip -4 | awk 'NF { print $1; exit }')"
+  [[ "$address" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || {
+    echo "tailscale has no usable IPv4 address; retrying through systemd" >&2
+    return 1
+  }
+  printf '%s\n' "$address"
+}
+
+resolve_addresses() {
   if [[ "${EBOOK_FACTORY_BIND_TO_TAILSCALE:-true}" == "true" ]]; then
-    [[ -n "$tailscale_bin" ]] || {
-      echo "tailscale is required for the production API bind" >&2
-      return 1
-    }
-    local tailscale_address
-    tailscale_address="$($tailscale_bin ip -4 | awk 'NF { print $1; exit }')"
-    [[ "$tailscale_address" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || {
-      echo "tailscale has no usable IPv4 address; retrying through systemd" >&2
-      return 1
-    }
-    printf '%s\n' "$tailscale_address"
+    printf '%s\n' "$tailscale_address_value"
   fi
 
   if [[ "${EBOOK_FACTORY_BIND_TO_LOOPBACK:-false}" == "true" ]]; then
@@ -72,6 +77,9 @@ if [[ "${EBOOK_FACTORY_BIND_TO_TAILSCALE:-true}" != "true" &&
       "${EBOOK_FACTORY_BIND_TO_PRIVATE:-true}" != "true" ]]; then
   addresses=("${EBOOK_FACTORY_HOST:-127.0.0.1}")
 else
+  if [[ "${EBOOK_FACTORY_BIND_TO_TAILSCALE:-true}" == "true" ]]; then
+    tailscale_address_value="$(resolve_tailscale_address)"
+  fi
   mapfile -t discovered_addresses < <(resolve_addresses)
   addresses=()
   for address in "${discovered_addresses[@]}"; do
@@ -91,15 +99,21 @@ if [[ "${EBOOK_FACTORY_DRY_RUN:-false}" == "true" ]]; then
   exit 0
 fi
 
-has_public_address=false
+use_tls_for_address() {
+  local address="$1"
+  [[ "$address" != "127.0.0.1" && "$address" != "::1" ]] || return 1
+  [[ "${EBOOK_FACTORY_PRIVATE_TLS:-false}" == "true" ]] && return 0
+  [[ -n "$tailscale_address_value" && "$address" == "$tailscale_address_value" ]]
+}
+
+tls_addresses=()
 for address in "${addresses[@]}"; do
-  if [[ "$address" != "127.0.0.1" && "$address" != "::1" ]]; then
-    has_public_address=true
-    break
+  if use_tls_for_address "$address"; then
+    tls_addresses+=("$address")
   fi
 done
 
-if [[ "$has_public_address" == "true" ]]; then
+if ((${#tls_addresses[@]} > 0)); then
   if [[ -n "$tls_cert" || -n "$tls_key" ]]; then
     [[ -n "$tls_cert" && -n "$tls_key" ]] || {
       echo "EBOOK_FACTORY_TLS_CERT and EBOOK_FACTORY_TLS_KEY must be configured together" >&2
@@ -116,8 +130,7 @@ if [[ "$has_public_address" == "true" ]]; then
     mkdir -p "$tls_dir"
     chmod 700 "$tls_dir"
     san="DNS:localhost"
-    for address in "${addresses[@]}"; do
-      [[ "$address" == "127.0.0.1" || "$address" == "::1" ]] && continue
+    for address in "${tls_addresses[@]}"; do
       san+="\nIP:$address"
     done
     cert_text=""
@@ -126,8 +139,7 @@ if [[ "$has_public_address" == "true" ]]; then
     fi
     needs_new_cert=false
     [[ -n "$cert_text" ]] || needs_new_cert=true
-    for address in "${addresses[@]}"; do
-      [[ "$address" == "127.0.0.1" || "$address" == "::1" ]] && continue
+    for address in "${tls_addresses[@]}"; do
       grep -Fq "IP Address:$address" <<<"$cert_text" || needs_new_cert=true
     done
     if [[ "$needs_new_cert" == "true" ]]; then
@@ -164,7 +176,7 @@ trap terminate TERM INT
 for address in "${addresses[@]}"; do
   (
     uvicorn_args=(app.main:app --host "$address" --port "$port")
-    if [[ "$address" != "127.0.0.1" && "$address" != "::1" ]]; then
+    if use_tls_for_address "$address"; then
       uvicorn_args+=(--ssl-certfile "$tls_cert" --ssl-keyfile "$tls_key")
     fi
     exec uv run --directory "$project_root/apps/api" uvicorn "${uvicorn_args[@]}"

@@ -1,6 +1,13 @@
 # Build status
 
-2026-09-19: Reconciliation QA found and repaired two journey defects. SQLite
+2026-09-19: The owned API transport now treats the private LAN as a trusted
+local deployment boundary: `192.168.29.14:6969` serves plain HTTP, eliminating
+the raw-IP CA failure reported by the owner. Tailscale remains HTTPS, and
+`EBOOK_FACTORY_PRIVATE_TLS=true` is available when a LAN certificate is later
+required. This is a transport usability choice, not a security score increase;
+the default Tailscale self-signed identity remains separately documented.
+
+2026-09-19: Revision `aa31599` reconciliation QA found and repaired two journey defects. SQLite
 production callbacks now normalize persisted naïve lease timestamps before UTC
 fence checks. Multi-section exports now follow the completed production task's
 dependency-fenced section revisions, retain all sections after an owner edit,

@@ -26,15 +26,21 @@ tailscale ip -4
 The service binds separately to the current Tailscale IPv4 and detected private
 LAN IPv4 addresses, restarts on failure, and is enabled under the user manager's
 `default.target`. This host already has user lingering enabled, so it starts
-after reboot without a login session. Non-loopback listeners use HTTPS: open
-`https://<tailscale-ip>:6969` or `https://<private-lan-ip>:6969`. The default
-local certificate is generated in `var/tls` and is private/self-signed, so a
-browser requires a one-time trust exception or an operator-provided certificate
-via `EBOOK_FACTORY_TLS_CERT` and `EBOOK_FACTORY_TLS_KEY`. The worker uses the
-loopback HTTP listener only. Use `make start`, `make restart` and `make stop`
-for lifecycle operations, and `journalctl --user -u ebook-factory-api.service`
-for logs. The separate `scripts/service.sh` wrapper remains a local test helper;
-it does not supervise worker or Podman jobs.
+after reboot without a login session. The private-LAN listener intentionally
+uses HTTP for this trusted local-network deployment: open
+`http://<private-lan-ip>:6969` (for this host,
+`http://192.168.29.14:6969`). This avoids an unusable CA warning for a raw
+private IP; anyone able to observe that LAN traffic can also observe its
+credentials, so use the Tailscale HTTPS path outside the trusted LAN:
+`https://<tailscale-ip>:6969`. Set `EBOOK_FACTORY_PRIVATE_TLS=true` to opt the
+private listener back into TLS. The default Tailscale certificate is generated
+in `var/tls` and is private/self-signed; use the Tailscale hostname with a
+trusted operator-provided certificate when authenticated server identity is
+required. The worker uses the loopback HTTP listener only. Use `make start`,
+`make restart` and `make stop` for lifecycle operations, and
+`journalctl --user -u ebook-factory-api.service` for logs. The separate
+`scripts/service.sh` wrapper remains a local test helper; it does not supervise
+worker or Podman jobs.
 
 Create a custom-format peer-authenticated backup:
 

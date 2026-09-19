@@ -77,6 +77,7 @@ substitute for that owner action.
   remain open.
 - Run the security/secret checks without reading or committing `.env`.
 - Restart only the owned API service after the final commit, then verify both
-  `https://192.168.29.14:6969/ready` and the local readiness endpoint.
+  `http://192.168.29.14:6969/ready` and the local readiness endpoint. Verify
+  the Tailscale listener separately with HTTPS when needed.
 - Append a lead ledger row with the final revision, evidence, result and
   unresolved owner decisions.

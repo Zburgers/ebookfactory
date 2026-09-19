@@ -7,10 +7,11 @@ external publishing/quota and owner-art-review gates remain.**
 
 The latest implementation adds live orchestrator delta relay, owner-boundary
 repairs, live non-persistent quota reads, a corrected page-target prompt, and a
-durable outline-to-production-to-review run with real Luna usage lineage.
-The default generated TLS certificate is encrypted transport without
-authenticated server identity; that remains a separate transport-trust finding
-from the H1 provider-call gate.
+durable outline-to-production-to-review run with real Luna usage lineage. By
+explicit local-network owner choice, the private-LAN listener is plain HTTP and
+the Tailscale listener remains HTTPS. A default generated Tailscale certificate
+still lacks authenticated server identity; that remains a separate
+transport-trust finding from the H1 provider-call gate.
 
 The reviewed export packet now binds image artifacts to their exact usage call
 and attempt, verifies canonical package members, and fails closed on legacy

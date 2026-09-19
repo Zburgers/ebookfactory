@@ -2,6 +2,7 @@
 
 - UTC: 2026-09-19T14:34:43Z
 - Candidate baseline: `bf8230bc9463af5740a123ed1f61d62f20e4f730`
+- Repaired revision: `aa31599`
 - Scope: isolated SQLite database and temporary artifact root; no live
   PostgreSQL rows, provider account, Telegram account, or publishing account
   was used.

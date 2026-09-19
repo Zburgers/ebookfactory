@@ -55,6 +55,7 @@ verify:
 	./scripts/tests/test_operations_entrypoints.sh
 	./scripts/tests/test_restore_check.sh
 	./scripts/tests/test_service_entrypoint.sh
+	./scripts/tests/test_serve_api_transport.sh
 	./scripts/tests/test_serve_api_tls.sh
 	./scripts/tests/test_systemd_service.sh
 	bash scripts/tests/test_acceptance_evidence.sh

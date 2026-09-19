@@ -1,9 +1,11 @@
 # Ebook Factory v2
 
-Status: DEPLOYED CANDIDATE / PARTIAL ACCEPTANCE. Revision `bf8230b` is the
+Status: DEPLOYED CANDIDATE / PARTIAL ACCEPTANCE. Revision `aa31599` is the
 reviewed v2 candidate used by the local services. The runtime, database, worker,
 dashboard and Telegram paths are provisioned; Kindle preview, live owner art
 approval and unsupported provider billing/quota sources remain external gates.
+For the trusted local network, open `http://192.168.29.14:6969`; the private-LAN
+listener intentionally does not require a certificate.
 
 A private ebook production system: discuss an idea with one orchestrator, approve a brief, let durable production jobs research/write/edit, review the manuscript and art, then download a publishing package. Fiction and nonfiction share a document core. Dashboard is primary; Telegram is a second channel to the same conversation.
 
