@@ -66,6 +66,7 @@ def test_poll_once_answers_callback_queries(monkeypatch):
     bot = FakeBot()
     monkeypatch.setattr(worker, "get_next_update_id", lambda session: 0)
     monkeypatch.setattr(worker, "process_update", lambda session, config, update: type("Result", (), {"callback_id": "callback-1"})())
+    monkeypatch.setattr(worker, "claim_outbox", lambda session: None)
     monkeypatch.setattr(bot, "get_updates", lambda offset, timeout: [{"update_id": 1, "callback_query": {"id": "callback-1"}}])
 
     worker.poll_once(database, bot, worker.TelegramConfig(False, frozenset(), frozenset()), timeout=1)
