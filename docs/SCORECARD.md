@@ -12,6 +12,11 @@ The default generated TLS certificate is encrypted transport without
 authenticated server identity; that remains a separate transport-trust finding
 from the H1 provider-call gate.
 
+The reviewed export packet now binds image artifacts to their exact usage call
+and attempt, verifies canonical package members, and fails closed on legacy
+placeholder provenance. A live persisted Codex image produced a 10-member
+package that passed EPUBCheck (`evidence/P08/art-export-live.md`).
+
 The outline-stage packet now adds a durable dependency-gated outline handoff,
 terminal dependency failure propagation, typed worker context contracts and
 separate outline/manuscript lineage. A real systemd run is recorded at
@@ -32,7 +37,7 @@ streaming, failure-recovery, Telegram, authentication, or concurrency findings.
 | Containment | 10/10 | Filesystem/secret isolation, enforced network/resource limits and label-scoped reconciliation all pass P04 evidence, including unrelated-container preservation |
 | Production | 16/16 | Real fiction/nonfiction output, durable outline-to-manuscript task lineage, fenced context/task lineage, owner revision, resolved review finding and a live pre-publication budget rejection are evidenced (`evidence/P05/real-production.md`, `evidence/P05/outline-stage-live.md`, `evidence/P05/budget-blocking.md`, `evidence/P05/budget-live.md`, `evidence/P06/dashboard-correction.md`) |
 | Dashboard | 10/10 | Real Chromium journey covered chat/brief/review, replayed events, section editing, ten export/download links, quota/settings visibility and accessibility checks (`evidence/P06/dashboard-browser-trace.md`) |
-| Usage | 8/12 | Real finalized production attribution, separate Codex-art call accounting is implemented and tested but not yet proven by a new live image call, plus idempotent totals, live redacted Codex subscription windows, explicit stale/unknown states and project-scoped call drill-down are evidenced; estimates and Copilot quota remain pending (`evidence/P07/live-usage.md`, `evidence/P07/quota-live.md`, `evidence/P07/quota-live-recheck.md`, `evidence/P07/usage-drilldown.md`) |
+| Usage | 8/12 | Real finalized production attribution, exact revision/attempt/artifact-to-call binding, separate Codex-art accounting, idempotent totals, live redacted Codex subscription windows, explicit stale/unknown states and project-scoped call drill-down are evidenced; estimates and Copilot quota remain pending (`evidence/P07/live-usage.md`, `evidence/P07/quota-live.md`, `evidence/P07/quota-live-recheck.md`, `evidence/P07/usage-drilldown.md`, `evidence/P08/art-export-live.md`) |
 | Publishing | 10/12 | Real EPUB/PDF/DOCX/Markdown package, cover, metadata, manifests and pinned EPUBCheck validation are evidenced; Kindle preview remains pending (`evidence/P08/publishing.md`) |
 | Art | 3/5 | Real subscription-backed image output is persisted and dashboard-visible; owner image revision/layout review remains open (`evidence/P08/art-live.md`) |
 | Telegram | 1/5 | Real `/help` receipt and outbox delivery are evidenced; Settings now provides authenticated project linking, but same-project free-text loop and real sender rejection remain open (`evidence/P09/telegram.md`) |
@@ -56,7 +61,8 @@ for the latest packets; earlier lead critiques remain recorded at `evidence/P00/
 `evidence/P03/critique.md`, `evidence/P04/critique.md`,
 `evidence/P05/critique.md`, `evidence/P06/critique.md` and
 `evidence/P07/critique.md`, `evidence/P08/critique.md` and
-`evidence/P05/production-seam-critique.md` and `evidence/P10/backup-critique.md`.
+`evidence/P05/production-seam-critique.md`, `evidence/P08/art-export-live.md`
+and `evidence/P10/backup-critique.md`.
 Final evidence/revision: integrated slice `e15ceb1` (with Telegram at `ba181f7`);
 application delivery remains partial because the listed external hard gates are
 not fabricated as passed. Latest worker revision: `0e691d0`; latest provider/service revision: `ca7d6bc`; latest restore revision: `5f9c918`.

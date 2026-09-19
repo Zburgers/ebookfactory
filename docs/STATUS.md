@@ -1,5 +1,14 @@
 # Build status
 
+2026-09-19: The art-backed export seam is now revision- and provenance-fenced.
+Exports select only eligible images from the requested revision, verify source
+bytes and layout, bind persisted art to its exact usage call and active attempt,
+reject alternate art on immutable package reuse, fail closed on legacy
+placeholder provenance, and verify every canonical package member on download.
+The live integrated image produced a 10-member package and EPUBCheck returned
+zero errors/warnings; evidence is at `evidence/P08/art-export-live.md`.
+
+
 2026-09-19: The sectioned production repair is now closed by red/green tests
 and an independent Luna-high GO review. Page-target approvals allocate 24
 turns for the outline, 8–15 section drafts, server assembly and review;
