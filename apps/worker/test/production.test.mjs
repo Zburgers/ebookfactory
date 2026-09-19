@@ -31,3 +31,13 @@ test("production prompt carries the durable outline result", () => {
   assert.match(prompt, /outline-task/);
   assert.match(prompt, /Explain the promise/);
 });
+
+test("review prompt consumes bounded persisted section revisions", () => {
+  const prompt = buildProductionPrompt({
+    project_id: "p", run_id: "r", task_type: "review", brief: { audience: "readers" }, budget: {},
+    review_sections: [{ section_id: "s1", revision_id: "rev1", heading: "Opening", content: "A persisted section." }],
+  });
+  assert.match(prompt, /editorial review/);
+  assert.match(prompt, /rev1/);
+  assert.match(prompt, /A persisted section/);
+});

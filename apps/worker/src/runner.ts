@@ -46,7 +46,11 @@ export function createProductionExecutor({
     const providers = await requestJson(baseUrl, token, "/private/worker/providers", { method: "GET", signal, requestTimeoutMs });
     const configured = providers?.find((entry) => entry?.provider === provider && entry?.scope === "app");
     if (configured?.protocol !== "pi-native") throw new Error(`provider ${provider} does not support pi-native execution`);
-    const model = configured?.orchestration_model || configured?.drafting_model || configured?.review_model;
+    const model = context.task_type === "review"
+      ? (configured?.review_model || configured?.drafting_model || configured?.orchestration_model)
+      : context.task_type === "outline"
+        ? (configured?.orchestration_model || configured?.drafting_model || configured?.review_model)
+        : (configured?.drafting_model || configured?.orchestration_model || configured?.review_model);
     if (!configured || !model) throw new Error(`configured provider ${provider} has no usable model`);
     const result = await runProduction({ context, model, thinking: "low", taskType: context.task_type, signal });
     if (!result?.text || !result.callId) {
@@ -57,7 +61,7 @@ export function createProductionExecutor({
     if ((result.provider && result.provider !== provider) || !modelMatches) {
       throw new Error("Pi production provider or model conflicted with saved configuration");
     }
-    if (context.task_type === "outline") {
+    if (context.task_type === "outline" || context.task_type === "review") {
       await requestJson(baseUrl, token, "/private/worker/task-result", {
         method: "POST",
         headers: { "content-type": "application/json" },

@@ -1,5 +1,6 @@
 import os
 import base64
+import json
 from collections.abc import Iterator
 from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
@@ -169,8 +170,17 @@ def test_terminal_outline_failure_fails_dependents_and_run(database_session: Ses
     assert production is not None and production.status == "failed"
     production_job = database_session.scalar(select(Job).where(Job.task_id == production.id))
     assert production_job is not None and production_job.state == "failed"
+    review = database_session.scalar(select(Task).where(Task.run_id == approval.run_id, Task.task_type == "review"))
+    assert review is not None and review.status == "failed"
+    review_job = database_session.scalar(select(Job).where(Job.task_id == review.id))
+    assert review_job is not None and review_job.state == "failed"
     assert database_session.scalar(select(ProductionRun.state).where(ProductionRun.id == approval.run_id)) == "failed"
     assert database_session.scalar(select(Project.state).where(Project.id == project_id)) == "failed"
+    failure_events = database_session.scalars(
+        select(Event).where(Event.run_id == approval.run_id, Event.kind == "job.failed").order_by(Event.id)
+    ).all()
+    assert {event.task_id for event in failure_events} >= {production.id, review.id}
+    assert any(event.task_id == review.id and event.data.get("dependency_task_id") == str(production.id) for event in failure_events)
     database_session.commit()
     assert claim_job(database_session, worker_id="after-outline-failure") is None
 
@@ -301,6 +311,21 @@ def test_api_project_brief_and_approval_boundary(database_session: Session) -> N
                 },
             },
         )
+        review_lease = client.post(
+            "/private/worker/claim",
+            json={"worker_id": "api-test-worker", "lease_seconds": 60},
+            headers={"X-Ebook-Worker-Token": "test-worker-token"},
+        ).json()
+        assert review_lease
+        review_response = client.post(
+            "/private/worker/task-result",
+            headers={"X-Ebook-Worker-Token": "test-worker-token"},
+            json={
+                "job_id": review_lease["job_id"], "worker_id": "api-test-worker", "generation": review_lease["generation"],
+                "result": "PASS: reviewed", "provider": "test-provider", "model": "review-model",
+                "call_id": str(uuid4()), "usage": {"input_tokens": 7, "output_tokens": 8},
+            },
+        )
         sse_response = client.get(f"/projects/{project_id}/events/stream?after=0")
 
     assert first.status_code == 200
@@ -310,6 +335,7 @@ def test_api_project_brief_and_approval_boundary(database_session: Session) -> N
     assert context_response.json()["brief"]["promise_or_premise"] == "A concise durable book"
     assert output_response.status_code == 200
     assert output_response.json()["artifact_id"]
+    assert review_response.status_code == 200
     database_session.expire_all()
     assert database_session.scalar(select(ProductionRun.state).where(ProductionRun.project_id == UUID(project_id))) == "draft_review"
     assert database_session.scalar(select(Project.state).where(Project.id == UUID(project_id))) == "draft_review"
@@ -327,13 +353,71 @@ def test_api_project_brief_and_approval_boundary(database_session: Session) -> N
     assert usage_call.ended_at is not None
     assert usage_call.started_at <= usage_call.ended_at
     usage_calls = database_session.scalars(select(UsageCall).where(UsageCall.project_id == UUID(project_id))).all()
-    assert {call.purpose for call in usage_calls} == {"outline", "production", "art"}
+    assert {call.purpose for call in usage_calls} == {"outline", "production", "review", "art"}
     art_usage = next(call for call in usage_calls if call.purpose == "art")
     assert art_usage.input_tokens == 12
     assert art_usage.output_tokens == 3
     assert sse_response.status_code == 200
     assert sse_response.headers["content-type"].startswith("text/event-stream")
     assert "run.approved" in sse_response.text
+
+
+def test_review_stage_is_ordered_bounded_and_finalizes_run(database_session: Session) -> None:
+    assert DATABASE_URL is not None
+    with TestClient(create_app(Settings(database_url=DATABASE_URL, worker_token="review-worker-token", owner_token="review-owner-token")), headers={"Authorization": "Bearer review-owner-token"}) as client:
+        project = client.post("/projects", json={"title": "Review graph", "profile": "nonfiction", "language": "en"}).json()
+        project_id = UUID(project["project_id"])
+        database_session.info["cleanup_project_ids"].add(project_id)
+        brief = client.post(f"/projects/{project_id}/briefs", json={"structured_brief": {"promise_or_premise": "A reviewed book"}}).json()
+        approval = client.post(f"/projects/{project_id}/briefs/{brief['brief_id']}/approve", json={"expected_content_hash": brief["content_hash"], "budget": {}}).json()
+        duplicate = client.post(f"/projects/{project_id}/briefs/{brief['brief_id']}/approve", json={"expected_content_hash": brief["content_hash"], "budget": {}}).json()
+        assert duplicate == approval
+        headers = {"X-Ebook-Worker-Token": "review-worker-token"}
+        def claim_for_run():
+            for _ in range(12):
+                lease = client.post("/private/worker/claim", json={"worker_id": "review-worker"}, headers=headers).json()
+                if lease is None:
+                    return None
+                if lease["run_id"] == approval["run_id"]:
+                    return lease
+                client.post("/private/worker/fail", headers=headers, json={"job_id": lease["job_id"], "worker_id": "review-worker", "generation": lease["generation"], "error_class": "test-unrelated-lease", "retryable": False})
+            raise AssertionError("target run was not claimable")
+
+        outline = claim_for_run()
+        assert outline
+        assert client.post("/private/worker/task-result", headers=headers, json={"job_id": outline["job_id"], "worker_id": "review-worker", "generation": outline["generation"], "result": "## Opening\nOutline", "provider": "test", "model": "test-model", "call_id": str(uuid4()), "usage": {"input_tokens": 1, "output_tokens": 1}}).status_code == 200
+        production = claim_for_run()
+        production_context = client.get(f"/private/worker/jobs/{production['job_id']}/context", headers={**headers, "X-Worker-ID": "review-worker", "X-Generation": str(production["generation"])}).json()
+        assert production_context["task_type"] == "production"
+        assert client.post("/private/worker/production-result", headers=headers, json={"job_id": production["job_id"], "worker_id": "review-worker", "generation": production["generation"], "content": "## Opening\nA durable section.", "provider": "test", "model": "test-model", "call_id": str(uuid4()), "usage": {"input_tokens": 2, "output_tokens": 3}}).status_code == 200
+        assert database_session.scalar(select(ProductionRun.state).where(ProductionRun.id == UUID(approval["run_id"]))) == "producing"
+        section = database_session.scalar(select(Section).where(Section.project_id == project_id))
+        assert section is not None
+        section.heading = "H" * 512
+        revision = database_session.scalar(
+            select(SectionRevision).where(SectionRevision.section_id == section.id).order_by(SectionRevision.revision.desc())
+        )
+        assert revision is not None
+        revision.content = "C" * (64 * 1024)
+        database_session.commit()
+        review = claim_for_run()
+        assert review
+        review_context = client.get(f"/private/worker/jobs/{review['job_id']}/context", headers={**headers, "X-Worker-ID": "review-worker", "X-Generation": str(review["generation"])}).json()
+        assert review_context["task_type"] == "review"
+        assert len(review_context["review_sections"][0]["heading"].encode()) == 512
+        assert len(review_context["review_sections"][0]["content"].encode()) == 48 * 1024 - 512
+        assert sum(len(section["heading"].encode()) + len(section["content"].encode()) for section in review_context["review_sections"]) <= 48 * 1024
+        assert len(review_context["review_sections"][0]["heading"]) < 64 * 1024
+        assert len(json.dumps(review_context, ensure_ascii=False, separators=(",", ":"), default=str).encode()) < 64 * 1024
+        assert client.post("/private/worker/task-result", headers=headers, json={"job_id": review["job_id"], "worker_id": "review-worker", "generation": review["generation"], "result": "PASS: reviewed", "provider": "test", "model": "review-model", "call_id": str(uuid4()), "usage": {"input_tokens": 8, "output_tokens": 9}}).status_code == 200
+    database_session.expire_all()
+    assert database_session.scalar(select(ProductionRun.state).where(ProductionRun.id == UUID(approval["run_id"]))) == "draft_review"
+    assert database_session.scalar(select(Project.state).where(Project.id == project_id)) == "draft_review"
+    tasks = database_session.scalars(select(Task).where(Task.run_id == UUID(approval["run_id"])).order_by(Task.created_at)).all()
+    assert [task.task_type for task in tasks] == ["outline", "production", "review"]
+    assert tasks[2].dependencies == [str(tasks[1].id)]
+    review_usage = database_session.scalar(select(UsageCall).where(UsageCall.task_id == tasks[2].id))
+    assert review_usage is not None and review_usage.purpose == "review" and review_usage.input_tokens == 8 and review_usage.output_tokens == 9
 
 
 def test_production_result_rolls_back_when_final_fence_rejects(database_session: Session, monkeypatch, tmp_path) -> None:

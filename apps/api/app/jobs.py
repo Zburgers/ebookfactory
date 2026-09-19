@@ -139,6 +139,17 @@ def approve_brief_and_enqueue(
         )
         session.add(task)
         session.flush()
+        review = Task(
+            run_id=run.id,
+            parent_task_id=task.id,
+            task_type="review",
+            dependencies=[str(task.id)],
+            input_revision_ids=[str(brief.id)],
+            result_refs={},
+            status="queued",
+        )
+        session.add(review)
+        session.flush()
         job = Job(
             task_id=task.id,
             job_type="production.start",
@@ -157,6 +168,14 @@ def approve_brief_and_enqueue(
         )
         session.add(outline_job)
         session.flush()
+        review_job = Job(
+            task_id=review.id,
+            job_type="review.start",
+            payload={"run_id": str(run.id), "task_id": str(review.id), "cancellation_epoch": run.cancellation_epoch},
+            dedupe_key=f"review:{brief.id}:{expected_content_hash}",
+            state="queued",
+        )
+        session.add(review_job)
         append_event(
             session,
             project_id=project_id,
@@ -372,9 +391,9 @@ def complete_job(
         attempt.finished_at = now
         attempt.lease_owner = None
         attempt.lease_until = None
-        if run.state == "producing" and task.task_type == "production":
+        if run.state == "producing" and task.task_type == "review":
             run.state = "draft_review"
-        if project is not None and project.state == "producing" and task.task_type == "production":
+        if project is not None and project.state == "producing" and task.task_type == "review":
             project.state = "draft_review"
         append_event(
             session,
@@ -408,33 +427,41 @@ def complete_task_result(
 
 
 def _fail_dependent_tasks(session: Session, *, failed_task: Task, run: ProductionRun, error_class: str) -> None:
-    """Propagate a terminal task failure through the small durable task graph."""
+    """Propagate a terminal task failure through every queued descendant."""
 
-    dependent_tasks = session.scalars(select(Task).where(Task.run_id == run.id)).all()
-    for dependent in dependent_tasks:
-        if str(failed_task.id) not in (dependent.dependencies or []):
-            continue
-        if dependent.status in {"succeeded", "failed", "cancelled"}:
-            continue
-        dependent.status = "failed"
-        dependent_job = session.scalar(select(Job).where(Job.task_id == dependent.id).with_for_update())
-        if dependent_job is not None and dependent_job.state not in {"succeeded", "failed", "cancelled"}:
-            dependent_job.state = "failed"
-            dependent_job.error_class = f"dependency_failed:{error_class}"[:128]
-            dependent_job.lease_owner = None
-            dependent_job.lease_until = None
-        append_event(
-            session,
-            project_id=run.project_id,
-            run_id=run.id,
-            task_id=dependent.id,
-            kind="job.failed",
-            payload={
-                "job_id": str(dependent_job.id) if dependent_job is not None else None,
-                "error_class": "dependency_failed",
-                "dependency_task_id": str(failed_task.id),
-            },
-        )
+    tasks = session.scalars(select(Task).where(Task.run_id == run.id)).all()
+    failed_ids = {str(failed_task.id)}
+    pending = [failed_task.id]
+    while pending:
+        dependency_id = str(pending.pop(0))
+        for dependent in tasks:
+            if dependency_id not in (dependent.dependencies or []) or str(dependent.id) in failed_ids:
+                continue
+            if dependent.status in {"succeeded", "failed", "cancelled"}:
+                failed_ids.add(str(dependent.id))
+                pending.append(dependent.id)
+                continue
+            dependent.status = "failed"
+            failed_ids.add(str(dependent.id))
+            pending.append(dependent.id)
+            dependent_job = session.scalar(select(Job).where(Job.task_id == dependent.id).with_for_update())
+            if dependent_job is not None and dependent_job.state not in {"succeeded", "failed", "cancelled"}:
+                dependent_job.state = "failed"
+                dependent_job.error_class = f"dependency_failed:{error_class}"[:128]
+                dependent_job.lease_owner = None
+                dependent_job.lease_until = None
+            append_event(
+                session,
+                project_id=run.project_id,
+                run_id=run.id,
+                task_id=dependent.id,
+                kind="job.failed",
+                payload={
+                    "job_id": str(dependent_job.id) if dependent_job is not None else None,
+                    "error_class": "dependency_failed",
+                    "dependency_task_id": dependency_id,
+                },
+            )
 
 
 def fail_job(

@@ -66,7 +66,7 @@ async function loadUsage() {
   } catch (error) { summary.textContent = error.message; }
 }
 
-document.querySelectorAll(".nav-button").forEach((button) => button.addEventListener("click", () => { document.querySelectorAll(".nav-button").forEach((other) => other.classList.toggle("active", other === button)); document.querySelectorAll(".view").forEach((view) => view.classList.toggle("active", view.id === `${button.dataset.view}-view`)); }));
+document.querySelectorAll(".nav-button").forEach((button) => button.addEventListener("click", () => { document.querySelectorAll(".nav-button").forEach((other) => other.classList.toggle("active", other === button)); document.querySelectorAll(".view").forEach((view) => view.classList.toggle("active", view.id === `${button.dataset.view}-view`)); if (button.dataset.view === "usage") loadUsage().catch((error) => { $("#usage-summary").textContent = error.message; }); }));
 $("#new-project-button").addEventListener("click", () => $("#project-form").classList.toggle("hidden"));
 document.querySelectorAll("[data-cancel]").forEach((button) => button.addEventListener("click", () => $(`#${button.dataset.cancel}`).classList.add("hidden")));
 $("#project-form").addEventListener("submit", async (event) => { event.preventDefault(); try { const form = new FormData(event.target); const project = await api("/projects", { method: "POST", body: JSON.stringify(Object.fromEntries(form)) }); event.target.reset(); event.target.classList.add("hidden"); await loadProjects(); await selectProject(project); } catch (error) { showError("#project-form-error", error); } });

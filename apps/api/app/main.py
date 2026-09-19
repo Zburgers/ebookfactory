@@ -179,6 +179,20 @@ class WorkerOutlineContext(BaseModel):
     result: str
 
 
+class WorkerReviewSection(BaseModel):
+    section_id: UUID
+    revision_id: UUID
+    heading: str
+    content: str
+
+
+# Keep review material well below the worker's 64 KiB context-response limit.
+# The remaining 16 KiB covers the response envelope, brief/budget, and JSON
+# escaping overhead; headings and bodies both consume this budget.
+WORKER_CONTEXT_LIMIT_BYTES = 64 * 1024
+REVIEW_SECTION_BUDGET_BYTES = 48 * 1024
+
+
 class WorkerJobContextResponse(BaseModel):
     project_id: UUID
     run_id: UUID
@@ -191,6 +205,7 @@ class WorkerJobContextResponse(BaseModel):
     brief: dict[str, Any]
     budget: dict[str, Any]
     outline: WorkerOutlineContext | None = None
+    review_sections: list[WorkerReviewSection] = Field(default_factory=list)
 
 
 class HeartbeatRequest(WorkerMutationRequest):
@@ -538,6 +553,10 @@ class TaskResultRequest(WorkerMutationRequest):
     call_id: UUID | None = None
     provider_request_id: str | None = Field(default=None, max_length=255)
     usage: ProductionUsageRequest | None = None
+
+
+class TaskResultResponse(BaseModel):
+    accepted: bool
 
 
 class ProductionOutputResponse(BaseModel):
@@ -1837,7 +1856,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             job, task, run, project, brief = row
             if run.state == "cancelled":
                 raise HTTPException(status_code=409, detail="run is cancelled")
-            return {
+            review_sections: list[dict[str, Any]] = []
+            if task.task_type == "review":
+                section_rows = session.execute(
+                    select(Section, SectionRevision)
+                    .join(SectionRevision, SectionRevision.section_id == Section.id)
+                    .where(Section.project_id == project.id)
+                    .order_by(Section.order_no, SectionRevision.revision.desc())
+                ).all()
+                latest_by_section: dict[UUID, tuple[Section, SectionRevision]] = {}
+                total_bytes = 0
+                for section, revision in section_rows:
+                    if section.id in latest_by_section:
+                        continue
+                    remaining = REVIEW_SECTION_BUDGET_BYTES - total_bytes
+                    if remaining <= 0:
+                        break
+                    heading = section.heading.encode()[:remaining].decode("utf-8", errors="ignore")
+                    total_bytes += len(heading.encode())
+                    remaining = REVIEW_SECTION_BUDGET_BYTES - total_bytes
+                    content = revision.content.encode()[:max(remaining, 0)].decode("utf-8", errors="ignore")
+                    review_sections.append({
+                        "section_id": section.id,
+                        "revision_id": revision.id,
+                        "heading": heading,
+                        "content": content,
+                    })
+                    total_bytes += len(content.encode())
+                    latest_by_section[section.id] = (section, revision)
+            response = {
                 "project_id": project.id,
                 "run_id": run.id,
                 "task_id": task.id,
@@ -1855,15 +1902,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     and parent.status == "succeeded"
                     else None
                 ),
+                "review_sections": review_sections,
             }
+            # Assert the actual serialized response remains inside the worker
+            # contract even when the persisted brief/budget contains JSON.
+            if len(json.dumps(response, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")) >= WORKER_CONTEXT_LIMIT_BYTES:
+                raise HTTPException(status_code=413, detail="worker context exceeds 64 KiB limit")
+            return response
         finally:
             session.close()
 
-    @application.post("/private/worker/task-result", tags=["private-worker"])
+    @application.post("/private/worker/task-result", response_model=TaskResultResponse, tags=["private-worker"])
     def worker_task_result(
         payload: TaskResultRequest,
         x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token"),
-    ) -> dict[str, bool]:
+    ) -> TaskResultResponse:
         _require_worker_token(resolved_settings, x_ebook_worker_token)
         session = database.session()
         try:
@@ -1908,7 +1961,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     result_refs={"result": payload.result, "provider": payload.provider, "model": payload.model, **({"usage_call_id": usage_call_id} if usage_call_id else {})},
                     manage_transaction=False,
                 )
-            return {"accepted": True}
+            return TaskResultResponse(accepted=True)
         except (StaleLease, CancellationRejected, ValueError) as exc:
             session.rollback()
             raise HTTPException(status_code=409, detail=str(exc)) from exc

@@ -26,6 +26,14 @@ export function buildProductionPrompt(context) {
       JSON.stringify({ project_id: context.project_id, run_id: context.run_id, brief: context.brief, budget: context.budget }),
     ].join("\n\n");
   }
+  if (context.task_type === "review") {
+    return [
+      "Perform a bounded editorial review of the persisted manuscript sections.",
+      "Return only a concise review report with PASS or NEEDS_REVISION, concrete findings, and actionable corrections.",
+      "Do not rewrite the manuscript, invoke tools, access files, or change project state.",
+      JSON.stringify({ project_id: context.project_id, run_id: context.run_id, brief: context.brief, review_sections: context.review_sections }),
+    ].join("\n\n");
+  }
   const pages = context.brief.target_pages;
   const pageInstruction = pages
     ? `Target ${pages.minimum}-${pages.maximum} pages, using a bounded estimate of 100-180 words per page (${(pages.minimum * 100).toLocaleString()}-${(pages.maximum * 180).toLocaleString()} words). Write an 8-15 sectioned manuscript with one ## heading per section.`

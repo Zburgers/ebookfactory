@@ -2273,6 +2273,19 @@
         "title": "TaskResultRequest",
         "type": "object"
       },
+      "TaskResultResponse": {
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accepted"
+        ],
+        "title": "TaskResultResponse",
+        "type": "object"
+      },
       "TelegramLinkRequest": {
         "properties": {
           "chat_id": {
@@ -2663,6 +2676,13 @@
             "title": "Project Id",
             "type": "string"
           },
+          "review_sections": {
+            "items": {
+              "$ref": "#/components/schemas/WorkerReviewSection"
+            },
+            "title": "Review Sections",
+            "type": "array"
+          },
           "run_id": {
             "format": "uuid",
             "title": "Run Id",
@@ -2758,6 +2778,36 @@
           "result"
         ],
         "title": "WorkerOutlineContext",
+        "type": "object"
+      },
+      "WorkerReviewSection": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "heading": {
+            "title": "Heading",
+            "type": "string"
+          },
+          "revision_id": {
+            "format": "uuid",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "section_id": {
+            "format": "uuid",
+            "title": "Section Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "section_id",
+          "revision_id",
+          "heading",
+          "content"
+        ],
+        "title": "WorkerReviewSection",
         "type": "object"
       }
     },
@@ -4125,11 +4175,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "boolean"
-                  },
-                  "title": "Response Worker Task Result Private Worker Task Result Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/TaskResultResponse"
                 }
               }
             },

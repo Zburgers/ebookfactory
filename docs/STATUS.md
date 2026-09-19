@@ -1,5 +1,21 @@
 # Build status
 
+2026-09-19: The editorial graph now includes a durable review task after
+production, with role-specific configured models, bounded persisted section
+context, typed task-result responses, and transitive dependency failure events.
+A real no-art systemd/PostgreSQL/provider run completed
+`outline=succeeded -> production=succeeded -> review=succeeded` and persisted
+review usage and a manuscript artifact at `evidence/P05/review-stage-live.md`.
+A separate art-inclusive probe is retained as negative evidence at
+`evidence/P05/review-stage-art-timeout.md`; the long-book and full research
+acceptance gate remain open.
+
+The live quota adapter was rechecked after the service restart: two fresh
+authenticated calls returned new fetch timestamps from `codexctl status`, with
+the PostgreSQL `quota_snapshots` row count unchanged at 2. Evidence is at
+`evidence/P07/quota-live-recheck.md`; these values are intentionally not
+durable book state.
+
 2026-09-19: The durable production path now enqueues an outline task before
 the manuscript task. The production task is dependency-gated, receives the
 persisted outline through the fenced worker context, and records outline and

@@ -408,6 +408,10 @@ export interface TaskResultRequest {
   usage?: ProductionUsageRequest | null;
 }
 
+export interface TaskResultResponse {
+  accepted: boolean;
+}
+
 export interface TelegramLinkRequest {
   chat_id: number;
 }
@@ -476,6 +480,7 @@ export interface WorkerJobContextResponse {
   brief: Record<string, unknown>;
   budget: Record<string, unknown>;
   outline?: WorkerOutlineContext | null;
+  review_sections?: Array<WorkerReviewSection>;
 }
 
 export interface WorkerLeaseResponse {
@@ -491,4 +496,11 @@ export interface WorkerLeaseResponse {
 export interface WorkerOutlineContext {
   task_id: string;
   result: string;
+}
+
+export interface WorkerReviewSection {
+  section_id: string;
+  revision_id: string;
+  heading: string;
+  content: string;
 }
