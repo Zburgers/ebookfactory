@@ -48,7 +48,7 @@ def test_openai_compatible_connection_test_uses_saved_metadata_and_redacts_secre
         database_url = f"sqlite:///{tmp_path / 'providers.db'}"
         Base.metadata.create_all(create_engine(database_url))
         monkeypatch.setenv("LOCAL_PROVIDER_SECRET", "super-secret-value")
-        client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test")))
+        client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test", owner_token="owner")), headers={"Authorization": "Bearer owner"})
         endpoint = f"http://127.0.0.1:{server.server_port}/v1"
         monkeypatch.setenv("EBOOK_FACTORY_PROVIDER_ALLOWED_ORIGINS", f"http://127.0.0.1:{server.server_port}")
         saved = client.put(
@@ -95,7 +95,7 @@ def test_openai_compatible_connection_test_uses_saved_metadata_and_redacts_secre
 def test_connection_test_rejects_unsupported_protocol_and_private_endpoint_without_allowlist(tmp_path, monkeypatch) -> None:
     database_url = f"sqlite:///{tmp_path / 'providers-invalid.db'}"
     Base.metadata.create_all(create_engine(database_url))
-    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test")))
+    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test", owner_token="owner")), headers={"Authorization": "Bearer owner"})
 
     assert client.put("/providers/local", json={"endpoint": "http://127.0.0.1:1", "protocol": "pi-native"}).status_code == 200
     unsupported = client.post(
@@ -140,7 +140,7 @@ def test_health_json_connection_test_uses_get_and_redacts_response_body(tmp_path
         database_url = f"sqlite:///{tmp_path / 'health-provider.db'}"
         Base.metadata.create_all(create_engine(database_url))
         monkeypatch.setenv("HEALTH_SECRET", "health-secret")
-        client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test")))
+        client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test", owner_token="owner")), headers={"Authorization": "Bearer owner"})
         endpoint = f"http://127.0.0.1:{server.server_port}/health"
         monkeypatch.setenv("EBOOK_FACTORY_PROVIDER_ALLOWED_ORIGINS", f"http://127.0.0.1:{server.server_port}")
         assert client.put(
@@ -172,7 +172,7 @@ def test_health_json_connection_test_uses_get_and_redacts_response_body(tmp_path
 def test_private_worker_provider_metadata_requires_token_and_excludes_secrets(tmp_path) -> None:
     database_url = f"sqlite:///{tmp_path / 'worker-providers.db'}"
     Base.metadata.create_all(create_engine(database_url))
-    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test")))
+    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test", owner_token="owner")), headers={"Authorization": "Bearer owner"})
     assert client.put(
         "/providers/local",
         json={"endpoint": "https://secret.example/v1", "protocol": "openai-compatible", "credential_ref": "LOCAL_SECRET", "orchestration_model": "gpt-test"},
@@ -196,7 +196,7 @@ def test_private_worker_provider_metadata_requires_token_and_excludes_secrets(tm
 def test_public_provider_metadata_excludes_endpoint_and_credential_ref(tmp_path) -> None:
     database_url = f"sqlite:///{tmp_path / 'public-providers.db'}"
     Base.metadata.create_all(create_engine(database_url))
-    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test")))
+    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test", owner_token="owner")), headers={"Authorization": "Bearer owner"})
     assert client.put(
         "/providers/local",
         json={"endpoint": "https://secret.example/v1", "protocol": "openai-compatible", "credential_ref": "LOCAL_SECRET", "orchestration_model": "gpt-test"},
@@ -219,7 +219,7 @@ def test_public_provider_metadata_excludes_endpoint_and_credential_ref(tmp_path)
 def test_pi_native_provider_rejects_qualified_model_from_other_provider(tmp_path) -> None:
     database_url = f"sqlite:///{tmp_path / 'qualified-models.db'}"
     Base.metadata.create_all(create_engine(database_url))
-    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test")))
+    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test", owner_token="owner")), headers={"Authorization": "Bearer owner"})
     response = client.put(
         "/providers/openai-codex",
         json={
@@ -235,7 +235,7 @@ def test_pi_native_provider_rejects_qualified_model_from_other_provider(tmp_path
 def test_pi_native_provider_rejects_bare_model(tmp_path) -> None:
     database_url = f"sqlite:///{tmp_path / 'bare-model.db'}"
     Base.metadata.create_all(create_engine(database_url))
-    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test")))
+    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-test", owner_token="owner")), headers={"Authorization": "Bearer owner"})
     response = client.put(
         "/providers/openai-codex",
         json={"protocol": "pi-native", "orchestration_model": "gpt-5.6-luna"},

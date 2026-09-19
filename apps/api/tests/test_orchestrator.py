@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.main import create_app
-from app.models import Base, Conversation, Event, Message, Project, TelegramOutbox
+from app.models import Base, Conversation, Event, Message, OrchestratorTurn, Project, TelegramOutbox
 from app.telegram import link_chat
 from app.settings import Settings
 
@@ -22,7 +22,7 @@ def test_dashboard_message_enqueues_durable_orchestrator_turn_and_dedupes(tmp_pa
         session.add_all([project, conversation])
         session.commit()
 
-    with TestClient(create_app(Settings(database_url=database_url, worker_token="worker"))) as client:
+    with TestClient(create_app(Settings(database_url=database_url, worker_token="worker", owner_token="owner")), headers={"Authorization": "Bearer owner"}) as client:
         first = client.post(
             f"/projects/{project_id}/messages",
             json={"conversation_id": str(conversation_id), "external_dedupe_id": "turn-1", "content": "Help me outline this."},
@@ -55,7 +55,7 @@ def test_trusted_orchestrator_worker_claims_and_persists_assistant_lineage(tmp_p
         session.add_all([project, conversation])
         session.commit()
 
-    with TestClient(create_app(Settings(database_url=database_url, worker_token="worker"))) as client:
+    with TestClient(create_app(Settings(database_url=database_url, worker_token="worker", owner_token="owner")), headers={"Authorization": "Bearer owner"}) as client:
         created = client.post(
             f"/projects/{project_id}/messages",
             json={"conversation_id": str(conversation_id), "external_dedupe_id": "turn-2", "content": "Draft a hook."},
@@ -105,7 +105,7 @@ def test_completed_telegram_turn_enqueues_assistant_outbox(tmp_path) -> None:
         session.commit()
     with Session(engine) as session:
         link_chat(session, chat_id=6165158640, project_id=project_id)
-    with TestClient(create_app(Settings(database_url=database_url, worker_token="worker"))) as client:
+    with TestClient(create_app(Settings(database_url=database_url, worker_token="worker", owner_token="owner")), headers={"Authorization": "Bearer owner"}) as client:
         message = client.post(f"/projects/{project_id}/messages", json={"conversation_id": str(conversation_id), "content": "Hello", "channel": "telegram", "external_dedupe_id": "telegram:88"}).json()
         headers = {"X-Ebook-Worker-Token": "worker"}
         lease = client.post("/private/orchestrator/claim", json={"worker_id": "pi-1"}, headers=headers).json()
@@ -130,7 +130,7 @@ def test_orchestrator_context_is_cut_off_at_claimed_user_message(tmp_path) -> No
         session.add_all([project, conversation]); session.commit()
         project_id, conversation_id = project.id, conversation.id
 
-    with TestClient(create_app(Settings(database_url=database_url, worker_token="worker"))) as client:
+    with TestClient(create_app(Settings(database_url=database_url, worker_token="worker", owner_token="owner")), headers={"Authorization": "Bearer owner"}) as client:
         first = client.post(f"/projects/{project_id}/messages", json={"conversation_id": str(conversation_id), "external_dedupe_id": "first", "content": "first question"}).json()
         second = client.post(f"/projects/{project_id}/messages", json={"conversation_id": str(conversation_id), "external_dedupe_id": "second", "content": "newer question"}).json()
         headers = {"X-Ebook-Worker-Token": "worker"}
@@ -151,6 +151,72 @@ def test_dashboard_message_rejects_oversized_content(tmp_path) -> None:
         conversation = Conversation(id=uuid4(), project_id=project.id, channel="dashboard"); project.conversation_id = conversation.id
         project_id, conversation_id = project.id, conversation.id
         session.add_all([project, conversation]); session.commit()
-    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker")))
+    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker", owner_token="owner")), headers={"Authorization": "Bearer owner"})
     response = client.post(f"/projects/{project_id}/messages", json={"conversation_id": str(conversation_id), "content": "x" * 200_001})
     assert response.status_code == 422
+
+
+def test_orchestrator_failure_requeues_then_terminally_publishes_owner_error(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'orchestrator-failure.db'}"
+    engine = create_engine(database_url); Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        project = Project(id=uuid4(), title="Failure", profile="fiction", language="en")
+        conversation = Conversation(id=uuid4(), project_id=project.id, channel="dashboard"); project.conversation_id = conversation.id
+        project_id, conversation_id = project.id, conversation.id
+        session.add_all([project, conversation]); session.commit()
+
+    with TestClient(create_app(Settings(database_url=database_url, worker_token="worker", owner_token="owner")), headers={"Authorization": "Bearer owner"}) as client:
+        owner_headers = {"Authorization": "Bearer owner"}
+        created_response = client.post(f"/projects/{project_id}/messages", headers=owner_headers, json={"conversation_id": str(conversation_id), "content": "Try this"})
+        assert created_response.status_code == 201, created_response.text
+        created = created_response.json()
+        assert created["queued"] is True
+        headers = {"X-Ebook-Worker-Token": "worker"}
+        first = client.post("/private/orchestrator/claim", json={"worker_id": "pi-1"}, headers=headers).json()
+        failed = client.post("/private/orchestrator/failure", headers=headers, json={**first, "error": "provider unavailable"})
+        assert failed.status_code == 200
+        assert failed.json()["state"] == "queued"
+        second = client.post("/private/orchestrator/claim", json={"worker_id": "pi-1"}, headers=headers).json()
+        terminal = client.post("/private/orchestrator/failure", headers=headers, json={**second, "error": "provider unavailable"})
+        assert terminal.status_code == 200
+        assert terminal.json()["state"] == "queued"
+        third = client.post("/private/orchestrator/claim", json={"worker_id": "pi-1"}, headers=headers).json()
+        terminal = client.post("/private/orchestrator/failure", headers=headers, json={**third, "error": "provider unavailable"})
+        assert terminal.status_code == 200
+        assert terminal.json()["state"] == "failed"
+
+    with Session(engine) as session:
+        turn = session.get(OrchestratorTurn, UUID(created["turn_id"]))
+        messages = session.scalars(select(Message).where(Message.conversation_id == conversation_id).order_by(Message.sequence)).all()
+        events = session.scalars(select(Event).where(Event.project_id == project_id)).all()
+        assert turn.state == "failed"
+        assert messages[-1].role == "assistant"
+        assert "couldn’t complete" in messages[-1].content
+        assert {event.kind for event in events} >= {"orchestrator.turn.retryable_failure", "orchestrator.turn.failed"}
+
+
+def test_orchestrator_failure_rejects_stale_fence_and_is_idempotent_after_terminal(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'orchestrator-fence.db'}"
+    engine = create_engine(database_url); Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        project = Project(id=uuid4(), title="Fence", profile="fiction", language="en")
+        conversation = Conversation(id=uuid4(), project_id=project.id, channel="dashboard"); project.conversation_id = conversation.id
+        project_id, conversation_id = project.id, conversation.id
+        session.add_all([project, conversation]); session.commit()
+    with TestClient(create_app(Settings(database_url=database_url, worker_token="worker", owner_token="owner")), headers={"Authorization": "Bearer owner"}) as client:
+        owner_headers = {"Authorization": "Bearer owner"}
+        created = client.post(f"/projects/{project_id}/messages", headers=owner_headers, json={"conversation_id": str(conversation_id), "content": "Try this"}).json()
+        headers = {"X-Ebook-Worker-Token": "worker"}
+        lease = client.post("/private/orchestrator/claim", json={"worker_id": "pi-1"}, headers=headers).json()
+        stale = client.post("/private/orchestrator/failure", headers=headers, json={**lease, "generation": lease["generation"] + 1, "error": "stale"})
+        assert stale.status_code == 409
+        for _ in range(3):
+            response = client.post("/private/orchestrator/failure", headers=headers, json={**lease, "error": "provider unavailable"})
+            if response.status_code == 200 and response.json()["state"] == "failed":
+                break
+            lease = client.post("/private/orchestrator/claim", json={"worker_id": "pi-1"}, headers=headers).json()
+        replay = client.post("/private/orchestrator/failure", headers=headers, json={**lease, "error": "late duplicate"})
+        assert replay.status_code == 200
+        assert replay.json()["state"] == "failed"
+    with Session(engine) as session:
+        assert len(session.scalars(select(Message).where(Message.conversation_id == conversation_id, Message.role == "assistant")).all()) == 1

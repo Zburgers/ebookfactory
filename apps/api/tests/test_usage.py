@@ -81,7 +81,7 @@ def test_usage_call_drilldown_route_is_project_scoped(tmp_path) -> None:
     database_url = f"sqlite:///{tmp_path / 'usage-api.db'}"
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)
-    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-secret")))
+    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-secret", owner_token="owner")), headers={"Authorization": "Bearer owner"})
     project_id = uuid4()
     call_id = uuid4()
 

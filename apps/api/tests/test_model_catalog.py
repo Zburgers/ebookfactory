@@ -86,7 +86,7 @@ def test_catalog_subprocess_failure_timeout_and_output_bound(monkeypatch) -> Non
 
 def test_catalog_route_returns_models_and_sanitized_error(monkeypatch) -> None:
     monkeypatch.setattr(model_catalog, "fetch_model_catalog", lambda: {"source": "pi", "fetched_at": "2026-09-19T00:00:00+00:00", "models": model_catalog.parse_model_table(TABLE)})
-    client = TestClient(create_app(Settings(database_url=None)))
+    client = TestClient(create_app(Settings(database_url=None, owner_token="owner")), headers={"Authorization": "Bearer owner"})
     response = client.get("/providers/catalog")
     assert response.status_code == 200
     assert response.json()["models"][0]["qualified_model"] == "openai-codex/gpt-5.6-luna"

@@ -43,13 +43,13 @@ def test_parse_codexctl_status_keeps_all_redacted_accounts() -> None:
 
 def test_usage_call_routes_require_worker_token(tmp_path) -> None:
     database_url = f"sqlite:///{tmp_path / 'usage-auth.db'}"; Base.metadata.create_all(create_engine(database_url))
-    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-secret")))
+    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-secret", owner_token="owner")), headers={"Authorization": "Bearer owner"})
     assert client.post("/usage/calls/00000000-0000-4000-8000-000000000001/finalize", json={}).status_code == 401
 
 
 def test_dashboard_usage_drilldown_remains_readable(tmp_path) -> None:
     database_url = f"sqlite:///{tmp_path / 'usage-read.db'}"; Base.metadata.create_all(create_engine(database_url))
-    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-secret")))
+    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-secret", owner_token="owner")), headers={"Authorization": "Bearer owner"})
     response = client.get("/usage/calls")
     assert response.status_code == 200
     assert response.json() == []
@@ -60,7 +60,7 @@ def test_live_quota_route_returns_adapter_result_without_database_snapshot(tmp_p
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)
     monkeypatch.setattr(codex_quota, "fetch_live_quota", lambda: {"fetched_at": "2026-09-19T00:00:00Z", "source": "codexctl status", "windows": [{"account_index": 1, "window_seconds": 18000, "used": 24, "remaining": 76, "reset": "in 3h"}]})
-    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-secret")))
+    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-secret", owner_token="owner")), headers={"Authorization": "Bearer owner"})
     response = client.get("/quota/live")
     assert response.status_code == 200
     assert response.json()["windows"][0]["remaining"] == 76
@@ -71,7 +71,7 @@ def test_live_quota_route_reports_unavailable_without_placeholder_data(tmp_path,
     database_url = f"sqlite:///{tmp_path / 'live-quota-error.db'}"
     Base.metadata.create_all(create_engine(database_url))
     monkeypatch.setattr(codex_quota, "fetch_live_quota", lambda: (_ for _ in ()).throw(codex_quota.CodexQuotaError("codexctl unavailable")))
-    response = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-secret"))).get("/quota/live")
+    response = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-secret", owner_token="owner")), headers={"Authorization": "Bearer owner"}).get("/quota/live")
     assert response.status_code == 503
     assert response.json()["detail"] == "Codex live quota unavailable"
 
@@ -110,7 +110,7 @@ def test_quota_routes_require_worker_token_and_redact_account_identity(tmp_path:
     database_url = f"sqlite:///{tmp_path / 'quota-api.db'}"
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)
-    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-secret")))
+    client = TestClient(create_app(Settings(database_url=database_url, worker_token="worker-secret", owner_token="owner")), headers={"Authorization": "Bearer owner"})
     observed = utc_now()
     payload = {
         "provider": "openai-codex",

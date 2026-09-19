@@ -716,6 +716,40 @@
         "title": "OrchestratorClaimRequest",
         "type": "object"
       },
+      "OrchestratorFailureRequest": {
+        "properties": {
+          "error": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Error",
+            "type": "string"
+          },
+          "generation": {
+            "minimum": 1.0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          },
+          "worker_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "turn_id",
+          "worker_id",
+          "generation",
+          "error"
+        ],
+        "title": "OrchestratorFailureRequest",
+        "type": "object"
+      },
       "OrchestratorHeartbeatRequest": {
         "properties": {
           "generation": {
@@ -853,6 +887,34 @@
           "call_id"
         ],
         "title": "OrchestratorResultRequest",
+        "type": "object"
+      },
+      "OwnerAuthResponse": {
+        "properties": {
+          "authenticated": {
+            "title": "Authenticated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "authenticated"
+        ],
+        "title": "OwnerAuthResponse",
+        "type": "object"
+      },
+      "OwnerLoginRequest": {
+        "properties": {
+          "token": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "OwnerLoginRequest",
         "type": "object"
       },
       "ProductionArtRequest": {
@@ -2458,6 +2520,68 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/auth/login": {
+      "post": {
+        "operationId": "owner_login_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerAuthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Owner Login",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/auth/verify": {
+      "get": {
+        "operationId": "owner_verify_auth_verify_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerAuthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Owner Verify",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
     "/health": {
       "get": {
         "description": "Return process health without requiring external dependencies.",
@@ -2536,6 +2660,63 @@
           }
         },
         "summary": "Orchestrator Claim",
+        "tags": [
+          "private-worker"
+        ]
+      }
+    },
+    "/private/orchestrator/failure": {
+      "post": {
+        "operationId": "orchestrator_failure_private_orchestrator_failure_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Ebook-Worker-Token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Ebook-Worker-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrchestratorFailureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Orchestrator Failure Private Orchestrator Failure Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Orchestrator Failure",
         "tags": [
           "private-worker"
         ]

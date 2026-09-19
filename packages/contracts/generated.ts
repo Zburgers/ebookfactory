@@ -156,6 +156,13 @@ export interface OrchestratorClaimRequest {
   lease_seconds?: number;
 }
 
+export interface OrchestratorFailureRequest {
+  turn_id: string;
+  worker_id: string;
+  generation: number;
+  error: string;
+}
+
 export interface OrchestratorHeartbeatRequest {
   turn_id: string;
   worker_id: string;
@@ -179,6 +186,14 @@ export interface OrchestratorResultRequest {
   model: string;
   call_id: string;
   usage?: Record<string, number | null> | null;
+}
+
+export interface OwnerAuthResponse {
+  authenticated: boolean;
+}
+
+export interface OwnerLoginRequest {
+  token: string;
 }
 
 export interface ProductionArtRequest {

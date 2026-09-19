@@ -26,6 +26,10 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("EBOOK_FACTORY_WORKER_TOKEN", "WORKER_TOKEN"),
     )
+    owner_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("EBOOK_FACTORY_OWNER_TOKEN", "OWNER_TOKEN"),
+    )
     telegram_bot_token: str | None = Field(
         default=None,
         validation_alias=AliasChoices("EBOOK_FACTORY_TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_TOKEN"),

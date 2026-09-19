@@ -20,7 +20,14 @@
       </nav>
     </header>
 
-    <main class="shell">
+    <section id="auth-view" class="shell" aria-labelledby="auth-heading">
+      <div class="panel form-panel">
+        <p class="eyebrow">PRIVATE WORKSPACE</p><h2 id="auth-heading">Sign in</h2>
+        <p class="muted">Enter the local owner token. It stays in this browser session only.</p>
+        <form id="auth-form"><label>Owner token <input id="owner-token" type="password" autocomplete="current-password" required /></label><button class="primary">Continue</button><p id="auth-error" class="error" role="alert"></p></form>
+      </div>
+    </section>
+    <main id="app-shell" class="shell hidden">
       <section id="projects-view" class="view active" aria-labelledby="projects-heading">
         <div class="section-heading">
           <div><p class="eyebrow">WORKSPACE</p><h2 id="projects-heading">Your projects</h2></div>

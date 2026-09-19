@@ -49,7 +49,27 @@ export async function runOrchestratorWorker({ baseUrl, token, workerId, provider
       }
     };
     const heartbeatTimer = setInterval(heartbeatTick, 20_000);
-    try { await execute(lease, { signal: executionController.signal }); } catch { /* the lease becomes retryable after expiry */ }
+    try {
+      await execute(lease, { signal: executionController.signal });
+    } catch (error) {
+      if (!executionController.signal.aborted && !signal?.aborted) {
+        try {
+          await requestJson(baseUrl, token, "/private/orchestrator/failure", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              turn_id: lease.turn_id,
+              worker_id: workerId,
+              generation: lease.generation,
+              error: error instanceof Error ? error.message : String(error),
+            }),
+            signal,
+          });
+        } catch {
+          // A lost lease or unavailable API cannot safely be retried by this attempt.
+        }
+      }
+    }
     finally { clearInterval(heartbeatTimer); signal?.removeEventListener("abort", abortFromParent); }
   }
 }

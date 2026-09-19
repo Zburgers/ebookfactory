@@ -106,7 +106,7 @@ def test_review_artifacts_are_project_scoped_and_resolvable(tmp_path: Path) -> N
         artifact_id = artifact.id
         resolution_revision_id = revisions[0].id
 
-    with TestClient(create_app(Settings(database_url=database_url))) as client:
+    with TestClient(create_app(Settings(database_url=database_url, owner_token="owner")), headers={"Authorization": "Bearer owner"}) as client:
         rejected = client.post(
             f"/projects/{project_ids[1]}/reviews",
             json={"artifact_id": str(artifact_id), "severity": "medium", "criterion": "scope", "evidence": "wrong project"},
@@ -141,7 +141,7 @@ def test_project_artifacts_includes_production_run_outputs(tmp_path: Path) -> No
         session.add(Artifact(run_id=run_id, relative_path=f"{run_id}/cover.png", mime_type="image/png", byte_count=8, sha256="c" * 64))
         session.commit()
 
-    with TestClient(create_app(Settings(database_url=database_url))) as client:
+    with TestClient(create_app(Settings(database_url=database_url, owner_token="owner")), headers={"Authorization": "Bearer owner"}) as client:
         response = client.get(f"/projects/{project_id}/artifacts")
 
     assert response.status_code == 200

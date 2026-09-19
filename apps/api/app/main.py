@@ -20,7 +20,7 @@ from sqlalchemy.orm import aliased
 
 from app.database import Database
 from app.conversations import append_message, create_project
-from app.orchestrator import claim_turn, complete_turn, enqueue_turn, heartbeat_turn, locked_turn
+from app.orchestrator import claim_turn, complete_turn, enqueue_turn, fail_turn, heartbeat_turn, locked_turn
 from app.documents import create_brief_revision, create_section, save_section_revision
 from app.exports import MIME_TYPES, PACKAGE_FILES, export_book
 from app.events import replay_events
@@ -116,6 +116,14 @@ class TelegramStatusResponse(BaseModel):
 
 class TelegramLinkRequest(BaseModel):
     chat_id: int
+
+
+class OwnerLoginRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=4096)
+
+
+class OwnerAuthResponse(BaseModel):
+    authenticated: bool
 
 
 class TelegramUpdateResponse(BaseModel):
@@ -260,6 +268,13 @@ class OrchestratorHeartbeatRequest(BaseModel):
     worker_id: str = Field(min_length=1, max_length=128)
     generation: int = Field(ge=1)
     lease_seconds: int = Field(default=60, ge=1, le=3600)
+
+
+class OrchestratorFailureRequest(BaseModel):
+    turn_id: UUID
+    worker_id: str = Field(min_length=1, max_length=128)
+    generation: int = Field(ge=1)
+    error: str = Field(min_length=1, max_length=2000)
 
 
 class ProviderSettingRequest(BaseModel):
@@ -534,6 +549,20 @@ def _require_worker_token(settings: Settings, supplied: str) -> None:
         raise HTTPException(status_code=401, detail="unauthorized worker callback")
 
 
+def _owner_token_matches(settings: Settings, supplied: str) -> bool:
+    import hmac
+
+    return bool(settings.owner_token and supplied and hmac.compare_digest(supplied, settings.owner_token))
+
+
+def _owner_exempt_path(path: str) -> bool:
+    return path in {"/health", "/ready", "/auth/login", "/docs", "/redoc", "/openapi.json"} or path.startswith("/src/") or path in {"/", "/favicon.ico"}
+
+
+def _worker_path(path: str) -> bool:
+    return path.startswith(("/private/",))
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Create the API application with explicit settings for tests and workers."""
 
@@ -560,6 +589,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.database = database
     application.state.settings = resolved_settings
 
+    @application.middleware("http")
+    async def owner_auth(request: Request, call_next: Any) -> Any:
+        """Fail closed for owner routes while leaving health, boot and workers separate."""
+
+        if _owner_exempt_path(request.url.path) or _worker_path(request.url.path):
+            return await call_next(request)
+        if not resolved_settings.owner_token:
+            return JSONResponse(status_code=503, content={"detail": "owner authentication is not configured"})
+        authorization = request.headers.get("authorization", "")
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() != "bearer" or not _owner_token_matches(resolved_settings, token):
+            return JSONResponse(status_code=401, content={"detail": "owner authentication required"})
+        return await call_next(request)
+
     @application.get("/health", response_model=HealthResponse, tags=["operations"])
     def health() -> HealthResponse:
         """Return process health without requiring external dependencies."""
@@ -580,6 +623,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             payload["dependencies"]["database"]["reason"] = result.reason
         status_code = 200 if result.status == "ok" else 503
         return JSONResponse(status_code=status_code, content=payload)
+
+    @application.post("/auth/login", response_model=OwnerAuthResponse, tags=["authentication"])
+    def owner_login(payload: OwnerLoginRequest) -> OwnerAuthResponse:
+        if not resolved_settings.owner_token:
+            raise HTTPException(status_code=503, detail="owner authentication is not configured")
+        if not _owner_token_matches(resolved_settings, payload.token):
+            raise HTTPException(status_code=401, detail="invalid owner token")
+        return OwnerAuthResponse(authenticated=True)
+
+    @application.get("/auth/verify", response_model=OwnerAuthResponse, tags=["authentication"])
+    def owner_verify(request: Request) -> OwnerAuthResponse:
+        return OwnerAuthResponse(authenticated=True)
 
     @application.get("/telegram/status", response_model=TelegramStatusResponse, tags=["telegram"])
     def telegram_status() -> TelegramStatusResponse:
@@ -781,6 +836,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             turn = heartbeat_turn(session, turn_id=payload.turn_id, worker_id=payload.worker_id, generation=payload.generation, lease_seconds=payload.lease_seconds)
             return {"lease_until": turn.lease_until}
+        except ValueError as exc:
+            session.rollback(); raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            session.close()
+
+    @application.post("/private/orchestrator/failure", tags=["private-worker"])
+    def orchestrator_failure(payload: OrchestratorFailureRequest, x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token")) -> dict[str, str]:
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
+        session = database.session()
+        try:
+            turn = fail_turn(session, turn_id=payload.turn_id, worker_id=payload.worker_id, generation=payload.generation, error=payload.error)
+            return {"state": turn.state}
         except ValueError as exc:
             session.rollback(); raise HTTPException(status_code=409, detail=str(exc)) from exc
         finally:

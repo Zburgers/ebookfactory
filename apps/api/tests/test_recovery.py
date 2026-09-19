@@ -109,7 +109,7 @@ def test_duplicate_approval_enqueues_one_run_and_one_job(database_session: Sessi
 
 def test_api_project_brief_and_approval_boundary(database_session: Session) -> None:
     assert DATABASE_URL is not None
-    with TestClient(create_app(Settings(database_url=DATABASE_URL, worker_token="test-worker-token"))) as client:
+    with TestClient(create_app(Settings(database_url=DATABASE_URL, worker_token="test-worker-token", owner_token="test-owner-token")), headers={"Authorization": "Bearer test-owner-token"}) as client:
         project_response = client.post(
             "/projects",
             json={"title": "API journey", "profile": "nonfiction", "language": "en"},
@@ -187,7 +187,7 @@ def test_api_project_brief_and_approval_boundary(database_session: Session) -> N
 def test_production_result_rolls_back_when_final_fence_rejects(database_session: Session, monkeypatch, tmp_path) -> None:
     assert DATABASE_URL is not None
     artifact_root = tmp_path / "artifacts"
-    with TestClient(create_app(Settings(database_url=DATABASE_URL, worker_token="test-worker-token", artifact_root=artifact_root))) as client:
+    with TestClient(create_app(Settings(database_url=DATABASE_URL, worker_token="test-worker-token", owner_token="test-owner-token", artifact_root=artifact_root)), headers={"Authorization": "Bearer test-owner-token"}) as client:
         project_response = client.post("/projects", json={"title": "Rollback", "profile": "nonfiction", "language": "en"})
         project_id = UUID(project_response.json()["project_id"])
         database_session.info["cleanup_project_ids"].add(project_id)
@@ -245,7 +245,7 @@ def test_production_result_rolls_back_when_final_fence_rejects(database_session:
 
 def test_production_result_rejects_whitespace_content(database_session: Session) -> None:
     assert DATABASE_URL is not None
-    with TestClient(create_app(Settings(database_url=DATABASE_URL, worker_token="test-worker-token")), raise_server_exceptions=False) as client:
+    with TestClient(create_app(Settings(database_url=DATABASE_URL, worker_token="test-worker-token", owner_token="test-owner-token"),), headers={"Authorization": "Bearer test-owner-token"}, raise_server_exceptions=False) as client:
         project_response = client.post("/projects", json={"title": "Whitespace", "profile": "nonfiction", "language": "en"})
         project_id = UUID(project_response.json()["project_id"])
         database_session.info["cleanup_project_ids"].add(project_id)
