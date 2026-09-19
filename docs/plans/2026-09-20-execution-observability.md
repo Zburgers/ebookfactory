@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use `shipyard:shipyard-executing-plans` to execute this plan task by task with verification checkpoints.
 
-**Goal:** Give the owner a durable, truthful control-room view of every book-production decision and operation, including the current orchestrator conversation, delegated tasks and attempts, provider/image calls, owner reviews, retries, outputs, and replay history. Make the owner-review behavior explicit and safely re-enter production when a revision is requested.
+**Goal:** Turn the current state-heavy dashboard into a thoughtful, functional ebook factory: guide the owner through the complete journey from idea to package, show useful book metadata in a dedicated place, support flexible genres and page/word targets, make every production decision and agent operation observable, and safely re-enter production when a revision is requested.
 
-**Architecture:** PostgreSQL remains the source of truth. Existing `events`, `messages`, `production_runs`, `tasks`, `attempts`, `jobs`, `artifacts`, and `usage_calls` are extended with append-only lifecycle events and one bounded owner-only execution aggregate. The dashboard renders three related views from that aggregate: the actual owner/orchestrator conversation, a task/agent tree with causal links, and a replayable activity timeline. This is operational transparency, not hidden chain-of-thought: show prompts/context that are safe and bounded, model/provider/tool calls, concise result summaries, decisions, errors, and artifact/usage references; never expose private internal reasoning or credentials.
+**Architecture:** PostgreSQL remains the source of truth. Existing `events`, `messages`, `production_runs`, `tasks`, `attempts`, `jobs`, `artifacts`, and `usage_calls` are extended with append-only lifecycle events and one bounded owner-only execution aggregate. The dashboard is reorganized into a clear library → book workspace → production journey: a compact overview carries title/profile/brief metadata, a guided brief editor owns all book setup, a control room shows the real execution trace, and manuscript/artifact/review/package work is grouped by purpose. This is operational transparency, not hidden chain-of-thought: show prompts/context that are safe and bounded, model/provider/tool calls, concise result summaries, decisions, errors, and artifact/usage references; never expose private internal reasoning or credentials.
 
 **Tech Stack:** FastAPI + SQLAlchemy/PostgreSQL, existing durable event/outbox helpers, TypeScript worker supervisor and Pi/Codex adapters, vanilla web dashboard with the existing CSS/view-model layer, pytest and the current `make verify` checks.
 
@@ -24,6 +24,16 @@ The current behavior is therefore:
 
 The implementation will make these facts visible immediately, add the missing durable events, and make a revision request a fenced, deduplicated artwork-revision job rather than silently leaving the project blocked. The UI will state when no agent was eligible or when a provider call was blocked, so it never implies work happened when it did not.
 
+## Product audit findings from the current screens
+
+- The studio currently presents two large cards (`Shape the idea` and `Make it exact`) before the owner knows which book is selected or what its current brief says. This makes a finished run look like an empty project and creates a false sense that chat is the primary production surface.
+- Metadata exists in exported JSON/CSV files but has no first-class home in the workspace. The owner should be able to inspect and edit the book identity, audience, language, genre, length target, formats, art direction, and revision hash without downloading a package.
+- The setup form hard-codes only Fiction/Nonfiction at project creation and uses a cramped side panel with pages/words hidden behind a select. A versatile factory needs a free-form genre/category plus useful presets and one clear length control with validation.
+- The seven-card stage rail, repeated numbered eyebrow headings, and full-width artifact links compete for attention. The page needs one journey timeline with a current focus and collapsible detail, not many unrelated “panels.”
+- The current artifact grid is denser than the information it conveys and mixes metadata files, manuscript formats, images, and exports. Grouping by `Book package`, `Manuscript`, `Artwork`, and `Metadata` will make actions discoverable.
+- The current project state is a snapshot. The owner needs a journey view where past stages remain visible as completed work, current work is actionable, and future work is understandable even before it starts.
+- The current interface assumes a dashboard owner token, but the live browser cannot be audited without that credential. Static checks and owner-authenticated API tests must cover the redesign; live visual verification will be recorded as pending until the owner supplies the token.
+
 ## Safety and product boundary
 
 - Keep all execution details owner-authenticated and project-scoped. Do not make artifacts, event payloads, prompts, model calls, or usage data public.
@@ -35,6 +45,14 @@ The implementation will make these facts visible immediately, add the missing du
 - Automatic revision generation can consume provider/subscription usage. The UI must explain this before submission and the API must expose the resulting usage call/unknown fields honestly. No Amazon upload, purchase, or external publication is added.
 
 ## Work packets
+
+### Packet 0 — Product audit and information architecture
+
+**Files:** `docs/UX-AUDIT.md`, `apps/web/index.html`, existing `apps/web/src/view-models.js` tests.
+
+Document the real owner journey and the screen hierarchy before adding controls. Use the existing screenshots and a read-only inventory of routes, models, and current UI behavior. Define the primary actions for each phase: shape, specify, approve, produce, review, revise, package, preview. Establish the content rules for metadata, stage labels, artifact groups, and empty/error states. The audit must explicitly identify dead controls, duplicate labels, hard-coded genres, hidden targets, unobservable work, and any action that consumes provider usage.
+
+Acceptance: a short UX audit maps each visible control to a real API operation or marks it for removal; no new UI element is added without a corresponding purpose and state.
 
 ### Packet 1 — Durable lifecycle and owner-review semantics
 
@@ -92,6 +110,24 @@ Keep all user/provider data inserted through text nodes or escaped render helper
 
 **Focused verification:** run web unit tests, build/static checks, and inspect the rendered dashboard with the existing preview/browser route if available. Verify refresh and closed-tab/reconnect behavior against durable state.
 
+### Packet 3b — Ebook workspace information architecture and visual cleanup
+
+**Files:** `apps/web/index.html`, `apps/web/src/app.js`, `apps/web/src/view-models.js`, `apps/web/src/styles.css`, web tests.
+
+Refactor the Studio into a deliberate workspace rather than adding more cards:
+
+- Add a compact `Book overview` block with title, profile/genre, language, audience, target length, output formats, current revision hash, and a link to the full metadata editor.
+- Replace the long repeated headings and decorative indexes with a small number of meaningful zones: `Overview`, `Journey`, `Control room`, `Manuscript`, `Artwork`, `Package`, and `Metadata`.
+- Make the journey a horizontal/vertical phase map that shows completed evidence, the current owner action, and the next expected gate. Keep prior phases inspectable.
+- Move metadata into a dedicated editable drawer/panel with controlled fields: title, subtitle, author/pen name, description, language, genre/category, audience, length mode, min/max pages or words, output formats, cover/art direction, and keywords. Preserve unknown/unset values as `Not set`; never invent metadata.
+- Replace the genre dropdown with a searchable/free-form category input plus a few non-exclusive suggestions (fiction, nonfiction, memoir, guide, workbook, poetry, children’s, business, technical, other). Project creation should not limit the factory to two profiles; profile remains a production behavior choice while genre is user metadata.
+- Replace the awkward length side panel with a clear segmented `Pages`/`Words` choice, paired minimum/maximum inputs, inline range validation, and a short explanation of how page estimates work. Keep the active mode visible after reload.
+- Group artifacts into purposeful shelves with one-line explanations and action priority. Keep download/preview/review buttons, but move hashes, MIME, paths, and provenance under `File details`.
+- Make empty states useful: tell the owner how to create the next real thing, why the chat is empty, what is currently running, and which action can unblock the journey.
+- Use the control-room aggregate to populate the overview and journey; do not derive a false “complete” state from a single project string.
+
+**Focused verification:** browser snapshot at desktop and narrow viewport where possible; test keyboard labels, no horizontal overflow, free-form genre persistence, pages/words validation, metadata refresh, and artifact shelf grouping. Remove labels/cards that do not map to user decisions.
+
 ### Packet 4 — Documentation, usage/Kindle/art decision surface, and manual journey QA
 
 **Files:** `docs/DESIGN.md`, `docs/CONTRACTS.md`, `docs/INTEGRATIONS.md`, `docs/PUBLISHING.md`, `docs/STATUS.md`, `docs/SCORECARD.md`, `docs/RUNBOOK.md`, `docs/AGENT_LEDGER.md`, `evidence/` only for non-sensitive reproducible evidence.
@@ -121,7 +157,8 @@ The final report will separate:
 2. Execute Packet 1 with red/green tests and commit `feat(api): persist execution lifecycle and revision decisions`.
 3. Execute Packet 2 and commit `feat(api): expose owner execution trace`.
 4. Execute Packet 3 and commit `feat(web): add orchestrator control room`.
-5. Execute Packet 4, run full verification and manual QA, append status/scorecard/ledger evidence, and commit `docs: record execution observability acceptance`.
-6. Push the branch `codex/ebook-factory-v2` and verify the deployed service on `192.168.29.14:6969` after a controlled restart. Do not claim live success until `/ready`, the execution endpoint, review event path, artifact download, and the UI route are each checked.
+5. Execute Packet 3b and commit `feat(web): shape the book workspace journey`.
+6. Execute Packet 4, run full verification and manual QA, append status/scorecard/ledger evidence, and commit `docs: record execution observability acceptance`.
+7. Push the branch `codex/ebook-factory-v2` and verify the deployed service on `192.168.29.14:6969` after a controlled restart. Do not claim live success until `/ready`, the execution endpoint, review event path, artifact download, metadata flow, and the UI route are each checked.
 
 If a provider credential or external preview tool is unavailable, finish all independent code and evidence work, mark that gate `PARTIAL`/`BLOCKED`, and consult the owner only with the exact missing input or decision.
