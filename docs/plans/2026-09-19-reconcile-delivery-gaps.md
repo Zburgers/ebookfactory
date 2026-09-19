@@ -31,7 +31,7 @@ the remaining gates.
 ### Kindle preview
 
 The package is structurally validated, and the exporter now also enforces the
-current 5 MiB marketing-cover limit alongside RGB/1600×2560 geometry. Kindle
+current under-50 MB marketing-cover limit alongside RGB/1600×2560 geometry. Kindle
 visual preview is still a separate gate. Amazon's current documentation says
 Kindle Previewer 4 is a free desktop app for Windows 10+ and macOS 12+, accepts
 EPUB, and can inspect devices, orientations, fonts, images, lists and a full

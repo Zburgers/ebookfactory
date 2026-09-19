@@ -1,5 +1,27 @@
 # Build status
 
+2026-09-19 17:12 UTC: Revision `104511c` is live on the branch worktree after
+an API restart. `http://192.168.29.14:6969/ready` returns healthy, the API,
+worker and Telegram units are active, the redesigned web modules and cover
+asset return HTTP 200, and an artifact request without the owner token returns
+HTTP 401. No protected data was made public.
+
+2026-09-19: Revision `104511c` closes the manual publishing QA defects found
+while following the actual book journey. New EPUBs include anchored navigation
+entries for every manuscript heading, PDFs carry title/author/subject metadata,
+generated covers record 300 DPI metadata, and the cover gate now matches the
+current KDP under-50-MB limit. Evidence is at
+`evidence/P08/manual-qa-2026-09-19.md`; the score remains 89 because Kindle
+visual preview and live owner art approval are still external gates.
+
+2026-09-19: Revision `572517e` repairs the owner dashboard artifact boundary
+and visibility gap. Downloads and image previews now fetch protected routes with
+the owner token, artifact paths are presented as compact typed tiles, and Studio
+replays the full durable event history on project selection while showing a
+seven-stage production rail derived from persisted state. The packet was pushed
+to `origin/codex/ebook-factory-v2`; live static assets, `/ready`, and all three
+services were rechecked after restart.
+
 2026-09-19: Revision `a049d9b` repaired the dashboard redesign's public static
 asset boundary. The login artwork at `/atlas-cover.png` now loads before owner
 authentication while project data remains protected; focused owner-auth tests,
@@ -23,9 +45,10 @@ the raw-IP CA failure reported by the owner. Tailscale remains HTTPS, and
 required. This is a transport usability choice, not a security score increase;
 the default Tailscale self-signed identity remains separately documented.
 
-2026-09-19: Revision `59a728e` makes the publishing preflight enforce the current KDP marketing
-cover ceiling of 5 MiB in addition to RGB and 1600×2560 geometry. This improves
-the local package gate but does not replace Kindle Previewer evidence.
+2026-09-19: Revision `59a728e` recorded a 5 MiB local marketing-cover gate in
+addition to RGB and 1600×2560 geometry. The later manual QA reconciliation at
+`104511c` corrected that stale KDP interpretation to the current under-50 MB
+ceiling; neither local gate replaces Kindle Previewer evidence.
 
 2026-09-19: Revision `aa31599` reconciliation QA found and repaired two journey defects. SQLite
 production callbacks now normalize persisted naïve lease timestamps before UTC

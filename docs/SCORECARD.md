@@ -5,6 +5,13 @@ reviewed revision lineage, live usage attribution, dashboard document flow,
 structural publishing packages and the live Telegram owner loop are evidenced;
 external publishing/quota and owner-art-review gates remain.**
 
+The latest reconciliation revisions are `572517e` (authenticated artifact
+downloads/previews, compact artifact tiles and persisted production stages) and
+`104511c` (EPUB heading navigation, PDF metadata, current KDP cover-size
+preflight and manual package QA). These repair usability and package quality;
+they do not fabricate Kindle Previewer or owner-art decisions, so the score is
+unchanged.
+
 The latest implementation adds live orchestrator delta relay, owner-boundary
 repairs, live non-persistent quota reads, a corrected page-target prompt, and a
 durable outline-to-production-to-review run with real Luna usage lineage. By
