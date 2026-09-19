@@ -13,6 +13,12 @@ the Tailscale listener remains HTTPS. A default generated Tailscale certificate
 still lacks authenticated server identity; that remains a separate
 transport-trust finding from the H1 provider-call gate.
 
+Revision `747d211` fully revises the dashboard presentation on
+`codex/ebook-factory-v2` while preserving the existing API, SSE and live model
+catalog flows. Focused client/build checks and an independent Luna-medium GO
+review passed. This visual change does not alter the earned score or close any
+external deployment, publishing or owner-action gate.
+
 The reviewed export packet now binds image artifacts to their exact usage call
 and attempt, verifies canonical package members, and fails closed on legacy
 placeholder provenance. A live persisted Codex image produced a 10-member

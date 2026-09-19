@@ -1,5 +1,16 @@
 # Build status
 
+2026-09-19: The `codex/ebook-factory-v2` dashboard presentation was fully
+revised at `747d211`. The new owner-facing shell keeps the existing Projects,
+Studio, Usage and Settings flows, including the live Pi catalog and
+orchestration, drafting and review model selectors, while adding the served
+cover asset, theme switch, responsive layout and stronger focus semantics.
+Client verification, production build and mobile preview checks passed; the
+independent Luna-medium review returned GO. This is a presentation change and
+does not increase the earned score or claim deployment. The full repository
+gate remains partial because `restore-check` cannot find the environment's
+required PostgreSQL binaries.
+
 2026-09-19: Revision `88f7680` makes the owned API transport treat the private LAN as a trusted
 local deployment boundary: `192.168.29.14:6969` serves plain HTTP, eliminating
 the raw-IP CA failure reported by the owner. Tailscale remains HTTPS, and
