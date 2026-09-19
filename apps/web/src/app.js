@@ -1,6 +1,9 @@
 const state = { projects: [], selected: null, sections: [], providers: [], catalog: null, eventCursor: 0, streamController: null, liveAssistant: null };
 const $ = (selector) => document.querySelector(selector);
 const ownerToken = () => sessionStorage.getItem("ebook-factory-owner-token") || "";
+const applyTheme = (theme) => { document.documentElement.dataset.theme = theme; $("#theme-label").textContent = theme === "dark" ? "Light surface" : "Night surface"; $("#theme-icon").textContent = theme === "dark" ? "○" : "●"; localStorage.setItem("ebook-factory-theme", theme); };
+applyTheme(localStorage.getItem("ebook-factory-theme") || "dark");
+$("#theme-toggle").addEventListener("click", () => applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
 const api = async (path, options = {}) => { const headers = { "content-type": "application/json", ...(options.headers || {}) }; const token = ownerToken(); if (token) headers.Authorization = `Bearer ${token}`; const response = await fetch(path, { headers, ...options }); if (!response.ok) { const error = new Error((await response.text()).slice(0, 240)); error.status = response.status; throw error; } return response.status === 204 ? null : response.json(); };
 const showError = (id, error) => { $(id).textContent = error.message || String(error); };
 function addSavedOption(select, value, label) { if (!value) return; const option = [...select.options].find((candidate) => candidate.value === value); if (option) { option.selected = true; return; } const saved = document.createElement("option"); saved.value = value; saved.textContent = label + " (saved; unavailable)"; saved.selected = true; select.append(saved); }

@@ -1,75 +1,113 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Ebook Factory</title>
+    <meta name="theme-color" content="#101514" />
+    <meta name="description" content="A private editorial production studio for durable ebook projects." />
+    <title>Ebook Factory / Studio</title>
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
+    <a class="skip-link" href="#content">Skip to content</a>
+
     <header class="topbar">
-      <div>
-        <p class="eyebrow">PRIVATE WORKSPACE</p>
-        <h1>Ebook Factory</h1>
-      </div>
-      <nav aria-label="Primary navigation">
-        <button class="nav-button active" data-view="projects">Projects</button>
-        <button class="nav-button" data-view="studio">Studio</button>
-        <button class="nav-button" data-view="usage">Usage</button>
-        <button class="nav-button" data-view="settings">Settings</button>
+      <a class="brand-lockup" href="#" aria-label="Ebook Factory home">
+        <span class="brand-mark" aria-hidden="true">ef</span>
+        <span class="brand-copy"><strong>Ebook Factory</strong><small>Private studio</small></span>
+      </a>
+      <div class="topbar-context" aria-hidden="true"><span>EBOOK FACTORY</span><i></i><strong>Owner workspace</strong></div>
+      <nav class="primary-nav" aria-label="Primary navigation">
+        <button class="nav-button active" type="button" data-view="projects"><span>Projects</span><small>Library</small></button>
+        <button class="nav-button" type="button" data-view="studio"><span>Studio</span><small>Working set</small></button>
+        <button class="nav-button" type="button" data-view="usage"><span>Usage</span><small>Accounts</small></button>
+        <button class="nav-button" type="button" data-view="settings"><span>Settings</span><small>Connections</small></button>
       </nav>
+      <button id="theme-toggle" class="theme-switch" type="button"><span id="theme-icon" aria-hidden="true">○</span><span id="theme-label">Light surface</span></button>
     </header>
 
-    <section id="auth-view" class="shell" aria-labelledby="auth-heading">
-      <div class="panel form-panel">
-        <p class="eyebrow">PRIVATE WORKSPACE</p><h2 id="auth-heading">Sign in</h2>
-        <p class="muted">Enter the local owner token. It stays in this browser session only.</p>
-        <form id="auth-form"><label>Owner token <input id="owner-token" type="password" autocomplete="current-password" required /></label><button class="primary">Continue</button><p id="auth-error" class="error" role="alert"></p></form>
+    <section id="auth-view" class="auth-screen" aria-labelledby="auth-heading">
+      <div class="auth-art" aria-hidden="true"><img src="/atlas-cover.png" alt="" /></div>
+      <div class="auth-card panel">
+        <p class="eyebrow">OWNER ACCESS</p>
+        <h1 id="auth-heading">Keep the factory private.</h1>
+        <p class="lede">Sign in to the local owner boundary. The token stays in this browser session and never enters the manuscript record.</p>
+        <form id="auth-form" class="form-panel">
+          <label for="owner-token">Owner token</label>
+          <input id="owner-token" type="password" autocomplete="current-password" required />
+          <button class="primary" type="submit">Enter studio <span aria-hidden="true">↗</span></button>
+          <p id="auth-error" class="error" role="alert"></p>
+        </form>
       </div>
     </section>
-    <main id="app-shell" class="shell hidden">
-      <section id="projects-view" class="view active" aria-labelledby="projects-heading">
-        <div class="section-heading">
-          <div><p class="eyebrow">WORKSPACE</p><h2 id="projects-heading">Your projects</h2></div>
-          <button id="new-project-button" class="primary">New project</button>
+
+    <main id="app-shell" class="app-layout hidden">
+      <aside class="sidebar" aria-label="Workspace context">
+        <div class="sidebar-block">
+          <span class="sidebar-label">ACTIVE WORKSPACE</span>
+          <strong>Personal factory</strong>
+          <p>Briefs, revisions, review, and exports stay attached to their source.</p>
         </div>
-        <div id="project-list" class="project-grid" aria-live="polite"></div>
-        <form id="project-form" class="panel form-panel hidden">
-          <h3>Start a project</h3>
-          <label>Title <input name="title" required maxlength="240" /></label>
-          <label>Profile
-            <select name="profile"><option value="nonfiction">Nonfiction</option><option value="fiction">Fiction</option></select>
-          </label>
-          <label>Language <input name="language" value="en" required maxlength="32" /></label>
-          <div class="form-actions"><button type="button" class="quiet" data-cancel="project-form">Cancel</button><button class="primary">Create project</button></div>
-          <p id="project-form-error" class="error" role="alert"></p>
-        </form>
-      </section>
-
-      <section id="studio-view" class="view" aria-labelledby="studio-heading">
-        <div class="section-heading"><div><p class="eyebrow">STUDIO</p><h2 id="studio-heading">Conversation and approval</h2></div><span id="studio-project-label" class="status-pill">Select a project</span></div>
-        <div class="studio-grid">
-          <div class="panel chat-panel"><div id="messages" class="messages" aria-live="polite"></div><form id="message-form" class="composer"><label class="sr-only" for="message-input">Message</label><textarea id="message-input" required rows="3" placeholder="Describe the book you want to make..."></textarea><button class="primary">Send message</button></form></div>
-          <aside class="panel approval-panel"><h3>Brief approval</h3><p class="muted">Create a revision from the current idea, then approve its exact hash to enqueue durable work.</p><form id="brief-form"><label>Promise or premise <textarea name="promise" required rows="4"></textarea></label><label>Audience <input name="audience" value="General readers" /></label><label>Book length <select name="length_mode"><option value="pages">50–150 pages</option><option value="words">Word range</option></select></label><div id="page-target-fields"><label>Minimum pages <input name="minimum_pages" type="number" min="50" max="150" value="50" /></label><label>Maximum pages <input name="maximum_pages" type="number" min="50" max="150" value="150" /></label></div><div id="word-target-fields" class="hidden"><label>Minimum words <input name="minimum_words" type="number" min="1000" value="1000" /></label><label>Maximum words <input name="maximum_words" type="number" min="1000" value="3000" /></label></div><button class="primary">Create brief revision</button></form><div id="brief-result" class="brief-result" aria-live="polite"></div></aside>
+        <div class="sidebar-rule"></div>
+        <div class="sidebar-block sidebar-status">
+          <span class="status-dot" aria-hidden="true"></span>
+          <div><strong>Local API boundary</strong><small>Ready for owner input</small></div>
         </div>
-        <div class="panel timeline-panel"><div class="section-heading compact"><h3>Event timeline</h3><button id="refresh-events" class="quiet">Refresh</button></div><ol id="events" class="timeline" aria-live="polite"></ol></div>
-        <div class="panel document-panel"><div class="section-heading compact"><h3>Manuscript revisions</h3><span class="muted">Owner edits create a new revision.</span></div><div id="sections" class="sections" aria-live="polite"></div><div id="reviews" class="reviews" aria-live="polite"></div><div id="exports" class="exports" aria-live="polite"></div><div class="exports"><h3>Production artifacts</h3><div id="artifacts" aria-live="polite"><p class="muted">No production artifacts loaded.</p></div></div></div>
-      </section>
+        <div class="sidebar-bottom">
+          <span class="sidebar-label">RUN PRINCIPLE</span>
+          <p>Unknown is a state. Accepted is a revision.</p>
+        </div>
+      </aside>
 
-      <section id="usage-view" class="view" aria-labelledby="usage-heading">
-        <div class="section-heading"><div><p class="eyebrow">ACCOUNTING</p><h2 id="usage-heading">Usage and limits</h2></div><button id="refresh-usage" class="quiet">Refresh</button></div>
-        <div class="panel"><div id="usage-summary" aria-live="polite"><p class="muted">Select a project in Studio to inspect its usage.</p></div></div>
-        <div class="panel"><h3>Call drill-down</h3><div id="usage-calls" aria-live="polite"><p class="muted">No calls loaded.</p></div></div>
-        <div class="panel"><h3>Codex limits</h3><p class="muted">Provider-reported limits from the local Codex session. Only measurable windows are shown.</p><div id="quota-summary" aria-live="polite"><p class="muted">Loading quota observations…</p></div></div>
-      </section>
+      <div id="content" class="workspace">
+        <div class="workspace-bar">
+          <span class="workspace-path">PRIVATE / OWNER</span>
+          <span class="workspace-state"><i class="status-dot" aria-hidden="true"></i> Local workspace</span>
+        </div>
 
-      <section id="settings-view" class="view" aria-labelledby="settings-heading">
-        <div class="section-heading"><div><p class="eyebrow">SETTINGS</p><h2 id="settings-heading">Provider metadata</h2></div></div>
-        <div class="panel"><div class="section-heading compact"><h3>Pi model catalog</h3><button id="refresh-catalog" class="quiet" type="button">Refresh</button></div><p id="catalog-status" class="muted" aria-live="polite">Loading installed Pi models…</p></div>
-        <form id="provider-form" class="panel form-panel"><label for="provider-select">Provider</label><select id="provider-select" name="provider" required></select><label>Endpoint (no credentials in URL) <input name="endpoint" placeholder="https://..." /></label><label>Protocol <input name="protocol" value="pi-native" /></label><label for="orchestration-model">Main orchestrator model</label><select id="orchestration-model" name="orchestration_model"></select><label for="drafting-model">Drafting model</label><select id="drafting-model" name="drafting_model"></select><label for="review-model">Review model</label><select id="review-model" name="review_model"></select><label>Credential reference <input name="credential_ref" placeholder="Stored outside PostgreSQL" /></label><button class="primary">Save metadata</button><p id="provider-result" class="muted" aria-live="polite"></p></form>
-        <div id="provider-list" class="panel" aria-live="polite"></div>
-        <div class="panel"><div class="section-heading compact"><h3>Telegram</h3><button id="refresh-telegram" class="quiet" type="button">Refresh</button></div><p id="telegram-status" class="muted" aria-live="polite">Checking local configuration…</p><form id="telegram-link-form" class="form-panel"><label for="telegram-chat-id">Numeric chat ID</label><input id="telegram-chat-id" name="chat_id" type="number" inputmode="numeric" step="1" required aria-describedby="telegram-link-help" placeholder="e.g. 123456789" /><p id="telegram-link-help" class="muted">All projects are linked to this owner chat automatically. This sets the selected project as active; in Telegram use /help to switch without typing IDs. Bot credentials stay on the server.</p><button id="telegram-link-button" class="primary" type="submit">Set active project</button><p id="telegram-link-result" class="muted" role="status" aria-live="polite"></p></form></div>
-      </section>
+        <section id="projects-view" class="view active" aria-labelledby="projects-heading">
+          <div class="page-heading">
+            <div><p class="eyebrow">LIBRARY</p><h1 id="projects-heading">Projects with a pulse.</h1><p class="lede">Drafts, briefs, and accepted revisions in one quiet shelf.</p></div>
+            <button id="new-project-button" class="primary" type="button">New project <span aria-hidden="true">↗</span></button>
+          </div>
+          <div class="section-rule"><span>Current shelf</span><span>Owner account</span></div>
+          <div id="project-list" class="project-grid" aria-live="polite"></div>
+          <form id="project-form" class="panel form-panel hidden">
+            <div class="panel-heading"><div><p class="eyebrow">NEW WORK</p><h2>Start with the promise.</h2></div><span class="panel-index">01</span></div>
+            <label for="project-title">Title</label><input id="project-title" name="title" required maxlength="240" />
+            <div class="form-grid two-up"><div><label for="project-profile">Profile</label><select id="project-profile" name="profile"><option value="nonfiction">Nonfiction</option><option value="fiction">Fiction</option></select></div><div><label for="project-language">Language</label><input id="project-language" name="language" value="en" required maxlength="32" /></div></div>
+            <div class="form-actions"><button type="button" class="quiet" data-cancel="project-form">Cancel</button><button class="primary" type="submit">Create project</button></div>
+            <p id="project-form-error" class="error" role="alert"></p>
+          </form>
+          <div class="empty-shelf"><span class="empty-mark" aria-hidden="true">+</span><div><strong>Keep the shelf intentionally small.</strong><p class="muted">When the next idea arrives, give it a brief before you give it a title.</p></div></div>
+        </section>
+
+        <section id="studio-view" class="view" aria-labelledby="studio-heading">
+          <div class="page-heading studio-heading">
+            <div><p class="eyebrow">STUDIO / LIVE WORKSPACE</p><h1 id="studio-heading">Make room for the book.</h1><p class="lede">A durable conversation for the brief, the draft, the hard questions, and the package at the end.</p></div>
+            <span id="studio-project-label" class="status-pill">Select a project</span>
+          </div>
+          <div class="studio-strip"><div><span>Boundary</span><strong>Private host</strong></div><div><span>State</span><strong>Owner-led</strong></div><div><span>Revision</span><strong>Hash-bound</strong></div><div><span>Evidence</span><strong>Durable events</strong></div></div>
+          <div class="studio-grid">
+            <div class="panel chat-panel"><div class="panel-heading"><div><p class="eyebrow">CONVERSATION</p><h2>Shape the idea.</h2></div><span class="panel-index">01</span></div><div id="messages" class="messages" aria-live="polite"></div><form id="message-form" class="composer"><label class="sr-only" for="message-input">Message</label><textarea id="message-input" required rows="3" placeholder="Describe the book you want to make..."></textarea><div class="form-actions"><span class="muted">One owner turn at a time</span><button class="primary" type="submit">Send message <span aria-hidden="true">↗</span></button></div></form></div>
+            <aside class="panel approval-panel"><div class="panel-heading"><div><p class="eyebrow">BRIEF / APPROVAL</p><h2>Make it exact.</h2></div><span class="panel-index">02</span></div><p class="muted">Create a revision from the current idea, then approve its exact hash to enqueue durable work.</p><form id="brief-form"><label for="brief-promise">Promise or premise</label><textarea id="brief-promise" name="promise" required rows="4"></textarea><label for="brief-audience">Audience</label><input id="brief-audience" name="audience" value="General readers" /><label for="brief-length">Book length</label><select id="brief-length" name="length_mode"><option value="pages">50–150 pages</option><option value="words">Word range</option></select><div id="page-target-fields" class="target-grid"><div><label for="minimum-pages">Minimum pages</label><input id="minimum-pages" name="minimum_pages" type="number" min="50" max="150" value="50" /></div><div><label for="maximum-pages">Maximum pages</label><input id="maximum-pages" name="maximum_pages" type="number" min="50" max="150" value="150" /></div></div><div id="word-target-fields" class="target-grid hidden"><div><label for="minimum-words">Minimum words</label><input id="minimum-words" name="minimum_words" type="number" min="1000" value="1000" /></div><div><label for="maximum-words">Maximum words</label><input id="maximum-words" name="maximum_words" type="number" min="1000" value="3000" /></div></div><button class="primary" type="submit">Create brief revision <span aria-hidden="true">↗</span></button></form><div id="brief-result" class="brief-result" aria-live="polite"></div></aside>
+          </div>
+          <div class="panel timeline-panel"><div class="section-heading compact"><div><p class="eyebrow">EVENTS / REPLAY</p><h2>What changed.</h2></div><button id="refresh-events" class="quiet" type="button">Refresh</button></div><ol id="events" class="timeline" aria-live="polite"></ol></div>
+          <div class="panel document-panel"><div class="section-heading compact"><div><p class="eyebrow">MANUSCRIPT / REVISIONS</p><h2>Keep the source visible.</h2></div><span class="muted">Owner edits create a new revision.</span></div><div id="sections" class="sections" aria-live="polite"></div><div id="reviews" class="reviews" aria-live="polite"></div><div id="exports" class="exports" aria-live="polite"></div><div class="exports"><div class="section-heading compact"><h3>Production artifacts</h3><span class="muted">Validated files only</span></div><div id="artifacts" aria-live="polite"><p class="muted">No production artifacts loaded.</p></div></div></div>
+        </section>
+
+        <section id="usage-view" class="view" aria-labelledby="usage-heading">
+          <div class="page-heading"><div><p class="eyebrow">ACCOUNTING / LIMITS</p><h1 id="usage-heading">Know what the run knows.</h1><p class="lede">Observed calls, provider state, and unknowns kept separate on purpose.</p></div><button id="refresh-usage" class="quiet" type="button">Refresh usage</button></div>
+          <div class="stat-grid"><article class="stat-card stat-card-accent"><span>Scope</span><strong>Owner account</strong><p>Usage is attributed to the selected project when available.</p></article><article class="stat-card"><span>Billing</span><strong>Unknown by default</strong><p>Subscription cost is never reconstructed from tokens.</p></article><article class="stat-card"><span>Quota</span><strong>Live when measurable</strong><p>Provider windows are shown with their observed source and age.</p></article></div>
+          <div class="usage-grid"><div class="panel"><div class="section-heading compact"><div><p class="eyebrow">CALL LEDGER</p><h2>Measured work.</h2></div><span class="panel-index">01</span></div><div id="usage-summary" aria-live="polite"><p class="muted">Select a project in Studio to inspect its usage.</p></div><div id="usage-calls" class="usage-calls" aria-live="polite"><p class="muted">No calls loaded.</p></div></div><div class="panel"><div class="section-heading compact"><div><p class="eyebrow">PROVIDER WINDOWS</p><h2>Know the boundary.</h2></div><span class="panel-index">02</span></div><p class="muted">Provider-reported limits from the local Codex session. Only measurable windows are shown.</p><div id="quota-summary" aria-live="polite"><p class="muted">Loading quota observations…</p></div></div></div>
+        </section>
+
+        <section id="settings-view" class="view" aria-labelledby="settings-heading">
+          <div class="page-heading"><div><p class="eyebrow">SETTINGS / PROVIDERS</p><h1 id="settings-heading">Keep the boundaries visible.</h1><p class="lede">Select real models from the installed Pi catalog. Save metadata without moving credentials into PostgreSQL.</p></div></div>
+          <div class="settings-grid"><div><div class="panel catalog-panel"><div class="section-heading compact"><div><p class="eyebrow">CATALOG</p><h2>Installed models.</h2></div><button id="refresh-catalog" class="quiet" type="button">Refresh</button></div><p id="catalog-status" class="muted" aria-live="polite">Loading installed Pi models…</p></div><div id="provider-list" class="panel provider-list" aria-live="polite"></div></div><form id="provider-form" class="panel form-panel provider-form"><div class="panel-heading"><div><p class="eyebrow">MODEL ASSIGNMENT</p><h2>Choose the working set.</h2></div><span class="panel-index">01</span></div><p class="muted">Assignments affect new attempts only. Existing task lineage stays frozen.</p><label for="provider-select">Provider</label><select id="provider-select" name="provider" required></select><div class="form-grid two-up"><div><label for="orchestration-model">Main orchestrator model</label><select id="orchestration-model" name="orchestration_model"></select></div><div><label for="drafting-model">Drafting model</label><select id="drafting-model" name="drafting_model"></select></div></div><label for="review-model">Review model</label><select id="review-model" name="review_model"></select><div class="form-grid two-up"><div><label for="provider-endpoint">Endpoint <small>No credentials in URL</small></label><input id="provider-endpoint" name="endpoint" placeholder="https://..." /></div><div><label for="provider-protocol">Protocol</label><input id="provider-protocol" name="protocol" value="pi-native" /></div></div><label for="credential-reference">Credential reference <small>Stored outside PostgreSQL</small></label><input id="credential-reference" name="credential_ref" placeholder="Stored outside PostgreSQL" /><button class="primary" type="submit">Save provider metadata <span aria-hidden="true">↗</span></button><p id="provider-result" class="muted" role="status" aria-live="polite"></p></form></div>
+          <div class="settings-lower"><div class="panel"><div class="section-heading compact"><div><p class="eyebrow">TELEGRAM / OWNER</p><h2>Second doorway.</h2></div><button id="refresh-telegram" class="quiet" type="button">Refresh</button></div><p id="telegram-status" class="muted" aria-live="polite">Checking local configuration…</p><form id="telegram-link-form" class="form-panel"><label for="telegram-chat-id">Numeric chat ID</label><input id="telegram-chat-id" name="chat_id" type="number" inputmode="numeric" step="1" required aria-describedby="telegram-link-help" placeholder="e.g. 123456789" /><p id="telegram-link-help" class="muted">All projects are linked to this owner chat automatically. Use /help in Telegram to switch without typing project IDs. Bot credentials stay on the server.</p><button id="telegram-link-button" class="primary" type="submit">Set active project</button><p id="telegram-link-result" class="muted" role="status" aria-live="polite"></p></form></div><div class="panel boundary-panel"><p class="eyebrow">EXECUTION BOUNDARY</p><h2>The host owns the sandbox.</h2><ul><li>Private job storage</li><li>No home or database credential mount</li><li>Fenced artifact publication</li></ul></div></div>
+        </section>
+      </div>
     </main>
     <script type="module" src="/src/app.js"></script>
   </body>
