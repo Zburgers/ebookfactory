@@ -200,8 +200,11 @@ def _cover_source(
         if artifact.attempt_id is not None:
             usage = session.scalar(
                 select(UsageCall)
-                .where(UsageCall.attempt_id == artifact.attempt_id, UsageCall.purpose == "art")
-                .order_by(UsageCall.ended_at.desc(), UsageCall.id.desc())
+                .where(
+                    UsageCall.id == artifact.usage_call_id,
+                    UsageCall.attempt_id == artifact.attempt_id,
+                    UsageCall.purpose == "art",
+                )
             )
         if usage is not None:
             provenance["source_generation"] = {

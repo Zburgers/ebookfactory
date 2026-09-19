@@ -302,6 +302,7 @@ class Artifact(CreatedMixin, Base):
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     run_id: Mapped[UUID | None] = mapped_column(ForeignKey("production_runs.id"))
     attempt_id: Mapped[UUID | None] = mapped_column(ForeignKey("attempts.id"))
+    usage_call_id: Mapped[UUID | None] = mapped_column(ForeignKey("usage_calls.id"))
     revision_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
     relative_path: Mapped[str] = mapped_column(Text, nullable=False)
     mime_type: Mapped[str] = mapped_column(String(255), nullable=False)

@@ -2132,7 +2132,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         )
 
                     art_artifact = None
+                    art_usage_call_id = None
                     if payload.art is not None:
+                        if payload.art.call_id and payload.provider and payload.model:
+                            art_usage = payload.art.usage
+                            art_usage_result = record_usage_call(
+                                session,
+                                call_id=payload.art.call_id,
+                                provider=payload.provider,
+                                model=payload.model,
+                                purpose="art",
+                                outcome="succeeded",
+                                started_at=utc_now(),
+                                ended_at=utc_now(),
+                                provider_request_id=payload.art.provider_request_id,
+                                project_id=output.project_id,
+                                run_id=output.run_id,
+                                task_id=output.task_id,
+                                attempt_id=attempt.id if attempt else None,
+                                input_tokens=art_usage.input_tokens if art_usage else None,
+                                output_tokens=art_usage.output_tokens if art_usage else None,
+                                cache_read_tokens=art_usage.cache_read_tokens if art_usage else None,
+                                cache_write_tokens=art_usage.cache_write_tokens if art_usage else None,
+                                reasoning_tokens=art_usage.reasoning_tokens if art_usage else None,
+                                source_metadata={"source": "codex-app-server-image", "reported_usage": art_usage.model_dump() if art_usage else None},
+                                manage_transaction=False,
+                            )
+                            art_usage_call_id = art_usage_result.call_id
                         art_filename, art_content = _decode_production_art(payload=payload.art)
                         art_relative_path = f"{output.run_id}/{art_filename}"
                         art_candidate_path = safe_artifact_path(resolved_settings.artifact_root, art_relative_path)
@@ -2141,6 +2167,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                 session, root=resolved_settings.artifact_root, relative_path=art_relative_path,
                                 content=art_content, mime_type=payload.art.mime_type, run_id=output.run_id,
                                 attempt_id=attempt.id,
+                                usage_call_id=art_usage_call_id,
                                 revision_id=output.revision_id, manage_transaction=False,
                             )
                         except FileExistsError:
@@ -2178,32 +2205,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             manage_transaction=False,
                         )
                         usage_call_id = usage_result.call_id
-                    art_usage_call_id = None
-                    if payload.art and payload.art.call_id and payload.provider and payload.model:
-                        art_usage = payload.art.usage
-                        art_usage_result = record_usage_call(
-                            session,
-                            call_id=payload.art.call_id,
-                            provider=payload.provider,
-                            model=payload.model,
-                            purpose="art",
-                            outcome="succeeded",
-                            started_at=utc_now(),
-                            ended_at=utc_now(),
-                            provider_request_id=payload.art.provider_request_id,
-                            project_id=output.project_id,
-                            run_id=output.run_id,
-                            task_id=output.task_id,
-                            attempt_id=attempt.id if attempt else None,
-                            input_tokens=art_usage.input_tokens if art_usage else None,
-                            output_tokens=art_usage.output_tokens if art_usage else None,
-                            cache_read_tokens=art_usage.cache_read_tokens if art_usage else None,
-                            cache_write_tokens=art_usage.cache_write_tokens if art_usage else None,
-                            reasoning_tokens=art_usage.reasoning_tokens if art_usage else None,
-                            source_metadata={"source": "codex-app-server-image", "reported_usage": art_usage.model_dump() if art_usage else None},
-                            manage_transaction=False,
-                        )
-                        art_usage_call_id = art_usage_result.call_id
                     complete_job(
                         session,
                         job_id=payload.job_id,

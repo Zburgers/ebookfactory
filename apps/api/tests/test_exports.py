@@ -238,6 +238,7 @@ def test_export_uses_persisted_codex_art_and_records_layout_provenance(tmp_path:
         other_attempt = Attempt(
             id=other_attempt_id, task_id=task_id, attempt_no=2, input_revision_ids=[str(revision_id)], status="succeeded"
         )
+        selected_usage_id = uuid4()
         revision = SectionRevision(
             id=revision_id,
             section_id=section.id,
@@ -260,6 +261,7 @@ def test_export_uses_persisted_codex_art_and_records_layout_provenance(tmp_path:
         second_artifact = Artifact(
             run_id=run_id,
             attempt_id=selected_attempt_id,
+            usage_call_id=selected_usage_id,
             revision_id=revision_id,
             relative_path=second_relative_path,
             mime_type="image/png",
@@ -267,7 +269,6 @@ def test_export_uses_persisted_codex_art_and_records_layout_provenance(tmp_path:
             sha256=hashlib.sha256(second_content).hexdigest(),
             validation_state="generated",
         )
-        selected_usage_id = uuid4()
         session.add_all([
             brief,
             run,
@@ -296,6 +297,18 @@ def test_export_uses_persisted_codex_art_and_records_layout_provenance(tmp_path:
                 purpose="art",
                 provider="selected-provider",
                 model="selected-model",
+                started_at=utc_now(),
+                ended_at=utc_now(),
+                outcome="succeeded",
+                normalization_version="v1",
+            ),
+            UsageCall(
+                id=uuid4(),
+                run_id=run_id,
+                attempt_id=selected_attempt_id,
+                purpose="art",
+                provider="later-wrong-provider",
+                model="later-wrong-model",
                 started_at=utc_now(),
                 ended_at=utc_now(),
                 outcome="succeeded",
