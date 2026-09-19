@@ -1,5 +1,10 @@
 # Build status
 
+2026-09-19: Revision `a049d9b` repaired the dashboard redesign's public static
+asset boundary. The login artwork at `/atlas-cover.png` now loads before owner
+authentication while project data remains protected; focused owner-auth tests,
+full verification, and a live HTTP 200 asset check passed.
+
 2026-09-19: The `codex/ebook-factory-v2` dashboard presentation was fully
 revised at `747d211`. The new owner-facing shell keeps the existing Projects,
 Studio, Usage and Settings flows, including the live Pi catalog and
