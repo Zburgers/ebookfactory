@@ -30,6 +30,39 @@ resolve_tailscale_address() {
   printf '%s\n' "$address"
 }
 
+resolve_private_addresses() {
+  command -v ip >/dev/null 2>&1 || {
+    echo "ip is required to discover private LAN addresses" >&2
+    return 1
+  }
+  local interface_list="${EBOOK_FACTORY_PRIVATE_INTERFACES:-}"
+  if [[ -n "$interface_list" ]]; then
+    local interface
+    IFS=',' read -r -a interfaces <<< "$interface_list"
+    for interface in "${interfaces[@]}"; do
+      [[ "$interface" =~ ^[[:alnum:]_.-]+$ ]] || {
+        echo "invalid private interface name" >&2
+        return 1
+      }
+      ip -4 -o addr show dev "$interface" scope global |
+        awk '{ split($4, parts, "/"); print parts[1] }' |
+        while read -r address; do
+          if is_private_ipv4 "$address"; then
+            printf '%s\n' "$address"
+          fi
+        done
+    done
+  else
+    ip -4 -o addr show scope global |
+      awk '$2 !~ /^(lo|tailscale0|docker[0-9]*|br-|podman|cni)/ { split($4, parts, "/"); print parts[1] }' |
+      while read -r address; do
+        if is_private_ipv4 "$address"; then
+          printf '%s\n' "$address"
+        fi
+      done
+  fi
+}
+
 resolve_addresses() {
   if [[ "${EBOOK_FACTORY_BIND_TO_TAILSCALE:-true}" == "true" ]]; then
     printf '%s\n' "$tailscale_address_value"
@@ -40,36 +73,22 @@ resolve_addresses() {
   fi
 
   if [[ "${EBOOK_FACTORY_BIND_TO_PRIVATE:-true}" == "true" ]]; then
-    command -v ip >/dev/null 2>&1 || {
-      echo "ip is required to discover private LAN addresses" >&2
+    local private_wait_seconds="${EBOOK_FACTORY_PRIVATE_WAIT_SECONDS:-30}"
+    [[ "$private_wait_seconds" =~ ^[0-9]+$ ]] || {
+      echo "EBOOK_FACTORY_PRIVATE_WAIT_SECONDS must be a non-negative integer" >&2
       return 1
     }
-    local interface_list="${EBOOK_FACTORY_PRIVATE_INTERFACES:-}"
-    if [[ -n "$interface_list" ]]; then
-      local interface
-      IFS=',' read -r -a interfaces <<< "$interface_list"
-      for interface in "${interfaces[@]}"; do
-        [[ "$interface" =~ ^[[:alnum:]_.-]+$ ]] || {
-          echo "invalid private interface name" >&2
-          return 1
-        }
-        ip -4 -o addr show dev "$interface" scope global |
-          awk '{ split($4, parts, "/"); print parts[1] }' |
-          while read -r address; do
-            if is_private_ipv4 "$address"; then
-              printf '%s\n' "$address"
-            fi
-          done
-      done
-    else
-      ip -4 -o addr show scope global |
-        awk '$2 !~ /^(lo|tailscale0|docker[0-9]*|br-|podman|cni)/ { split($4, parts, "/"); print parts[1] }' |
-        while read -r address; do
-          if is_private_ipv4 "$address"; then
-            printf '%s\n' "$address"
-          fi
-        done
-    fi
+    local attempt=0
+    local private_addresses=()
+    while true; do
+      mapfile -t private_addresses < <(resolve_private_addresses)
+      if ((${#private_addresses[@]} > 0 || attempt >= private_wait_seconds)); then
+        break
+      fi
+      attempt=$((attempt + 1))
+      sleep 1
+    done
+    printf '%s\n' "${private_addresses[@]}"
   fi
 }
 

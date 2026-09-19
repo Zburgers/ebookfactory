@@ -45,6 +45,38 @@ if grep -Fq -- '--ssl-certfile' <<<"$loopback_call"; then
   exit 1
 fi
 
+cat >"$fixture/bin/ip" <<'EOF'
+#!/usr/bin/env bash
+count=0
+if [[ -f "$EBOOK_FACTORY_IP_STATE" ]]; then
+  count="$(<"$EBOOK_FACTORY_IP_STATE")"
+fi
+count=$((count + 1))
+printf '%s\n' "$count" >"$EBOOK_FACTORY_IP_STATE"
+if ((count < 2)); then
+  exit 0
+fi
+printf '%s\n' '2: eno1    inet 192.168.29.14/24 scope global eno1'
+EOF
+chmod +x "$fixture/bin/ip"
+EBOOK_FACTORY_CAPTURE="$fixture/delayed-calls.txt" \
+EBOOK_FACTORY_IP_STATE="$fixture/ip-state" \
+EBOOK_FACTORY_PRIVATE_WAIT_SECONDS=1 \
+EBOOK_FACTORY_BIND_TO_LOOPBACK=false \
+TAILSCALE_BIN="$fixture/bin/tailscale" \
+EBOOK_FACTORY_PRIVATE_INTERFACES=eno1 \
+EBOOK_FACTORY_TLS_CERT="$fixture/cert.pem" \
+EBOOK_FACTORY_TLS_KEY="$fixture/key.pem" \
+PATH="$fixture/bin:$PATH" \
+  "$project_root/scripts/serve-api.sh"
+grep -Fq -- '--host 192.168.29.14' "$fixture/delayed-calls.txt"
+
+cat >"$fixture/bin/ip" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' '2: eno1    inet 192.168.29.14/24 scope global eno1'
+EOF
+chmod +x "$fixture/bin/ip"
+
 EBOOK_FACTORY_CAPTURE="$fixture/private-tls-calls.txt" \
 EBOOK_FACTORY_PRIVATE_TLS=true \
 EBOOK_FACTORY_BIND_TO_LOOPBACK=false \
