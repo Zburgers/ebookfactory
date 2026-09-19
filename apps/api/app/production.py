@@ -120,7 +120,10 @@ def assemble_section_revisions(
         ordered.append((section, revision))
     if len(ordered) != len(set(section_ids)):
         raise ValueError("assembly section revisions are incomplete")
-    return "\n\n".join(f"## {section.heading}\n\n{revision.content}" for section, revision in sorted(ordered, key=lambda pair: pair[0].order_no))
+    return "\n\n".join(
+        f"## {section.heading}\n\n{re.sub(r'(?m)^##(?=[ \\t])', '###', revision.content)}"
+        for section, revision in sorted(ordered, key=lambda pair: pair[0].order_no)
+    )
 
 
 def validate_production_text(content: str, *, page_target: bool, target_pages: dict | None = None) -> None:

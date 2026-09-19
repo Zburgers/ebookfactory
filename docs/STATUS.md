@@ -10,6 +10,14 @@ does not claim a real 50–150-page provider run, so H4 and the score remain
 conservative. API evidence: 66 unit tests plus 21 PostgreSQL recovery tests;
 worker 28/28 and dashboard syntax checks pass.
 
+The first real 50-page probe completed all 13 section drafts but exposed a
+production assembly defect: provider section drafts contained nested `##`
+headings that collided with the manuscript section grammar. The run failed
+durably at assembly and propagated to review; no partial manuscript was
+accepted. Assembly now nests those internal headings as `###`, with a red/green
+regression and an independent Luna-high GO review. A replay is required before
+H4 is credited.
+
 2026-09-19: The editorial graph now includes a durable review task after
 production, with role-specific configured models, bounded persisted section
 context, typed task-result responses, and transitive dependency failure events.

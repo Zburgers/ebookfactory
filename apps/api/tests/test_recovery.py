@@ -236,6 +236,29 @@ def test_section_assembly_rejects_dependencies_from_another_run(database_session
         )
 
 
+def test_section_assembly_nests_internal_headings(database_session: Session) -> None:
+    project_id = database_session.info["fixture_project_id"]
+    brief_id = database_session.scalar(select(BriefRevision.id).where(BriefRevision.project_id == project_id))
+    database_session.commit()
+    section_id = create_section(database_session, project_id=project_id, order_no=1, heading="Opening")
+    revision = save_section_revision(database_session, section_id=section_id, content="## Subheading\n\nBody.", summary="worker")
+    run = ProductionRun(project_id=project_id, approved_brief_id=brief_id, budget={}, state="producing")
+    database_session.add(run)
+    database_session.flush()
+    task = Task(
+        run_id=run.id,
+        task_type="section-draft",
+        status="succeeded",
+        result_refs={"section_id": str(section_id), "revision_id": str(revision.revision_id)},
+    )
+    database_session.add(task)
+    database_session.commit()
+    assembled = assemble_section_revisions(database_session, project_id=project_id, run_id=run.id, section_task_ids=[task.id])
+    assert "## Opening" in assembled
+    assert "### Subheading" in assembled
+    assert len(parse_production_sections(assembled, page_target=True)) == 1
+
+
 def test_terminal_outline_failure_fails_dependents_and_run(database_session: Session) -> None:
     brief = database_session.scalar(
         select(BriefRevision).where(BriefRevision.project_id == database_session.info["fixture_project_id"])
