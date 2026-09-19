@@ -577,13 +577,15 @@ class ProductionOutputResponse(BaseModel):
     usage_call_id: UUID | None = None
 
 
-def _verify_existing_production_artifact(*, artifact: Artifact, path: Path, run_id: UUID, revision_id: UUID, content: bytes, mime_type: str = "text/markdown") -> None:
+def _verify_existing_production_artifact(*, artifact: Artifact, path: Path, run_id: UUID, revision_id: UUID, content: bytes, mime_type: str = "text/markdown", attempt_id: UUID | None = None, usage_call_id: UUID | None = None) -> None:
     """Allow immutable artifact reuse only when disk and registration agree."""
     if (not path.is_file() or hashlib.sha256(content).hexdigest() != artifact.sha256
         or path.stat().st_size != artifact.byte_count
         or hashlib.sha256(path.read_bytes()).hexdigest() != artifact.sha256
         or artifact.mime_type != mime_type or artifact.run_id != run_id
-        or artifact.revision_id != revision_id):
+        or artifact.revision_id != revision_id
+        or (attempt_id is not None and artifact.attempt_id != attempt_id)
+        or (usage_call_id is not None and artifact.usage_call_id != usage_call_id)):
         raise ValueError("existing artifact does not match production result")
 
 
@@ -2128,7 +2130,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         content = payload.content.encode()
                         _verify_existing_production_artifact(
                             artifact=artifact, path=existing_path, run_id=output.run_id,
-                            revision_id=output.revision_id, content=content,
+                            revision_id=output.revision_id, content=content, attempt_id=attempt.id,
                         )
 
                     art_artifact = None
@@ -2177,6 +2179,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             _verify_existing_production_artifact(
                                 artifact=art_artifact, path=art_candidate_path, run_id=output.run_id,
                                 revision_id=output.revision_id, content=art_content, mime_type=payload.art.mime_type,
+                                attempt_id=attempt.id, usage_call_id=art_usage_call_id,
                             )
 
                     usage_call_id = None
