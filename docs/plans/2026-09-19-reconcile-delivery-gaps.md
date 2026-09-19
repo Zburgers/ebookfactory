@@ -2,7 +2,7 @@
 
 ## Objective
 
-Review the deployed candidate `codex/ebook-factory-v2` at `cbce23c` (runtime
+Review the deployed candidate `codex/ebook-factory-v2` at `f04effc` (runtime
 transport change `88f7680`), follow the
 actual ebook journey, close every defect that can be completed without owner
 credentials or paid external actions, and leave an evidence-backed handoff for
