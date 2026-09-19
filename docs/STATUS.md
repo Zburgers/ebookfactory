@@ -1,5 +1,14 @@
 # Build status
 
+2026-09-19: Independent re-review of the page/artifact packet found six
+concrete gaps. Revision `6cfdb5d` repairs four: page-target manuscripts now
+enforce estimated 100–180 words/page bounds, downloads verify SHA-256 as well
+as size, OpenAPI describes the provider connection-test policy, and the Pi
+runner flushes an unterminated final JSONL event. The earlier `c53c700` repair
+normalizes Codex art usage keys before persistence. The default self-signed TLS
+identity remains the unresolved H1; the page workflow still lacks a real
+50–150 page provider run and the score remains conservative.
+
 2026-09-19: Revisions `c5e05e9`, `205d1ca` and `e2fcd8e` extend the durable
 book path. Studio now submits a selected 50–150 page target (or an explicit
 word range), the API rejects reversed ranges, and project artifacts have

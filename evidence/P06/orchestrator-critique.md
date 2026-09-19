@@ -58,3 +58,10 @@ security needed exact AND/header contracts, and in-memory login limits were
 per-listener. The code repairs for the latter three are in `952bfc2`; the
 self-signed trust limitation remains explicitly open in
 `evidence/P10/security-repair.md`.
+
+The same critic reviewed the page/artifact packet through `205d1ca` and found
+page bounds, art usage normalization, connection-test OpenAPI detail,
+artifact hash verification, and final JSONL flushing gaps. Revisions `c53c700`
+and `6cfdb5d` repair those findings with focused tests. The critic's runtime
+was GPT-5 Codex despite the requested Luna high override; no Luna identity is
+claimed.
