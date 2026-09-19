@@ -1,7 +1,7 @@
 import { fetchProtectedArtifact } from "./artifact-client.js";
-import { artifactFilename, artifactPresentation, conversationEmptyState, deriveStageStates, executionEventPresentation, executionTaskTree, formatArtifactSize, formatBriefLength, groupArtifact, kindlePreviewCheckpoint } from "./view-models.js";
+import { artifactFilename, artifactPresentation, conversationEmptyState, deriveStageStates, executionEventPresentation, executionTaskTree, formatArtifactSize, formatBriefLength, formatUsageCost, formatUsageTokens, groupArtifact, kindlePreviewCheckpoint, modelCatalogLabel, usageBasisLabel, usageEstimateLabel } from "./view-models.js";
 
-const state = { projects: [], selected: null, sections: [], reviews: [], artifacts: [], events: [], messages: [], execution: null, packageResult: null, providers: [], catalog: null, eventCursor: 0, streamController: null, liveAssistant: null, replayingEvents: false, artifactUrls: [] };
+const state = { projects: [], selected: null, sections: [], reviews: [], artifacts: [], events: [], messages: [], execution: null, packageResult: null, providers: [], catalog: null, usage: null, githubBilling: null, eventCursor: 0, streamController: null, liveAssistant: null, replayingEvents: false, artifactUrls: [] };
 const $ = (selector) => document.querySelector(selector);
 const ownerToken = () => sessionStorage.getItem("ebook-factory-owner-token") || "";
 const applyTheme = (theme) => { document.documentElement.dataset.theme = theme; $("#theme-label").textContent = theme === "dark" ? "Light surface" : "Night surface"; $("#theme-icon").textContent = theme === "dark" ? "○" : "●"; localStorage.setItem("ebook-factory-theme", theme); };
@@ -9,15 +9,43 @@ applyTheme(localStorage.getItem("ebook-factory-theme") || "dark");
 $("#theme-toggle").addEventListener("click", () => applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
 const api = async (path, options = {}) => { const headers = { "content-type": "application/json", ...(options.headers || {}) }; const token = ownerToken(); if (token) headers.Authorization = `Bearer ${token}`; const response = await fetch(path, { ...options, headers }); if (!response.ok) { const error = new Error((await response.text()).slice(0, 240)); error.status = response.status; throw error; } return response.status === 204 ? null : response.json(); };
 const showError = (id, error) => { $(id).textContent = error.message || String(error); };
+function skeletonNodes(variant, count = 3) {
+  const nodes = [];
+  for (let index = 0; index < count; index += 1) {
+    const node = document.createElement(variant === "stages" ? "li" : "div");
+    node.className = `skeleton skeleton-${variant}`;
+    if (variant === "cards") node.innerHTML = "<span></span><span></span><span></span>";
+    if (variant === "stats") node.innerHTML = "<span></span><strong></strong><em></em>";
+    if (variant === "messages") node.innerHTML = "<span></span><span></span>";
+    if (variant === "stages") node.innerHTML = "<span></span><div><span></span><span></span></div>";
+    if (variant === "artifacts") node.innerHTML = "<span></span><span></span><span></span><em></em>";
+    if (variant === "rows" || variant === "block") node.innerHTML = "<span></span><span></span><span></span>";
+    nodes.push(node);
+  }
+  return nodes;
+}
+function showSkeleton(selector, variant = "rows", count = 3) {
+  const box = $(selector);
+  if (!box) return;
+  box.dataset.loading = "true";
+  box.setAttribute("aria-busy", "true");
+  box.replaceChildren(...skeletonNodes(variant, count));
+}
+function clearSkeleton(selector) {
+  const box = typeof selector === "string" ? $(selector) : selector;
+  if (!box) return;
+  delete box.dataset.loading;
+  box.removeAttribute("aria-busy");
+}
 function addSavedOption(select, value, label) { if (!value) return; const option = [...select.options].find((candidate) => candidate.value === value); if (option) { option.selected = true; return; } const saved = document.createElement("option"); saved.value = value; saved.textContent = label + " (saved; unavailable)"; saved.selected = true; select.append(saved); }
-function populateCatalogSelects(saved = {}) { const models = state.catalog?.models || []; const providerSelect = $("#provider-select"); const modelSelects = [$("#orchestration-model"), $("#drafting-model"), $("#review-model")]; providerSelect.replaceChildren(); [...new Set(models.map((model) => model.provider))].sort().forEach((provider) => { const option = document.createElement("option"); option.value = provider; option.textContent = provider; providerSelect.append(option); }); addSavedOption(providerSelect, saved.provider, "Provider"); modelSelects.forEach((select) => { select.replaceChildren(); models.forEach((model) => { const option = document.createElement("option"); option.value = model.qualified_model; option.textContent = model.qualified_model + " · context " + model.context + " · max " + model.max_output; select.append(option); }); }); addSavedOption($("#orchestration-model"), saved.orchestration_model, "Main orchestrator model"); addSavedOption($("#drafting-model"), saved.drafting_model, "Drafting model"); addSavedOption($("#review-model"), saved.review_model, "Review model"); }
+function populateCatalogSelects(saved = {}) { const models = state.catalog?.models || []; const providerSelect = $("#provider-select"); const modelSelects = [$("#orchestration-model"), $("#drafting-model"), $("#review-model")]; providerSelect.replaceChildren(); [...new Set(models.map((model) => model.provider))].sort().forEach((provider) => { const option = document.createElement("option"); option.value = provider; option.textContent = provider; providerSelect.append(option); }); addSavedOption(providerSelect, saved.provider, "Provider"); modelSelects.forEach((select) => { select.replaceChildren(); models.forEach((model) => { const option = document.createElement("option"); option.value = model.qualified_model; option.textContent = modelCatalogLabel(model); select.append(option); }); }); addSavedOption($("#orchestration-model"), saved.orchestration_model, "Main orchestrator model"); addSavedOption($("#drafting-model"), saved.drafting_model, "Drafting model"); addSavedOption($("#review-model"), saved.review_model, "Review model"); }
 function currentCatalogSelections() { return { provider: $("#provider-select").value, orchestration_model: $("#orchestration-model").value, drafting_model: $("#drafting-model").value, review_model: $("#review-model").value }; }
-function filterCatalogModels(provider) { const models = (state.catalog?.models || []).filter((model) => model.provider === provider); const labels = ["Main orchestrator model", "Drafting model", "Review model"]; [$("#orchestration-model"), $("#drafting-model"), $("#review-model")].forEach((select, index) => { const selected = select.value; const known = state.catalog?.models.find((model) => model.qualified_model === selected); const staleQualified = !known && selected.includes("/") && selected.split("/", 1)[0] !== provider; select.replaceChildren(); models.forEach((model) => { const option = document.createElement("option"); option.value = model.qualified_model; option.textContent = model.qualified_model + " · context " + model.context + " · max " + model.max_output; select.append(option); }); if (!staleQualified && (!known || known.provider === provider)) addSavedOption(select, selected, labels[index]); if (!select.value && select.options.length) select.selectedIndex = 0; }); }
+function filterCatalogModels(provider) { const models = (state.catalog?.models || []).filter((model) => model.provider === provider); const labels = ["Main orchestrator model", "Drafting model", "Review model"]; [$("#orchestration-model"), $("#drafting-model"), $("#review-model")].forEach((select, index) => { const selected = select.value; const known = state.catalog?.models.find((model) => model.qualified_model === selected); const staleQualified = !known && selected.includes("/") && selected.split("/", 1)[0] !== provider; select.replaceChildren(); models.forEach((model) => { const option = document.createElement("option"); option.value = model.qualified_model; option.textContent = modelCatalogLabel(model); select.append(option); }); if (!staleQualified && (!known || known.provider === provider)) addSavedOption(select, selected, labels[index]); if (!select.value && select.options.length) select.selectedIndex = 0; }); }
 function bindCatalogCoherence() { $("#provider-select").addEventListener("change", () => filterCatalogModels($("#provider-select").value)); [$("#orchestration-model"), $("#drafting-model"), $("#review-model")].forEach((select) => select.addEventListener("change", () => { const selected = state.catalog?.models.find((model) => model.qualified_model === select.value); if (selected) { $("#provider-select").value = selected.provider; filterCatalogModels(selected.provider); select.value = selected.qualified_model; } })); }
-async function loadCatalog() { const status = $("#catalog-status"); const selections = currentCatalogSelections(); try { state.catalog = await api("/providers/catalog"); status.textContent = state.catalog.models.length + " installed Pi models · source: " + state.catalog.source + " · fetched " + new Date(state.catalog.fetched_at).toLocaleString(); populateCatalogSelects(selections); if (selections.provider) filterCatalogModels(selections.provider); } catch (error) { state.catalog = null; status.textContent = "Pi model catalog unavailable: " + error.message; populateCatalogSelects(selections); } }
+async function loadCatalog() { const status = $("#catalog-status"); const selections = currentCatalogSelections(); showSkeleton("#catalog-status", "block", 1); try { state.catalog = await api("/providers/catalog"); status.textContent = state.catalog.models.length + " installed Pi models · source: " + state.catalog.source + " · fetched " + new Date(state.catalog.fetched_at).toLocaleString(); populateCatalogSelects(selections); if (selections.provider) filterCatalogModels(selections.provider); } catch (error) { state.catalog = null; status.textContent = "Pi model catalog unavailable: " + error.message; populateCatalogSelects(selections); } finally { clearSkeleton(status); } }
 
-function renderProjects() { const list = $("#project-list"); list.replaceChildren(); if (!state.projects.length) { const empty = document.createElement("p"); empty.className = "muted"; empty.textContent = "No projects yet. Start with a small idea."; list.append(empty); return; } state.projects.forEach((project) => { const card = document.createElement("button"); card.className = "project-card"; card.innerHTML = `<h3></h3><p class="muted"></p><span class="status-pill"></span>`; card.querySelector("h3").textContent = project.title; card.querySelector("p").textContent = `${project.profile} · ${project.language}`; card.querySelector("span").textContent = project.state; card.addEventListener("click", () => selectProject(project)); list.append(card); }); }
-async function loadProjects() { state.projects = await api("/projects"); renderProjects(); }
+function renderProjects() { const list = $("#project-list"); clearSkeleton(list); list.replaceChildren(); if (!state.projects.length) { const empty = document.createElement("p"); empty.className = "muted"; empty.textContent = "No projects yet. Start with a small idea."; list.append(empty); return; } state.projects.forEach((project) => { const card = document.createElement("button"); card.className = "project-card"; card.innerHTML = `<h3></h3><p class="muted"></p><span class="status-pill"></span>`; card.querySelector("h3").textContent = project.title; card.querySelector("p").textContent = `${project.profile} · ${project.language}`; card.querySelector("span").textContent = project.state; card.addEventListener("click", () => selectProject(project)); list.append(card); }); }
+async function loadProjects() { showSkeleton("#project-list", "cards", 6); try { state.projects = await api("/projects"); renderProjects(); } finally { clearSkeleton("#project-list"); } }
 async function selectProject(project) {
   state.streamController?.abort();
   state.selected = project;
@@ -41,12 +69,14 @@ async function selectProject(project) {
 
 function renderMessages() {
   const box = $("#messages");
+  clearSkeleton(box);
   box.replaceChildren();
   if (!state.messages.length) {
     const empty = document.createElement("p");
     empty.className = "muted conversation-empty";
     empty.textContent = conversationEmptyState(state.execution || { conversation: [], runs: [] });
     box.append(empty);
+    renderOrchestratorActivity();
     return;
   }
   state.messages.forEach((message) => {
@@ -55,13 +85,68 @@ function renderMessages() {
     item.textContent = message.content;
     box.append(item);
   });
+  renderOrchestratorActivity();
+}
+
+function renderOrchestratorActivity() {
+  const box = $("#orchestrator-activity");
+  if (!box) return;
+  clearSkeleton(box);
+  box.replaceChildren();
+  const events = state.events.filter((event) => event.kind?.startsWith("orchestrator.") && !["orchestrator.turn.queued", "orchestrator.turn.claimed", "orchestrator.turn.completed", "orchestrator.turn.failed", "orchestrator.turn.delta"].includes(event.kind));
+  if (!events.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted orchestrator-activity-empty";
+    empty.textContent = "Tool calls, gate decisions, and delegated work will appear here as the orchestrator acts.";
+    box.append(empty);
+    return;
+  }
+  events.slice(-24).forEach((event) => {
+    const presentation = executionEventPresentation(event);
+    const row = document.createElement("article");
+    row.className = `orchestrator-activity-row orchestrator-activity-${presentation.tone || "neutral"}`;
+    const top = document.createElement("div");
+    top.className = "orchestrator-activity-top";
+    const heading = document.createElement("strong");
+    heading.textContent = presentation.label;
+    const time = document.createElement("time");
+    time.dateTime = event.timestamp || "";
+    time.textContent = event.timestamp ? new Date(event.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "now";
+    top.append(heading, time);
+    const detail = document.createElement("p");
+    detail.textContent = presentation.detail || "Durable orchestrator activity recorded.";
+    row.append(top, detail);
+    const payload = event.payload || {};
+    const trace = {};
+    ["tool_name", "role", "gate", "status", "note", "text", "delta", "arguments", "result", "error"].forEach((key) => {
+      if (payload[key] != null && payload[key] !== "") trace[key] = payload[key];
+    });
+    if (Object.keys(trace).length) {
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = "View activity details";
+      const content = document.createElement("pre");
+      content.textContent = JSON.stringify(trace, null, 2);
+      details.append(summary, content);
+      row.append(details);
+    }
+    box.append(row);
+  });
 }
 
 async function loadMessages() {
   if (!state.selected) return;
-  state.messages = await api(`/projects/${state.selected.project_id}/messages`);
-  renderMessages();
-  renderConversationNote();
+  const projectId = state.selected.project_id;
+  showSkeleton("#messages", "messages", 3);
+  try {
+    const messages = await api(`/projects/${projectId}/messages`);
+    if (state.selected?.project_id !== projectId) return;
+    state.messages = messages;
+    renderMessages();
+    renderConversationNote();
+  } finally {
+    if (state.selected?.project_id === projectId) clearSkeleton("#messages");
+  }
 }
 
 function renderConversationNote() {
@@ -132,12 +217,17 @@ function renderBookOverview() {
 async function loadExecution() {
   if (!state.selected) return;
   const projectId = state.selected.project_id;
-  state.execution = await api(`/projects/${projectId}/execution?limit=500`);
-  if (state.selected?.project_id !== projectId) return;
-  state.selected = { ...state.selected, ...(state.execution.project || {}) };
-  renderBookOverview();
-  renderExecutionTree();
-  renderMessages();
+  showSkeleton("#execution-tree", "rows", 4);
+  try {
+    const execution = await api(`/projects/${projectId}/execution?limit=500`);
+    if (state.selected?.project_id !== projectId) return;
+    state.execution = execution;
+    state.selected = { ...state.selected, ...(state.execution.project || {}) };
+    renderBookOverview();
+    renderExecutionTree();
+  } finally {
+    if (state.selected?.project_id === projectId) clearSkeleton("#execution-tree");
+  }
 }
 
 function taskStateLabel(status) {
@@ -189,6 +279,7 @@ function renderTaskNode(task, container, depth = 0) {
 function renderExecutionTree() {
   const box = $("#execution-tree");
   if (!box) return;
+  clearSkeleton(box);
   box.replaceChildren();
   const runs = state.execution?.runs || [];
   if (!runs.length) {
@@ -227,6 +318,7 @@ function renderStageBoard() {
   const rail = $("#stage-rail");
   const summary = $("#stage-summary");
   if (!rail || !summary) return;
+  clearSkeleton(rail);
   rail.replaceChildren();
   if (!state.selected) { summary.textContent = "Select a project to see its current checkpoint."; return; }
   const stages = deriveStageStates(state.selected, { sections: state.sections, reviews: state.reviews, artifacts: state.artifacts, events: state.events });
@@ -273,12 +365,14 @@ function appendTimelineEvent(event) {
 }
 function renderTimelineEmpty() {
   const list = $("#events");
+  list.querySelectorAll(".skeleton").forEach((skeleton) => skeleton.remove());
+  clearSkeleton(list);
   if (list.children.length) return;
   const empty = document.createElement("li"); empty.className = "timeline-empty"; empty.textContent = state.events.length ? "The trace is caught up; new durable activity will appear here." : "No durable activity yet. Save and approve a brief or send an owner message to begin."; list.append(empty);
 }
 function applyEvent(event) {
   if (!state.selected || event.project_id !== state.selected.project_id || event.id <= state.eventCursor) return;
-  state.events.push(event); state.eventCursor = event.id; appendTimelineEvent(event); renderStageBoard(); renderPackageCheckpoint();
+  state.events.push(event); state.eventCursor = event.id; appendTimelineEvent(event); renderOrchestratorActivity(); renderStageBoard(); renderPackageCheckpoint();
   const payload = event.payload || {};
   if (event.kind === "orchestrator.turn.delta" && payload.delta) { if (!state.liveAssistant || state.liveAssistant.turnId !== payload.turn_id) { const element = document.createElement("div"); element.className = "message assistant streaming"; element.setAttribute("aria-live", "polite"); $("#messages").append(element); state.liveAssistant = { turnId: payload.turn_id, text: "", element }; } state.liveAssistant.text += payload.delta; state.liveAssistant.element.textContent = state.liveAssistant.text; }
   if (["orchestrator.turn.completed", "orchestrator.turn.failed"].includes(event.kind)) { state.liveAssistant = null; loadMessages().catch(() => {}); }
@@ -289,22 +383,33 @@ function applyEvent(event) {
 }
 async function loadEvents() {
   if (!state.selected) return;
+  const projectId = state.selected.project_id;
   const restartStream = Boolean(state.streamController && !state.streamController.signal.aborted);
   state.streamController?.abort(); state.streamController = null;
-  const list = $("#events"); list.replaceChildren(); state.events = []; state.eventCursor = 0; state.replayingEvents = true;
-  let events = [];
-  do { events = await api(`/projects/${state.selected.project_id}/events?after=${state.eventCursor}&limit=100`); events.forEach(applyEvent); } while (events.length === 100);
-  state.replayingEvents = false; renderTimelineEmpty(); renderStageBoard(); renderBookOverview(); renderPackageCheckpoint(); if (restartStream) startEventStream();
+  const list = $("#events"); state.events = []; state.eventCursor = 0; state.replayingEvents = true; showSkeleton(list, "rows", 6); showSkeleton("#stage-rail", "stages", 8);
+  try {
+    let events = [];
+    do { events = await api(`/projects/${projectId}/events?after=${state.eventCursor}&limit=100`); if (state.selected?.project_id !== projectId) return; events.forEach(applyEvent); } while (events.length === 100);
+    state.replayingEvents = false; renderTimelineEmpty(); renderOrchestratorActivity(); renderStageBoard(); renderBookOverview(); renderPackageCheckpoint(); if (restartStream) startEventStream();
+  } finally {
+    state.replayingEvents = false;
+    if (state.selected?.project_id === projectId) { clearSkeleton(list); clearSkeleton("#stage-rail"); }
+  }
 }
 function parseSseBlock(block) { const data = block.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n"); return data ? JSON.parse(data) : null; }
 async function startEventStream() { const projectId = state.selected?.project_id; if (!projectId) return; const controller = new AbortController(); state.streamController = controller; while (!controller.signal.aborted && state.selected?.project_id === projectId) { try { const response = await fetch(`/projects/${projectId}/events/stream?after=${state.eventCursor}&follow=true`, { headers: { Authorization: `Bearer ${ownerToken()}` }, signal: controller.signal }); if (!response.ok) throw new Error(`event stream ${response.status}`); const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = ""; while (!controller.signal.aborted) { const { done, value } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const blocks = buffer.split("\n\n"); buffer = blocks.pop() || ""; blocks.forEach((block) => { try { const event = parseSseBlock(block); if (event) applyEvent(event); } catch { /* reconnect from the durable cursor */ } }); } } catch (error) { if (controller.signal.aborted) break; await new Promise((resolve) => setTimeout(resolve, 1000)); } } }
 async function loadSections() {
   if (!state.selected) return;
-  state.sections = await api(`/projects/${state.selected.project_id}/sections`);
-  updateExportAction();
-  const list = $("#sections"); list.replaceChildren();
-  if (!state.sections.length) { const empty = document.createElement("p"); empty.className = "muted"; empty.textContent = "No accepted sections yet."; list.append(empty); renderStageBoard(); return; }
-  state.sections.forEach((section) => {
+  const projectId = state.selected.project_id;
+  const list = $("#sections"); showSkeleton(list, "rows", 4);
+  try {
+    const sections = await api(`/projects/${projectId}/sections`);
+    if (state.selected?.project_id !== projectId) return;
+    state.sections = sections;
+    updateExportAction();
+    clearSkeleton(list); list.replaceChildren();
+    if (!state.sections.length) { const empty = document.createElement("p"); empty.className = "muted"; empty.textContent = "No accepted sections yet."; list.append(empty); renderStageBoard(); return; }
+    state.sections.forEach((section) => {
     const card = document.createElement("article"); card.className = "section-card";
     const heading = document.createElement("h4"); heading.textContent = `${section.order_no}. ${section.heading}`; card.append(heading);
     const editor = document.createElement("textarea"); editor.rows = 8; editor.setAttribute("aria-label", `Edit ${section.heading}`); editor.value = section.content || ""; card.append(editor);
@@ -315,8 +420,11 @@ async function loadSections() {
     save.addEventListener("click", async () => { try { const revision = await api(`/sections/${section.section_id}/revisions`, { method: "POST", body: JSON.stringify({ content: editor.value, summary: "Owner revision", expected_parent_revision_id: section.latest_revision_id }) }); result.textContent = `Saved revision ${revision.revision}.`; await loadSections(); await loadEvents(); } catch (error) { result.textContent = error.message; } });
     exportButton.addEventListener("click", async () => { try { const packageResult = await api(`/projects/${state.selected.project_id}/exports/${section.latest_revision_id}`, { method: "POST", body: "{}" }); renderExports(packageResult); result.textContent = `${packageResult.package_state}; Kindle preview remains pending.`; } catch (error) { result.textContent = error.message; } });
     actions.append(save, exportButton); card.append(actions, result); list.append(card);
-  });
-  renderStageBoard();
+    });
+    renderStageBoard();
+  } finally {
+    if (state.selected?.project_id === projectId) clearSkeleton(list);
+  }
 }
 function currentExportRevision() {
   return state.sections.find((section) => section.latest_revision_id)?.latest_revision_id || null;
@@ -505,6 +613,7 @@ function appendArtifactReview(item, artifact) {
   review.append(noteLabel, actions, result); item.append(review);
 }
 function renderArtifactGroups(box, artifacts, emptyText = "No files recorded yet.") {
+  clearSkeleton(box);
   box.replaceChildren();
   box.className = artifacts.length ? "artifact-shelves" : "artifact-empty";
   if (!artifacts.length) { box.textContent = emptyText; return; }
@@ -529,51 +638,222 @@ function renderArtifactGroups(box, artifacts, emptyText = "No files recorded yet
 }
 async function loadArtifacts() {
   if (!state.selected) return;
-  const box = $("#artifacts"); revokeArtifactUrls();
+  const projectId = state.selected.project_id;
+  const box = $("#artifacts"); revokeArtifactUrls(); showSkeleton(box, "artifacts", 6);
   try {
-    state.artifacts = await api(`/projects/${state.selected.project_id}/artifacts`);
+    const artifacts = await api(`/projects/${projectId}/artifacts`);
+    if (state.selected?.project_id !== projectId) return;
+    state.artifacts = artifacts;
     state.packageResult = state.artifacts.some((artifact) => String(artifact.relative_path || "").startsWith("exports/"))
       ? { revision_id: state.artifacts.find((artifact) => String(artifact.relative_path || "").startsWith("exports/"))?.revision_id, title: state.execution?.brief?.title || state.selected.title, package_state: "structurally_validated" }
       : null;
     renderArtifactGroups(box, state.artifacts, "No production artifacts loaded. Approve a brief to create the first package.");
     renderStageBoard(); renderBookOverview(); renderPackageCheckpoint();
   } catch (error) {
-    state.artifacts = []; state.packageResult = null; box.className = "artifact-empty"; box.textContent = `Artifacts unavailable: ${error.message}`; renderStageBoard();
+    if (state.selected?.project_id !== projectId) return;
+    state.artifacts = []; state.packageResult = null; clearSkeleton(box); box.className = "artifact-empty"; box.textContent = `Artifacts unavailable: ${error.message}`; renderStageBoard();
+  } finally {
+    if (state.selected?.project_id === projectId) clearSkeleton(box);
   }
 }
-async function loadReviews() { if (!state.selected) return; const reviews = await api(`/projects/${state.selected.project_id}/reviews`); state.reviews = reviews; const box = $("#reviews"); box.replaceChildren(); if (!reviews.length) { renderStageBoard(); return; } const heading = document.createElement("h4"); heading.textContent = "Review findings"; box.append(heading); reviews.forEach((finding) => { const item = document.createElement("p"); item.className = "review-finding"; item.textContent = `${finding.severity} · ${finding.criterion}: ${finding.evidence}${finding.resolution_revision_id ? " · resolved" : " · open"}`; box.append(item); }); renderStageBoard(); }
+async function loadReviews() {
+  if (!state.selected) return;
+  const projectId = state.selected.project_id;
+  const box = $("#reviews"); showSkeleton(box, "rows", 2);
+  try {
+    const reviews = await api(`/projects/${projectId}/reviews`);
+    if (state.selected?.project_id !== projectId) return;
+    state.reviews = reviews; clearSkeleton(box); box.replaceChildren();
+    if (!reviews.length) { renderStageBoard(); return; }
+    const heading = document.createElement("h4"); heading.textContent = "Review findings"; box.append(heading);
+    reviews.forEach((finding) => { const item = document.createElement("p"); item.className = "review-finding"; item.textContent = `${finding.severity} · ${finding.criterion}: ${finding.evidence}${finding.resolution_revision_id ? " · resolved" : " · open"}`; box.append(item); }); renderStageBoard();
+  } finally {
+    if (state.selected?.project_id === projectId) clearSkeleton(box);
+  }
+}
 function quotaWindowLabel(snapshot, accountCount) { const seconds = Number(snapshot.window_seconds); const name = seconds === 18000 ? "5-hour window" : seconds === 604800 ? "7-day window" : "Provider window"; return accountCount > 1 ? `${name} · account ${snapshot.account_index}` : name; }
-async function loadQuota() { const summary = $("#quota-summary"); summary.textContent = "Refreshing live Codex limits…"; try { const live = await api("/quota/live"); summary.replaceChildren(); if (!live.windows?.length) { summary.textContent = "Codex limits unavailable: no measurable live windows were returned."; return; } const accountCount = Math.max(...live.windows.map((window) => Number(window.account_index) || 1)); const source = document.createElement("p"); source.className = "muted"; source.textContent = `Live source: ${live.source} · fetched ${new Date(live.fetched_at).toLocaleString()}`; summary.append(source); live.windows.forEach((window) => { const item = document.createElement("article"); item.className = "usage-call"; const heading = document.createElement("strong"); heading.textContent = quotaWindowLabel(window, accountCount); const details = document.createElement("p"); details.className = "muted"; details.textContent = `${window.used}% used · ${window.remaining}% remaining · resets ${window.reset}`; item.append(heading, details); summary.append(item); }); } catch (error) { summary.textContent = "Codex live limits unavailable: " + error.message; } }
 function displayModel(call) { const prefix = `${call.provider}/`; return call.model.startsWith(prefix) ? call.model.slice(prefix.length) : call.model; }
-function displayPurpose(purpose) { return purpose.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()); }
-function displayTokens(value) { return value == null ? "not reported" : Number(value).toLocaleString(); }
+function displayPurpose(purpose) { return String(purpose || "call").replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()); }
+function displayTokens(value) { return value == null ? "not reported" : formatUsageTokens(value); }
+function displayAmount(value, reported = false) { if (value == null) return "Unavailable"; return `${reported ? "$" : "~$"}${Number(value).toFixed(2)}`; }
+function pricingCardLabel(card) {
+  if (!card) return "Pricing unavailable for this model";
+  if (card.pricing_basis === "github_ai_credits") {
+    const credits = (value) => value == null ? "n/a" : `${(Number(value) * 100).toLocaleString()} credits/M`;
+    return `${usageBasisLabel(card.pricing_basis)} · ${credits(card.input_per_million)} input · ${credits(card.output_per_million)} output`;
+  }
+  return `${usageBasisLabel(card.pricing_basis)} · $${card.input_per_million}/M input · $${card.output_per_million}/M output`;
+}
+function appendUsagePair(parent, label, value, detail = "") {
+  const item = document.createElement("div"); item.className = "usage-pair";
+  const name = document.createElement("span"); name.textContent = label;
+  const amount = document.createElement("strong"); amount.textContent = value;
+  item.append(name, amount);
+  if (detail) { const copy = document.createElement("small"); copy.textContent = detail; item.append(copy); }
+  parent.append(item);
+}
+function renderUsageStats(usage, githubBilling) {
+  const box = $("#usage-stat-cards"); if (!box) return;
+  clearSkeleton(box); box.replaceChildren();
+  const cards = [
+    ["Tracked tokens", formatUsageTokens(usage?.processed_tokens), `${usage?.calls || 0} ${state.selected ? "project" : "workspace"} calls`, true],
+    ["Reference estimate", formatUsageCost(usage?.estimated_cost), usage?.estimated_cost_complete ? "All reported dimensions priced" : "Partial: unknown models or dimensions remain", false],
+    ["Cache savings", usage?.estimated_cache_savings == null ? "Unavailable" : formatUsageCost(usage.estimated_cache_savings), "Reference value from cache reads", false],
+    ["Copilot credits", usage?.estimated_copilot_ai_credits == null ? "Unavailable" : Number(usage.estimated_copilot_ai_credits).toLocaleString(), "Reference credits from GitHub-priced calls", false],
+    ["Recorded calls", Number(usage?.calls || 0).toLocaleString(), "Durable provider call records", false],
+  ];
+  cards.forEach(([label, value, detail, accent]) => {
+    const card = document.createElement("article"); card.className = `stat-card${accent ? " stat-card-accent" : ""}`;
+    const eyebrow = document.createElement("span"); eyebrow.textContent = label;
+    const headline = document.createElement("strong"); headline.textContent = value;
+    const copy = document.createElement("p"); copy.textContent = detail;
+    card.append(eyebrow, headline, copy); box.append(card);
+  });
+}
+function renderUsageSummary(usage) {
+  const box = $("#usage-summary"); if (!box) return;
+  clearSkeleton(box); box.replaceChildren();
+  if (!usage || !usage.calls) { const empty = document.createElement("p"); empty.className = "muted"; empty.textContent = `No provider calls recorded for this ${state.selected ? "project" : "workspace"} yet.`; box.append(empty); return; }
+  const heading = document.createElement("div"); heading.className = "usage-summary-heading";
+  const count = document.createElement("strong"); count.textContent = `${usage.calls} ${usage.calls === 1 ? "call" : "calls"}`;
+  const label = document.createElement("span"); label.textContent = state.selected ? `for ${state.selected.title}` : "in this workspace";
+  heading.append(count, label);
+  const line = document.createElement("p"); line.className = "muted"; line.textContent = `${formatUsageTokens(usage.processed_tokens)} tracked tokens · ${usage.estimated_cost_complete ? "complete rate coverage" : "estimate has unknowns"}`;
+  box.append(heading, line);
+}
+function renderUsageTokens(usage) {
+  const box = $("#usage-tokens"); if (!box) return;
+  clearSkeleton(box); box.replaceChildren();
+  [["Uncached input", usage?.input_tokens], ["Cache read", usage?.cache_read_tokens], ["Cache write", usage?.cache_write_tokens], ["Output", usage?.output_tokens], ["Reasoning", usage?.reasoning_tokens]].forEach(([label, value]) => appendUsagePair(box, label, displayTokens(value)));
+}
+function renderUsageModelBreakdown(usage) {
+  const box = $("#usage-model-breakdown"); if (!box) return;
+  clearSkeleton(box); box.replaceChildren();
+  const rows = usage?.model_breakdown || [];
+  if (!rows.length) { const empty = document.createElement("p"); empty.className = "muted"; empty.textContent = "Model data appears after a provider call is recorded."; box.append(empty); return; }
+  rows.forEach((row) => {
+    const item = document.createElement("article"); item.className = "usage-breakdown-row";
+    const top = document.createElement("div"); top.className = "usage-breakdown-top";
+    const name = document.createElement("strong"); name.textContent = displayModel(row);
+    const cost = document.createElement("span"); cost.textContent = displayAmount(row.estimated_cost);
+    top.append(name, cost);
+    const meta = document.createElement("p"); meta.className = "muted"; meta.textContent = `${row.provider} · ${row.calls} calls · ${formatUsageTokens(row.processed_tokens)} tracked tokens`;
+    const card = row.pricing_cards?.[0];
+    const basis = document.createElement("small"); basis.className = "usage-source-label"; basis.textContent = pricingCardLabel(card);
+    item.append(top, meta, basis); box.append(item);
+  });
+}
+function renderUsageDailyBreakdown(usage) {
+  const box = $("#usage-daily-breakdown"); if (!box) return;
+  clearSkeleton(box); box.replaceChildren();
+  const rows = usage?.daily_breakdown || [];
+  if (!rows.length) { const empty = document.createElement("p"); empty.className = "muted"; empty.textContent = "Daily activity appears after the first call."; box.append(empty); return; }
+  const max = Math.max(...rows.map((row) => Number(row.estimated_cost) || Number(row.processed_tokens) || 0), 1);
+  rows.slice(-14).forEach((row) => {
+    const item = document.createElement("article"); item.className = "usage-day-row";
+    const header = document.createElement("div"); header.className = "usage-breakdown-top";
+    const date = document.createElement("strong"); date.textContent = row.date;
+    const value = document.createElement("span"); value.textContent = row.estimated_cost == null ? `${formatUsageTokens(row.processed_tokens)} tokens` : displayAmount(row.estimated_cost);
+    header.append(date, value);
+    const track = document.createElement("div"); track.className = "usage-bar-track";
+    const bar = document.createElement("span"); bar.className = "usage-bar"; bar.style.width = `${Math.max(5, ((Number(row.estimated_cost) || Number(row.processed_tokens) || 0) / max) * 100)}%`; track.append(bar);
+    const meta = document.createElement("small"); meta.textContent = `${row.calls} ${row.calls === 1 ? "call" : "calls"} · ${formatUsageTokens(row.processed_tokens)} tracked tokens`;
+    item.append(header, track, meta); box.append(item);
+  });
+}
+function renderCodexPricing(usage) {
+  const box = $("#codex-pricing-summary"); if (!box) return;
+  clearSkeleton(box); box.replaceChildren();
+  const availableModels = new Set((state.catalog?.models || []).filter((model) => model.provider === "openai-codex").map((model) => String(model.qualified_model || model.model || "").split("/").pop()));
+  const cards = (usage?.pricing_catalog || []).filter((card) => card.pricing_basis === "api_equivalent" && (!availableModels.size || availableModels.has(card.model)));
+  const heading = document.createElement("p"); heading.className = "usage-note"; heading.textContent = "Published USD per 1M tokens · cache reads are discounted input · cache writes are shown when published."; box.append(heading);
+  if (!cards.length) { const empty = document.createElement("p"); empty.className = "muted"; empty.textContent = "No verified Codex model rates are available in the current catalog."; box.append(empty); return; }
+  const list = document.createElement("div"); list.className = "codex-rate-list";
+  cards.forEach((card) => {
+    const row = document.createElement("div"); row.className = "codex-rate-row";
+    const name = document.createElement("strong"); name.textContent = card.model;
+    const rate = document.createElement("span"); rate.textContent = `in $${card.input_per_million} · read $${card.cache_read_per_million} · write ${card.cache_write_per_million == null ? "n/a" : `$${card.cache_write_per_million}`} · out $${card.output_per_million}`;
+    const source = document.createElement("a"); source.href = card.source_url; source.target = "_blank"; source.rel = "noreferrer"; source.textContent = "source ↗";
+    row.append(name, rate, source); list.append(row);
+  });
+  box.append(list);
+}
 function renderUsageCalls(calls) {
   const summary = $("#usage-calls");
-  summary.replaceChildren();
+  clearSkeleton(summary); summary.replaceChildren();
   if (!calls.length) { summary.textContent = "No provider calls recorded for this scope."; return; }
   calls.forEach((call) => {
     const item = document.createElement("article"); item.className = "usage-call";
     const heading = document.createElement("strong"); heading.textContent = `${displayPurpose(call.purpose)} · ${displayModel(call)}`;
-    const meta = document.createElement("p"); meta.className = "muted"; meta.textContent = `${call.outcome} · ${displayTokens(call.input_tokens)} input · ${displayTokens(call.output_tokens)} output · subscription billing not reported`;
-    const lineage = document.createElement("details"); const summaryLine = document.createElement("summary"); summaryLine.textContent = "Show lineage"; const id = document.createElement("code"); id.textContent = `${call.provider} · ${call.call_id}`; lineage.append(summaryLine, id);
-    item.append(heading, meta, lineage); summary.append(item);
+    const meta = document.createElement("p"); meta.className = "muted"; meta.textContent = `${call.outcome} · ${displayTokens(call.processed_tokens)} tracked tokens · ${new Date(call.started_at).toLocaleString()}`;
+    const dimensions = document.createElement("p"); dimensions.className = "usage-call-dimensions"; dimensions.textContent = `${displayTokens(call.input_tokens)} input · ${displayTokens(call.cache_read_tokens)} cache read · ${displayTokens(call.cache_write_tokens)} cache write · ${displayTokens(call.output_tokens)} output`;
+    const estimate = document.createElement("p"); estimate.className = "usage-call-estimate"; estimate.textContent = `${usageEstimateLabel(call)} · ${usageBasisLabel(call.pricing_basis)}`;
+    const lineage = document.createElement("details"); const summaryLine = document.createElement("summary"); summaryLine.textContent = "Show lineage and rate source"; const id = document.createElement("code"); id.textContent = `${call.provider} · ${call.call_id}${call.pricing_source_url ? ` · ${call.pricing_source_url}` : ""}`; lineage.append(summaryLine, id);
+    item.append(heading, meta, dimensions, estimate, lineage); summary.append(item);
+  });
+}
+function renderUsagePricingNote(usage) {
+  const note = $("#usage-pricing-note"); if (!note) return;
+  note.replaceChildren();
+  const text = document.createElement("span"); text.textContent = "Reference estimates use pinned provider rates and observed token dimensions. They are not subscription invoices.";
+  note.append(text);
+  if (usage?.pricing_sources?.length) { const source = document.createElement("a"); source.href = usage.pricing_sources[0].source_url; source.target = "_blank"; source.rel = "noreferrer"; source.textContent = "View rate source ↗"; note.append(" ", source); }
+}
+function renderQuota(live) {
+  const summary = $("#quota-summary"); clearSkeleton(summary); summary.replaceChildren();
+  if (!live || live.error) { summary.textContent = `Codex live limits unavailable: ${live?.error?.message || live?.error || "request failed"}`; return; }
+  if (!live.windows?.length) { summary.textContent = "Codex limits unavailable: no measurable live windows were returned."; return; }
+  const accountCount = Math.max(...live.windows.map((window) => Number(window.account_index) || 1));
+  const source = document.createElement("p"); source.className = "usage-note"; source.textContent = `Live source: ${live.source} · fetched ${new Date(live.fetched_at).toLocaleString()}`; summary.append(source);
+  live.windows.forEach((window) => { const item = document.createElement("article"); item.className = "usage-call quota-window"; const heading = document.createElement("strong"); heading.textContent = quotaWindowLabel(window, accountCount); const details = document.createElement("p"); details.className = "muted"; details.textContent = `${window.used}% used · ${window.remaining}% remaining · resets ${window.reset}`; item.append(heading, details); summary.append(item); });
+}
+async function loadQuota() {
+  showSkeleton("#quota-summary", "rows", 3);
+  try { const live = await api("/quota/live"); renderQuota(live); return live; }
+  catch (error) { renderQuota({ error: error.message }); return null; }
+}
+function renderGithubBilling(report) {
+  const box = $("#github-billing-summary"); clearSkeleton(box); box.replaceChildren();
+  if (!report || report.status === "not_configured") {
+    const heading = document.createElement("strong"); heading.textContent = "Not connected";
+    const copy = document.createElement("p"); copy.className = "muted"; copy.textContent = "Set GITHUB_AUTH_TOKEN in the API service environment for live personal, organization, or enterprise AI-credit usage.";
+    const source = document.createElement("a"); source.href = "https://docs.github.com/en/rest/billing/usage"; source.target = "_blank"; source.rel = "noreferrer"; source.textContent = "GitHub billing API ↗";
+    box.append(heading, copy, source); return;
+  }
+  if (report.status !== "ok") { const heading = document.createElement("strong"); heading.textContent = "Live read unavailable"; const copy = document.createElement("p"); copy.className = "muted"; copy.textContent = report.http_status === 404 ? "GitHub has no personal billable Copilot record for this account, or Copilot billing is managed by an organization. Set GITHUB_BILLING_ACCOUNT_TYPE=organization and GITHUB_BILLING_ORGANIZATION when that is the billing owner." : report.error || "GitHub did not return billing data."; box.append(heading, copy); return; }
+  const account = document.createElement("p"); account.className = "usage-note"; account.textContent = `${report.account.type} · ${report.account.identifier} · ${report.period.year}-${String(report.period.month).padStart(2, "0")}`;
+  const totals = document.createElement("div"); totals.className = "github-total-grid";
+  appendUsagePair(totals, "Net reported", report.totals.net_amount == null ? "Unavailable" : `$${Number(report.totals.net_amount).toFixed(2)}`);
+  appendUsagePair(totals, "AI credits", report.totals.ai_credits == null ? "Unavailable" : Number(report.totals.ai_credits).toLocaleString());
+  appendUsagePair(totals, "Gross", report.totals.gross_amount == null ? "Unavailable" : `$${Number(report.totals.gross_amount).toFixed(2)}`);
+  appendUsagePair(totals, "Discount", report.totals.discount_amount == null ? "Unavailable" : `$${Number(report.totals.discount_amount).toFixed(2)}`);
+  const boundary = document.createElement("p"); boundary.className = "usage-note"; boundary.textContent = "Plan fee and included allowance are not returned by this usage endpoint; no balance is inferred.";
+  const source = document.createElement("a"); source.href = report.source_url; source.target = "_blank"; source.rel = "noreferrer"; source.textContent = "Official source ↗";
+  box.append(account, totals, boundary, source);
+  if (report.items?.length) { const models = document.createElement("div"); models.className = "github-model-list"; report.items.slice(0, 6).forEach((item) => { const row = document.createElement("p"); row.textContent = `${item.model} · ${item.quantity ?? "—"} credits · ${item.net_amount == null ? "amount unavailable" : `$${Number(item.net_amount).toFixed(2)}`}`; models.append(row); }); box.append(models); }
+}
+function renderUsageError(message) {
+  const regions = ["#usage-stat-cards", "#usage-summary", "#usage-tokens", "#usage-model-breakdown", "#usage-daily-breakdown", "#usage-calls", "#codex-pricing-summary", "#usage-pricing-note"];
+  regions.forEach((selector) => {
+    const box = $(selector); if (!box) return;
+    clearSkeleton(box); box.replaceChildren();
+    const error = document.createElement("p"); error.className = "usage-error"; error.textContent = message;
+    box.append(error);
   });
 }
 async function loadUsage() {
-  const summary = $("#usage-summary");
-  try {
-    const scope = state.selected ? `?project_id=${state.selected.project_id}` : "";
-    const usage = await api(`/usage${scope}`);
-    summary.replaceChildren();
-    const calls = document.createElement("p");
-    const count = document.createElement("strong"); count.textContent = usage.calls;
-    calls.append(count, ` ${state.selected ? "project" : "workspace"} calls recorded`);
-    const tokens = document.createElement("p"); tokens.textContent = `Input tokens: ${displayTokens(usage.input_tokens)} · Output tokens: ${displayTokens(usage.output_tokens)} · Reasoning tokens: ${displayTokens(usage.reasoning_tokens)}`;
-    const note = document.createElement("p"); note.className = "muted"; note.textContent = "Subscription billing is not reported by the provider.";
-    summary.append(calls, tokens, note);
-    try { renderUsageCalls(await api(`/usage/calls${scope}`)); } catch { renderUsageCalls([]); }
-    await loadQuota();
-  } catch (error) { summary.textContent = error.message; }
+  const projectId = state.selected?.project_id;
+  showSkeleton("#usage-stat-cards", "stats", 4); showSkeleton("#usage-summary", "block", 1); showSkeleton("#usage-tokens", "rows", 5); showSkeleton("#usage-model-breakdown", "rows", 3); showSkeleton("#usage-daily-breakdown", "rows", 3); showSkeleton("#usage-calls", "rows", 4); showSkeleton("#codex-pricing-summary", "rows", 5); showSkeleton("#github-billing-summary", "rows", 3);
+  const scope = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+  const [usageResult, callsResult, billingResult] = await Promise.allSettled([api(`/usage${scope}`), api(`/usage/calls${scope}`), api("/usage/github-billing")]);
+  if (state.selected?.project_id !== projectId) return;
+  const usage = usageResult.status === "fulfilled" ? usageResult.value : null;
+  const calls = callsResult.status === "fulfilled" ? callsResult.value : [];
+  const billing = billingResult.status === "fulfilled" ? billingResult.value : { status: "error", error: billingResult.reason?.message || "request failed" };
+  state.usage = usage; state.githubBilling = billing;
+  if (usage) { renderUsageStats(usage, billing); renderUsageSummary(usage); renderUsageTokens(usage); renderUsageModelBreakdown(usage); renderUsageDailyBreakdown(usage); renderCodexPricing(usage); renderUsagePricingNote(usage); }
+  else { renderUsageError(usageResult.reason?.message || "Usage unavailable. Refresh to try again."); }
+  renderUsageCalls(calls); renderGithubBilling(billing); await loadQuota();
 }
 
 document.querySelectorAll(".nav-button").forEach((button) => button.addEventListener("click", () => { document.querySelectorAll(".nav-button").forEach((other) => other.classList.toggle("active", other === button)); document.querySelectorAll(".view").forEach((view) => view.classList.toggle("active", view.id === `${button.dataset.view}-view`)); if (button.dataset.view === "usage") loadUsage().catch((error) => { $("#usage-summary").textContent = error.message; }); }));
@@ -635,9 +915,9 @@ $("#refresh-events").addEventListener("click", () => loadEvents().catch((error) 
 $("#export-current").addEventListener("click", () => buildCurrentPackage());
 $("#refresh-usage").addEventListener("click", () => loadUsage().catch((error) => window.alert(error.message)));
 $("#provider-form").addEventListener("submit", async (event) => { event.preventDefault(); const form = new FormData(event.target); const values = Object.fromEntries(form); const mismatched = [values.orchestration_model, values.drafting_model, values.review_model].some((model) => model && state.catalog?.models.some((entry) => entry.qualified_model === model && entry.provider !== values.provider)); if (mismatched) { $("#provider-result").textContent = "Choose models belonging to the selected provider."; return; } try { await api(`/providers/${encodeURIComponent(values.provider)}`, { method: "PUT", body: JSON.stringify(values) }); $("#provider-result").textContent = "Metadata saved; credential bytes remain outside PostgreSQL."; await loadProviders(); } catch (error) { $("#provider-result").textContent = error.message; } });
-async function loadProviders() { const providers = await api("/providers"); const list = $("#provider-list"); list.replaceChildren(); if (!providers.length) { const empty = document.createElement("p"); empty.className = "muted"; empty.textContent = "No provider metadata saved."; list.append(empty); return; } providers.forEach((provider) => { const item = document.createElement("div"); const line = document.createElement("p"); const name = document.createElement("strong"); name.textContent = provider.provider; line.append(name, ` · ${provider.protocol || "protocol not set"} · ${provider.credential_configured ? "credential reference set" : "credential not configured"}`); const button = document.createElement("button"); button.className = "quiet"; button.type = "button"; button.textContent = "Test connection"; button.addEventListener("click", () => testProviderConnection(provider.provider, button)); item.append(line, button); list.append(item); }); }
+async function loadProviders() { const list = $("#provider-list"); showSkeleton(list, "rows", 3); try { const providers = await api("/providers"); clearSkeleton(list); list.replaceChildren(); if (!providers.length) { const empty = document.createElement("p"); empty.className = "muted"; empty.textContent = "No provider metadata saved."; list.append(empty); return; } providers.forEach((provider) => { const item = document.createElement("div"); const line = document.createElement("p"); const name = document.createElement("strong"); name.textContent = provider.provider; line.append(name, ` · ${provider.protocol || "protocol not set"} · ${provider.credential_configured ? "credential reference set" : "credential not configured"}`); const button = document.createElement("button"); button.className = "quiet"; button.type = "button"; button.textContent = "Test connection"; button.addEventListener("click", () => testProviderConnection(provider.provider, button)); item.append(line, button); list.append(item); }); } finally { clearSkeleton(list); } }
 async function testProviderConnection(provider, button) { const status = $("#provider-result"); button.disabled = true; status.textContent = `Testing ${provider}…`; try { const result = await api(`/providers/${encodeURIComponent(provider)}/connection-test`, { method: "POST", body: "{}" }); const details = result.http_status ? ` · HTTP ${result.http_status}` : ""; status.textContent = `${provider}: ${result.outcome}${details}${result.response_id ? ` · response ${result.response_id}` : ""}`; } catch (error) { status.textContent = `${provider}: ${error.message}`; } finally { button.disabled = false; } }
-async function loadTelegramStatus() { const status = $("#telegram-status"); try { const telegram = await api("/telegram/status"); status.textContent = telegram.configured ? `Configured · ${telegram.linked_chat_count} owner chat(s) · ${telegram.linked_project_count} project link(s) · next update ${telegram.next_update_id}` : "Not configured. Set the local bot token and allowlisted chat/sender IDs; no credentials are shown here."; } catch (error) { status.textContent = error.message; } }
+async function loadTelegramStatus() { const status = $("#telegram-status"); showSkeleton(status, "block", 1); try { const telegram = await api("/telegram/status"); status.textContent = telegram.configured ? `Configured · ${telegram.linked_chat_count} owner chat(s) · ${telegram.linked_project_count} project link(s) · next update ${telegram.next_update_id}` : "Not configured. Set the local bot token and allowlisted chat/sender IDs; no credentials are shown here."; } catch (error) { status.textContent = error.message; } finally { clearSkeleton(status); } }
 $("#refresh-telegram").addEventListener("click", () => loadTelegramStatus());
 $("#telegram-link-form").addEventListener("submit", async (event) => { event.preventDefault(); const result = $("#telegram-link-result"); const button = $("#telegram-link-button"); const input = $("#telegram-chat-id"); result.textContent = ""; input.setAttribute("aria-invalid", "false"); if (!state.selected) { result.textContent = "Select a project in Studio first, then try linking again."; return; } const project = state.selected; const chatId = Number(new FormData(event.target).get("chat_id")); if (!Number.isSafeInteger(chatId)) { input.setAttribute("aria-invalid", "true"); result.textContent = "Enter a valid numeric Telegram chat ID."; return; } button.disabled = true; result.textContent = `Setting ${project.title} active for chat ${chatId}…`; try { const telegram = await api(`/projects/${project.project_id}/telegram/link`, { method: "POST", body: JSON.stringify({ chat_id: chatId }) }); result.textContent = `Chat ${chatId} now uses ${project.title}; all projects remain linked. ${telegram.linked_project_count} project link(s) active.`; await loadTelegramStatus(); } catch (error) { let detail = error.message || "request failed"; try { const parsed = JSON.parse(detail); detail = parsed.detail || detail; } catch { /* API may return plain text */ } result.textContent = `Could not set chat ${chatId}: ${detail}`; } finally { button.disabled = false; } });
 document.querySelectorAll("#brief-form [name=length_mode]").forEach((radio) => radio.addEventListener("change", (event) => { $("#page-target-fields").classList.toggle("hidden", event.target.value !== "pages"); $("#word-target-fields").classList.toggle("hidden", event.target.value !== "words"); }));

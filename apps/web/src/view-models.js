@@ -86,6 +86,60 @@ export function formatArtifactSize(bytes) {
   return `${scaled.toFixed(1)} ${unit}`;
 }
 
+export function formatUsageTokens(value) {
+  if (value == null || Number.isNaN(Number(value))) return "—";
+  const amount = Number(value);
+  const absolute = Math.abs(amount);
+  if (absolute >= 1_000_000_000) return `${(amount / 1_000_000_000).toFixed(1).replace(/\.0$/, "")}B`;
+  if (absolute >= 1_000_000) return `${(amount / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (absolute >= 1_000) return `${(amount / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  return amount.toLocaleString();
+}
+
+export function formatUsageCost(value) {
+  if (value == null || Number.isNaN(Number(value))) return "Unavailable";
+  return `~$${Number(value).toFixed(2)}`;
+}
+
+export function usageBasisLabel(basis) {
+  if (basis === "github_ai_credits") return "GitHub AI credits";
+  if (basis === "api_equivalent") return "API-equivalent reference";
+  return "Pricing unavailable";
+}
+
+export function usageEstimateLabel({ estimated_cost: estimatedCost, reported_billed_cost: reportedBilledCost } = {}) {
+  if (reportedBilledCost != null) return `$${Number(reportedBilledCost).toFixed(2)} reported`;
+  if (estimatedCost != null) return `${formatUsageCost(estimatedCost)} reference estimate`;
+  return "Billing unavailable";
+}
+
+function modelRate(value, prefix = "$", suffix = "/M") {
+  if (value == null || Number.isNaN(Number(value))) return null;
+  const amount = Number(value);
+  return `${prefix}${prefix ? amount.toFixed(2) : amount.toLocaleString()}${suffix}`;
+}
+
+export function modelCatalogLabel(model = {}) {
+  const label = model.qualified_model || model.model || "Unknown model";
+  const pricing = model.pricing;
+  const pricingParts = [];
+  if (pricing?.pricing_basis === "github_ai_credits") {
+    const creditRate = (value) => modelRate(value == null ? null : Number(value) * 100, "", " credits/M");
+    const input = creditRate(pricing.input_per_million);
+    const output = creditRate(pricing.output_per_million);
+    if (input) pricingParts.push(`${input} input`);
+    if (output) pricingParts.push(`${output} output`);
+  } else if (pricing?.pricing_basis === "api_equivalent") {
+    const input = modelRate(pricing.input_per_million);
+    const output = modelRate(pricing.output_per_million);
+    if (input) pricingParts.push(`${input} input`);
+    if (output) pricingParts.push(`${output} output`);
+  }
+  const context = model.context ? `context ${model.context}` : null;
+  const maximum = model.max_output ? `max ${model.max_output}` : null;
+  return [label, ...pricingParts, context, maximum].filter(Boolean).join(" · ");
+}
+
 export function formatEventKind(kind) {
   return EVENT_LABELS[kind] || String(kind || "Event").replaceAll(".", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
@@ -167,6 +221,32 @@ export function executionEventPresentation(event = {}) {
     const surface = payload.surface === "kdp_online_previewer" ? "KDP Online Previewer" : "Kindle Previewer";
     const hash = payload.artifact_sha256 ? ` · EPUB ${String(payload.artifact_sha256).slice(0, 12)}…` : "";
     return { label: "Kindle preview recorded", detail: `${surface} · ${decision}${hash}`, tone: payload.decision === "verified" ? "complete" : "review" };
+  }
+  if (event.kind === "orchestrator.tool.started") {
+    return { label: "Orchestrator tool started", detail: `${payload.tool_name || "A project tool"} is running.`, tone: "active" };
+  }
+  if (event.kind === "orchestrator.tool.updated") {
+    return { label: "Orchestrator tool updated", detail: `${payload.tool_name || "A project tool"} reported progress.`, tone: "active" };
+  }
+  if (event.kind === "orchestrator.tool.completed") {
+    return { label: "Orchestrator tool completed", detail: `${payload.tool_name || "A project tool"} returned a project-scoped result.`, tone: "complete" };
+  }
+  if (event.kind === "orchestrator.tool.failed") {
+    return { label: "Orchestrator tool failed", detail: `${payload.tool_name || "A project tool"} could not complete.`, tone: "review" };
+  }
+  if (event.kind === "orchestrator.message.started") {
+    return { label: "Orchestrator message started", detail: "The main orchestrator is composing a response.", tone: "active" };
+  }
+  if (event.kind === "orchestrator.message.completed") {
+    return { label: "Orchestrator message completed", detail: "The response was saved to the durable conversation.", tone: "complete" };
+  }
+  if (event.kind === "orchestrator.subagent.queued") {
+    return { label: "Subagent queued", detail: `${payload.role || "A bounded agent"} task is queued with durable ownership.`, tone: "active" };
+  }
+  if (event.kind === "orchestrator.gate.updated") {
+    const gate = String(payload.gate || "workflow").replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+    const status = { in_progress: "In progress", needs_review: "Needs review", complete: "Complete", blocked: "Blocked", pending: "Pending" }[payload.status] || String(payload.status || "updated");
+    return { label: `${gate} gate updated`, detail: `${status}${payload.note ? ` · ${payload.note}` : ""}`, tone: ["blocked", "needs_review"].includes(payload.status) ? "review" : payload.status === "complete" ? "complete" : "active" };
   }
   return { label: formatEventKind(event.kind), detail: "", tone: "neutral" };
 }
@@ -277,6 +357,17 @@ export function deriveStageStates(project, { sections = [], reviews = [], artifa
       detail: pendingImages ? "Review the artwork before approving the package." : exportsExist ? "Package is ready for your final inspection." : "The owner checkpoint comes after export.",
     },
   ];
+
+  const gateUpdates = new Map();
+  events.filter((event) => event.kind === "orchestrator.gate.updated" && event.payload?.gate).forEach((event) => {
+    gateUpdates.set(event.payload.gate, event.payload);
+  });
+  stages.forEach((stage) => {
+    const gate = gateUpdates.get(stage.key);
+    if (!gate) return;
+    const status = { in_progress: "In progress", needs_review: "Needs review", complete: "Complete", blocked: "Blocked", pending: "Pending" }[gate.status] || "Updated";
+    stage.detail = `Orchestrator gate: ${status}${gate.note ? ` · ${gate.note}` : ""} ${stage.detail}`.trim();
+  });
 
   if (terminal) {
     stages.forEach((stage) => {
