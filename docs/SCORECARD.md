@@ -11,6 +11,12 @@ The default generated TLS certificate is encrypted transport without
 authenticated server identity; that remains a separate transport-trust finding
 from the H1 provider-call gate.
 
+The outline-stage packet now adds a durable dependency-gated outline handoff,
+terminal dependency failure propagation, typed worker context contracts and
+separate outline/manuscript lineage. A real systemd run is recorded at
+`evidence/P05/outline-stage-live.md`; the score remains 85 because this is not
+yet a 50–150 page, browser-close, or full research/review/publishing proof.
+
 Revision `25268b1` plus `3a029c7` now prove a real bounded Codex image output
 and dashboard-visible production artifact. Revision `2ad955e` proves a real
 durable dashboard-to-Luna completion and live
@@ -22,7 +28,7 @@ streaming, failure-recovery, Telegram, authentication, or concurrency findings.
 | Pi/providers | 7/10 | Real dashboard-linked Luna-low subscription call with provider/model/usage attribution and the live Pi catalog/model configuration are evidenced; custom local URL/key protocol integration remains limited to its real local boundary check (`evidence/P06/orchestrator-live.md`, `evidence/P07/live-usage.md`, `evidence/P03/provider-connection.md`) |
 | Durable runtime | 14/14 | `evidence/P02/integration.md`; real PostgreSQL recovery suite covers atomic enqueue/dedupe, restart/checkpoint recovery, fencing, cancellation and concurrent claims |
 | Containment | 10/10 | Filesystem/secret isolation, enforced network/resource limits and label-scoped reconciliation all pass P04 evidence, including unrelated-container preservation |
-| Production | 16/16 | Real fiction/nonfiction output, fenced context/task lineage, owner revision, resolved review finding and a live pre-publication budget rejection are evidenced (`evidence/P05/real-production.md`, `evidence/P05/budget-blocking.md`, `evidence/P05/budget-live.md`, `evidence/P06/dashboard-correction.md`) |
+| Production | 16/16 | Real fiction/nonfiction output, durable outline-to-manuscript task lineage, fenced context/task lineage, owner revision, resolved review finding and a live pre-publication budget rejection are evidenced (`evidence/P05/real-production.md`, `evidence/P05/outline-stage-live.md`, `evidence/P05/budget-blocking.md`, `evidence/P05/budget-live.md`, `evidence/P06/dashboard-correction.md`) |
 | Dashboard | 10/10 | Real Chromium journey covered chat/brief/review, replayed events, section editing, ten export/download links, quota/settings visibility and accessibility checks (`evidence/P06/dashboard-browser-trace.md`) |
 | Usage | 8/12 | Real finalized production attribution, separate Codex-art call accounting is implemented and tested but not yet proven by a new live image call, plus idempotent totals, live redacted Codex subscription windows, explicit stale/unknown states and project-scoped call drill-down are evidenced; estimates and Copilot quota remain pending (`evidence/P07/live-usage.md`, `evidence/P07/quota-live.md`, `evidence/P07/usage-drilldown.md`) |
 | Publishing | 10/12 | Real structurally checked EPUB/PDF/DOCX/Markdown, cover, metadata and manifests are persisted; EPUBCheck and Kindle preview remain pending (`evidence/P08/publishing.md`) |

@@ -48,7 +48,7 @@ export function createProductionExecutor({
     if (configured?.protocol !== "pi-native") throw new Error(`provider ${provider} does not support pi-native execution`);
     const model = configured?.orchestration_model || configured?.drafting_model || configured?.review_model;
     if (!configured || !model) throw new Error(`configured provider ${provider} has no usable model`);
-    const result = await runProduction({ context, model, signal });
+    const result = await runProduction({ context, model, thinking: "low", taskType: context.task_type, signal });
     if (!result?.text || !result.callId) {
       throw new Error("Pi production returned an incomplete result");
     }
@@ -56,6 +56,18 @@ export function createProductionExecutor({
     const modelMatches = !result.model || result.model === model || result.model === configuredModelSuffix;
     if ((result.provider && result.provider !== provider) || !modelMatches) {
       throw new Error("Pi production provider or model conflicted with saved configuration");
+    }
+    if (context.task_type === "outline") {
+      await requestJson(baseUrl, token, "/private/worker/task-result", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          job_id: lease.job_id, worker_id: workerId, generation: lease.generation,
+          result: result.text, provider, model, call_id: result.callId, usage: result.usage ?? null,
+        }),
+        signal, requestTimeoutMs,
+      });
+      return { terminal: true };
     }
     const art = context.brief?.art_direction
       ? await readGeneratedArt(await runArt({ prompt: context.brief.art_direction, model, signal }), signal)

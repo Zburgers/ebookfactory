@@ -37,6 +37,7 @@ from app.jobs import (
     checkpoint_job,
     claim_job,
     complete_job,
+    complete_task_result,
     fail_job,
     heartbeat_job,
 )
@@ -171,6 +172,25 @@ class WorkerMutationRequest(BaseModel):
     job_id: UUID
     worker_id: str = Field(min_length=1, max_length=128)
     generation: int = Field(ge=1)
+
+
+class WorkerOutlineContext(BaseModel):
+    task_id: UUID
+    result: str
+
+
+class WorkerJobContextResponse(BaseModel):
+    project_id: UUID
+    run_id: UUID
+    task_id: UUID
+    job_id: UUID
+    task_type: str
+    cancellation_epoch: int
+    profile: str
+    language: str
+    brief: dict[str, Any]
+    budget: dict[str, Any]
+    outline: WorkerOutlineContext | None = None
 
 
 class HeartbeatRequest(WorkerMutationRequest):
@@ -509,6 +529,15 @@ class ProductionUsageRequest(BaseModel):
     cache_read_tokens: int | None = Field(default=None, ge=0)
     cache_write_tokens: int | None = Field(default=None, ge=0)
     reasoning_tokens: int | None = Field(default=None, ge=0)
+
+
+class TaskResultRequest(WorkerMutationRequest):
+    result: str = Field(min_length=1, max_length=64 * 1024)
+    provider: str = Field(min_length=1, max_length=64)
+    model: str = Field(min_length=1, max_length=128)
+    call_id: UUID | None = None
+    provider_request_id: str | None = Field(default=None, max_length=255)
+    usage: ProductionUsageRequest | None = None
 
 
 class ProductionOutputResponse(BaseModel):
@@ -1786,7 +1815,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token"),
         x_worker_id: str = Header(alias="X-Worker-ID"),
         x_generation: int = Header(alias="X-Generation"),
-    ) -> dict[str, Any]:
+    ) -> WorkerJobContextResponse:
         _require_worker_token(resolved_settings, x_ebook_worker_token)
         session = database.session()
         try:
@@ -1813,12 +1842,76 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "run_id": run.id,
                 "task_id": task.id,
                 "job_id": job.id,
+                "task_type": task.task_type,
                 "cancellation_epoch": run.cancellation_epoch,
                 "profile": project.profile,
                 "language": project.language,
                 "brief": brief.structured_brief,
                 "budget": run.budget,
+                "outline": (
+                    {"task_id": parent.id, "result": parent.result_refs.get("result", "")}
+                    if task.parent_task_id
+                    and (parent := session.get(Task, task.parent_task_id)) is not None
+                    and parent.status == "succeeded"
+                    else None
+                ),
             }
+        finally:
+            session.close()
+
+    @application.post("/private/worker/task-result", tags=["private-worker"])
+    def worker_task_result(
+        payload: TaskResultRequest,
+        x_ebook_worker_token: str = Header(default="", alias="X-Ebook-Worker-Token"),
+    ) -> dict[str, bool]:
+        _require_worker_token(resolved_settings, x_ebook_worker_token)
+        session = database.session()
+        try:
+            with session.begin():
+                row = session.execute(
+                    select(Job, Task, ProductionRun, Attempt)
+                    .join(Task, Task.id == Job.task_id)
+                    .join(ProductionRun, ProductionRun.id == Task.run_id)
+                    .join(Attempt, Attempt.task_id == Task.id)
+                    .where(
+                        Job.id == payload.job_id,
+                        Task.task_type != "production",
+                        Attempt.fencing_generation == payload.generation,
+                    )
+                    .with_for_update()
+                ).first()
+                if row is None:
+                    raise HTTPException(status_code=409, detail="task result lease is no longer current")
+                _, task, run, attempt = row
+                task.provider = payload.provider
+                task.model = payload.model
+                attempt.provider = payload.provider
+                attempt.model = payload.model
+                usage_call_id = None
+                if payload.call_id is not None:
+                    usage_result = record_usage_call(
+                        session, call_id=payload.call_id, provider=payload.provider, model=payload.model,
+                        purpose=task.task_type, outcome="succeeded", started_at=utc_now(), ended_at=utc_now(),
+                        provider_request_id=payload.provider_request_id, project_id=run.project_id, run_id=run.id,
+                        task_id=task.id, attempt_id=attempt.id,
+                        input_tokens=payload.usage.input_tokens if payload.usage else None,
+                        output_tokens=payload.usage.output_tokens if payload.usage else None,
+                        cache_read_tokens=payload.usage.cache_read_tokens if payload.usage else None,
+                        cache_write_tokens=payload.usage.cache_write_tokens if payload.usage else None,
+                        reasoning_tokens=payload.usage.reasoning_tokens if payload.usage else None,
+                        source_metadata={"source": "pi-task-result"}, manage_transaction=False,
+                    )
+                    usage_call_id = str(usage_result.call_id)
+                complete_task_result(
+                    session, job_id=payload.job_id, worker_id=payload.worker_id,
+                    generation=payload.generation,
+                    result_refs={"result": payload.result, "provider": payload.provider, "model": payload.model, **({"usage_call_id": usage_call_id} if usage_call_id else {})},
+                    manage_transaction=False,
+                )
+            return {"accepted": True}
+        except (StaleLease, CancellationRejected, ValueError) as exc:
+            session.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         finally:
             session.close()
 

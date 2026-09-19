@@ -396,6 +396,18 @@ export interface SectionView {
   content_hash: string | null;
 }
 
+export interface TaskResultRequest {
+  job_id: string;
+  worker_id: string;
+  generation: number;
+  result: string;
+  provider: string;
+  model: string;
+  call_id?: string | null;
+  provider_request_id?: string | null;
+  usage?: ProductionUsageRequest | null;
+}
+
 export interface TelegramLinkRequest {
   chat_id: number;
 }
@@ -452,6 +464,20 @@ export interface WorkerClaimRequest {
   lease_seconds?: number;
 }
 
+export interface WorkerJobContextResponse {
+  project_id: string;
+  run_id: string;
+  task_id: string;
+  job_id: string;
+  task_type: string;
+  cancellation_epoch: number;
+  profile: string;
+  language: string;
+  brief: Record<string, unknown>;
+  budget: Record<string, unknown>;
+  outline?: WorkerOutlineContext | null;
+}
+
 export interface WorkerLeaseResponse {
   job_id: string;
   task_id: string;
@@ -460,4 +486,9 @@ export interface WorkerLeaseResponse {
   generation: number;
   cancellation_epoch: number;
   lease_until: string;
+}
+
+export interface WorkerOutlineContext {
+  task_id: string;
+  result: string;
 }

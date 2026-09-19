@@ -18,6 +18,14 @@ export function buildProductionPrompt(context) {
       JSON.stringify({ project_id: context.project_id, messages: context.messages }),
     ].join("\n\n");
   }
+  if (context.task_type === "outline") {
+    return [
+      "Create a bounded outline for the approved ebook brief.",
+      "Return only a concise, non-secret outline with section headings and short descriptions.",
+      "Do not invoke tools, access files, or change project state.",
+      JSON.stringify({ project_id: context.project_id, run_id: context.run_id, brief: context.brief, budget: context.budget }),
+    ].join("\n\n");
+  }
   const pages = context.brief.target_pages;
   const pageInstruction = pages
     ? `Target ${pages.minimum}-${pages.maximum} pages, using a bounded estimate of 100-180 words per page (${(pages.minimum * 100).toLocaleString()}-${(pages.maximum * 180).toLocaleString()} words). Write an 8-15 sectioned manuscript with one ## heading per section.`
@@ -27,13 +35,19 @@ export function buildProductionPrompt(context) {
     "Preserve the requested profile, audience, language, length range and output formats.",
     pages ? `Produce a durable sectioned manuscript, not a synopsis or placeholder. ${pageInstruction}` : pageInstruction,
     "Every section must contain complete prose; never emit TODOs, filler, or planning notes as finished text.",
-    JSON.stringify({ project_id: context.project_id, run_id: context.run_id, brief: context.brief, budget: context.budget }),
+    JSON.stringify({
+      project_id: context.project_id,
+      run_id: context.run_id,
+      brief: context.brief,
+      budget: context.budget,
+      outline: context.outline,
+    }),
   ].join("\n\n");
 }
 
-export function runPiProduction({ context, model, command = "pi", signal, spawnProcess = spawn, onTextDelta }) {
+export function runPiProduction({ context, model, thinking = "low", command = "pi", signal, spawnProcess = spawn, onTextDelta }) {
   const callId = randomUUID();
-  const args = buildPiArgs({ prompt: buildProductionPrompt(context), systemPrompt: SYSTEM_PROMPT, model, thinking: "low" });
+  const args = buildPiArgs({ prompt: buildProductionPrompt(context), systemPrompt: SYSTEM_PROMPT, model, thinking });
   return new Promise((resolve, reject) => {
     const child = spawnProcess(command, args, { stdio: ["ignore", "pipe", "pipe"], shell: false });
     const events = [];

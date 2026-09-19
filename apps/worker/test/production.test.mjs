@@ -20,3 +20,14 @@ test("word-target prompt remains compatible", () => {
   });
   assert.match(prompt, /target_length/);
 });
+
+test("production prompt carries the durable outline result", () => {
+  const prompt = buildProductionPrompt({
+    project_id: "p", run_id: "r",
+    brief: { target_length: { minimum_words: 1000, maximum_words: 2000 } },
+    outline: { task_id: "outline-task", result: "## Opening\nExplain the promise." },
+    budget: {},
+  });
+  assert.match(prompt, /outline-task/);
+  assert.match(prompt, /Explain the promise/);
+});

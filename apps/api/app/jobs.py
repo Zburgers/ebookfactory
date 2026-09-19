@@ -63,7 +63,11 @@ def _existing_approval(session: Session, *, project_id: UUID, brief_id: UUID) ->
         select(ProductionRun, Task, Job)
         .join(Task, Task.run_id == ProductionRun.id)
         .join(Job, Job.task_id == Task.id)
-        .where(ProductionRun.project_id == project_id, ProductionRun.approved_brief_id == brief_id)
+        .where(
+            ProductionRun.project_id == project_id,
+            ProductionRun.approved_brief_id == brief_id,
+            Task.task_type == "production",
+        )
         .order_by(ProductionRun.created_at)
     )
     row = session.execute(statement).first()
@@ -115,9 +119,20 @@ def approve_brief_and_enqueue(
         run = ProductionRun(project_id=project_id, approved_brief_id=brief.id, budget=budget, state="queued")
         session.add(run)
         session.flush()
+        outline = Task(
+            run_id=run.id,
+            task_type="outline",
+            input_revision_ids=[str(brief.id)],
+            result_refs={},
+            status="queued",
+        )
+        session.add(outline)
+        session.flush()
         task = Task(
             run_id=run.id,
+            parent_task_id=outline.id,
             task_type="production",
+            dependencies=[str(outline.id)],
             input_revision_ids=[str(brief.id)],
             result_refs={},
             status="queued",
@@ -132,6 +147,15 @@ def approve_brief_and_enqueue(
             state="queued",
         )
         session.add(job)
+        session.flush()
+        outline_job = Job(
+            task_id=outline.id,
+            job_type="outline.start",
+            payload={"run_id": str(run.id), "task_id": str(outline.id), "cancellation_epoch": run.cancellation_epoch},
+            dedupe_key=f"outline:{brief.id}:{expected_content_hash}",
+            state="queued",
+        )
+        session.add(outline_job)
         session.flush()
         append_event(
             session,
@@ -153,20 +177,33 @@ def claim_job(session: Session, *, worker_id: str, lease_seconds: int = 60) -> J
         and_(Job.state == "running", Job.lease_until.is_not(None), Job.lease_until <= now),
     )
     with session.begin():
-        row = session.execute(
+        rows = session.execute(
             select(Job, Task, ProductionRun)
             .join(Task, Task.id == Job.task_id)
             .join(ProductionRun, ProductionRun.id == Task.run_id)
             .where(eligibility)
-            .order_by(Job.available_at, Job.created_at)
-            .limit(1)
+            .order_by(Job.available_at, Job.job_type, Job.created_at)
             .with_for_update(skip_locked=True)
-        ).first()
+        ).all()
+        row = None
+        for candidate in rows:
+            candidate_job, candidate_task, candidate_run = candidate
+            if candidate_run.state == "cancelled" or candidate_job.state == "cancelled":
+                continue
+            dependency_ids = [UUID(value) for value in (candidate_task.dependencies or [])]
+            if dependency_ids:
+                succeeded = set(
+                    session.scalars(
+                        select(Task.id).where(Task.id.in_(dependency_ids), Task.status == "succeeded")
+                    ).all()
+                )
+                if succeeded != set(dependency_ids):
+                    continue
+            row = candidate
+            break
         if row is None:
             return None
         job, task, run = row
-        if run.state == "cancelled" or job.state == "cancelled":
-            return None
 
         previous_attempt = session.scalar(
             select(Attempt)
@@ -335,9 +372,9 @@ def complete_job(
         attempt.finished_at = now
         attempt.lease_owner = None
         attempt.lease_until = None
-        if run.state == "producing":
+        if run.state == "producing" and task.task_type == "production":
             run.state = "draft_review"
-        if project is not None and project.state == "producing":
+        if project is not None and project.state == "producing" and task.task_type == "production":
             project.state = "draft_review"
         append_event(
             session,
@@ -346,6 +383,57 @@ def complete_job(
             task_id=task.id,
             kind="job.completed",
             payload={"job_id": str(job.id), "generation": generation, "result_refs": result_refs},
+        )
+
+
+def complete_task_result(
+    session: Session,
+    *,
+    job_id: UUID,
+    worker_id: str,
+    generation: int,
+    result_refs: dict[str, Any],
+    manage_transaction: bool = True,
+) -> None:
+    """Complete a bounded non-manuscript task result under its current fence."""
+
+    complete_job(
+        session,
+        job_id=job_id,
+        worker_id=worker_id,
+        generation=generation,
+        result_refs=result_refs,
+        manage_transaction=manage_transaction,
+    )
+
+
+def _fail_dependent_tasks(session: Session, *, failed_task: Task, run: ProductionRun, error_class: str) -> None:
+    """Propagate a terminal task failure through the small durable task graph."""
+
+    dependent_tasks = session.scalars(select(Task).where(Task.run_id == run.id)).all()
+    for dependent in dependent_tasks:
+        if str(failed_task.id) not in (dependent.dependencies or []):
+            continue
+        if dependent.status in {"succeeded", "failed", "cancelled"}:
+            continue
+        dependent.status = "failed"
+        dependent_job = session.scalar(select(Job).where(Job.task_id == dependent.id).with_for_update())
+        if dependent_job is not None and dependent_job.state not in {"succeeded", "failed", "cancelled"}:
+            dependent_job.state = "failed"
+            dependent_job.error_class = f"dependency_failed:{error_class}"[:128]
+            dependent_job.lease_owner = None
+            dependent_job.lease_until = None
+        append_event(
+            session,
+            project_id=run.project_id,
+            run_id=run.id,
+            task_id=dependent.id,
+            kind="job.failed",
+            payload={
+                "job_id": str(dependent_job.id) if dependent_job is not None else None,
+                "error_class": "dependency_failed",
+                "dependency_task_id": str(failed_task.id),
+            },
         )
 
 
@@ -383,6 +471,11 @@ def fail_job(
             job.state = "failed"
             task.status = "failed"
             event_kind = "job.failed"
+            _fail_dependent_tasks(session, failed_task=task, run=run, error_class=error_class)
+            run.state = "failed"
+            project = session.scalar(select(Project).where(Project.id == run.project_id).with_for_update())
+            if project is not None:
+                project.state = "failed"
         append_event(
             session,
             project_id=run.project_id,

@@ -80,7 +80,9 @@ def database_session() -> Iterator[Session]:
 
 
 def test_duplicate_approval_enqueues_one_run_and_one_job(database_session: Session) -> None:
-    brief = database_session.scalar(select(BriefRevision))
+    brief = database_session.scalar(
+        select(BriefRevision).where(BriefRevision.project_id == database_session.info["fixture_project_id"])
+    )
     assert brief is not None
     project_id = brief.project_id
     brief_id = brief.id
@@ -105,7 +107,121 @@ def test_duplicate_approval_enqueues_one_run_and_one_job(database_session: Sessi
     assert first.run_id == second.run_id
     assert first.job_id == second.job_id
     assert database_session.scalar(select(ProductionRun.id).where(ProductionRun.project_id == project_id)) == first.run_id
-    assert len(database_session.scalars(select(Job).where(Job.task_id == first.task_id)).all()) == 1
+    production = database_session.get(Task, first.task_id)
+    assert production is not None
+    assert production.task_type == "production"
+    assert len(production.dependencies) == 1
+    outline = database_session.get(Task, UUID(production.dependencies[0]))
+    assert outline is not None
+    assert outline.task_type == "outline"
+    assert len(database_session.scalars(select(Job).where(Job.task_id.in_([outline.id, production.id]))).all()) == 2
+
+
+def test_production_claim_waits_for_outline_dependency(database_session: Session) -> None:
+    brief = database_session.scalar(
+        select(BriefRevision).where(BriefRevision.project_id == database_session.info["fixture_project_id"])
+    )
+    assert brief is not None
+    project_id, brief_id, content_hash = brief.project_id, brief.id, brief.content_hash
+    database_session.commit()
+    approval = approve_brief_and_enqueue(
+        database_session, project_id=project_id, brief_id=brief_id,
+        expected_content_hash=content_hash, budget={"max_turns": 8},
+    )
+    database_session.commit()
+    production = database_session.get(Task, approval.task_id)
+    assert production is not None
+    production_job = database_session.scalar(select(Job).where(Job.task_id == production.id))
+    assert production_job is not None
+    database_session.commit()
+    first_lease = claim_job(database_session, worker_id="dependency-gate")
+    assert first_lease is not None
+    assert database_session.get(Task, first_lease.task_id).task_type == "outline"
+    database_session.commit()
+    assert claim_job(database_session, worker_id="dependency-gate") is None
+
+
+def test_terminal_outline_failure_fails_dependents_and_run(database_session: Session) -> None:
+    brief = database_session.scalar(
+        select(BriefRevision).where(BriefRevision.project_id == database_session.info["fixture_project_id"])
+    )
+    assert brief is not None
+    project_id, brief_id, content_hash = brief.project_id, brief.id, brief.content_hash
+    database_session.commit()
+    approval = approve_brief_and_enqueue(
+        database_session, project_id=project_id, brief_id=brief_id,
+        expected_content_hash=content_hash, budget={"max_turns": 4},
+    )
+    database_session.commit()
+    outline_lease = claim_job(database_session, worker_id="failing-outline", lease_seconds=60)
+    assert outline_lease is not None
+    fail_job(
+        database_session,
+        job_id=outline_lease.job_id,
+        worker_id="failing-outline",
+        generation=outline_lease.generation,
+        error_class="outline_provider_failure",
+        retryable=False,
+    )
+    database_session.commit()
+
+    production = database_session.get(Task, approval.task_id)
+    assert production is not None and production.status == "failed"
+    production_job = database_session.scalar(select(Job).where(Job.task_id == production.id))
+    assert production_job is not None and production_job.state == "failed"
+    assert database_session.scalar(select(ProductionRun.state).where(ProductionRun.id == approval.run_id)) == "failed"
+    assert database_session.scalar(select(Project.state).where(Project.id == project_id)) == "failed"
+    database_session.commit()
+    assert claim_job(database_session, worker_id="after-outline-failure") is None
+
+
+def test_outline_task_result_is_fenced_and_flows_into_production_context(database_session: Session) -> None:
+    assert DATABASE_URL is not None
+    with TestClient(
+        create_app(Settings(database_url=DATABASE_URL, worker_token="outline-worker-token", owner_token="test-owner-token")),
+        headers={"Authorization": "Bearer test-owner-token"},
+    ) as client:
+        project_response = client.post("/projects", json={"title": "Outline callback", "profile": "nonfiction", "language": "en"})
+        project_id = UUID(project_response.json()["project_id"])
+        database_session.info["cleanup_project_ids"].add(project_id)
+        brief_response = client.post(f"/projects/{project_id}/briefs", json={"structured_brief": {"promise_or_premise": "bounded outline"}})
+        brief = brief_response.json()
+        approval = client.post(
+            f"/projects/{project_id}/briefs/{brief['brief_id']}/approve",
+            json={"expected_content_hash": brief["content_hash"], "budget": {"max_turns": 4}},
+        ).json()
+        headers = {"X-Ebook-Worker-Token": "outline-worker-token"}
+        outline_lease = client.post("/private/worker/claim", json={"worker_id": "outline-worker"}, headers=headers).json()
+        context = client.get(
+            f"/private/worker/jobs/{outline_lease['job_id']}/context",
+            headers={**headers, "X-Worker-ID": "outline-worker", "X-Generation": str(outline_lease["generation"])},
+        )
+        assert context.json()["task_type"] == "outline"
+        result = client.post(
+            "/private/worker/task-result",
+            headers=headers,
+            json={
+                "job_id": outline_lease["job_id"], "worker_id": "outline-worker", "generation": outline_lease["generation"],
+                "result": "## Opening\nA bounded outline.", "provider": "test-provider", "model": "test-model",
+                "call_id": str(uuid4()), "usage": {"input_tokens": 5, "output_tokens": 7},
+            },
+        )
+        assert result.status_code == 200
+        database_session.expire_all()
+        outline_task = database_session.scalar(
+            select(Task).where(Task.run_id == UUID(approval["run_id"]), Task.task_type == "outline")
+        )
+        assert outline_task is not None and outline_task.provider == "test-provider" and outline_task.model == "test-model"
+        outline_attempt = database_session.scalar(select(Attempt).where(Attempt.task_id == outline_task.id))
+        assert outline_attempt is not None and outline_attempt.provider == "test-provider" and outline_attempt.model == "test-model"
+        database_session.commit()
+        production_lease = client.post("/private/worker/claim", json={"worker_id": "production-worker"}, headers=headers).json()
+        production_context = client.get(
+            f"/private/worker/jobs/{production_lease['job_id']}/context",
+            headers={**headers, "X-Worker-ID": "production-worker", "X-Generation": str(production_lease["generation"])},
+        )
+        assert production_context.json()["task_type"] == "production"
+        assert production_context.json()["outline"]["result"] == "## Opening\nA bounded outline."
 
 
 def test_api_project_brief_and_approval_boundary(database_session: Session) -> None:
@@ -138,7 +254,22 @@ def test_api_project_brief_and_approval_boundary(database_session: Session) -> N
             headers={"X-Ebook-Worker-Token": "test-worker-token"},
         )
         assert lease_response.status_code == 200
-        lease = lease_response.json()
+        outline_lease = lease_response.json()
+        outline_result = client.post(
+            "/private/worker/task-result",
+            headers={"X-Ebook-Worker-Token": "test-worker-token"},
+            json={
+                "job_id": outline_lease["job_id"], "worker_id": "api-test-worker", "generation": outline_lease["generation"],
+                "result": "## Opening\nA bounded outline.", "provider": "test-provider", "model": "test-model",
+                "call_id": str(uuid4()), "usage": {"input_tokens": 2, "output_tokens": 3},
+            },
+        )
+        assert outline_result.status_code == 200
+        lease = client.post(
+            "/private/worker/claim",
+            json={"worker_id": "api-test-worker", "lease_seconds": 60},
+            headers={"X-Ebook-Worker-Token": "test-worker-token"},
+        ).json()
         context_response = client.get(
             f"/private/worker/jobs/{lease['job_id']}/context",
             headers={
@@ -182,15 +313,21 @@ def test_api_project_brief_and_approval_boundary(database_session: Session) -> N
     database_session.expire_all()
     assert database_session.scalar(select(ProductionRun.state).where(ProductionRun.project_id == UUID(project_id))) == "draft_review"
     assert database_session.scalar(select(Project.state).where(Project.id == UUID(project_id))) == "draft_review"
-    assert database_session.scalar(select(Task.provider).where(Task.run_id == UUID(output_response.json()["run_id"]))) == "test-provider"
-    usage_call = database_session.scalar(select(UsageCall).where(UsageCall.project_id == UUID(project_id)))
+    assert database_session.scalar(
+        select(Task.provider).where(
+            Task.run_id == UUID(output_response.json()["run_id"]), Task.task_type == "production"
+        )
+    ) == "test-provider"
+    usage_call = database_session.scalar(
+        select(UsageCall).where(UsageCall.project_id == UUID(project_id), UsageCall.purpose == "production")
+    )
     assert usage_call is not None
     assert usage_call.input_tokens == 4
     assert usage_call.output_tokens == 6
     assert usage_call.ended_at is not None
     assert usage_call.started_at <= usage_call.ended_at
     usage_calls = database_session.scalars(select(UsageCall).where(UsageCall.project_id == UUID(project_id))).all()
-    assert {call.purpose for call in usage_calls} == {"production", "art"}
+    assert {call.purpose for call in usage_calls} == {"outline", "production", "art"}
     art_usage = next(call for call in usage_calls if call.purpose == "art")
     assert art_usage.input_tokens == 12
     assert art_usage.output_tokens == 3
@@ -211,6 +348,20 @@ def test_production_result_rolls_back_when_final_fence_rejects(database_session:
         assert client.post(
             f"/projects/{project_id}/briefs/{brief['brief_id']}/approve",
             json={"expected_content_hash": brief["content_hash"], "budget": {"max_turns": 4}},
+        ).status_code == 200
+        outline_lease = client.post(
+            "/private/worker/claim",
+            json={"worker_id": "rollback-worker", "lease_seconds": 60},
+            headers={"X-Ebook-Worker-Token": "test-worker-token"},
+        ).json()
+        assert client.post(
+            "/private/worker/task-result",
+            headers={"X-Ebook-Worker-Token": "test-worker-token"},
+            json={
+                "job_id": outline_lease["job_id"], "worker_id": "rollback-worker", "generation": outline_lease["generation"],
+                "result": "## Opening\nA bounded outline.", "provider": "test-provider", "model": "test-model",
+                "call_id": str(uuid4()), "usage": {"input_tokens": 2, "output_tokens": 3},
+            },
         ).status_code == 200
         lease = client.post(
             "/private/worker/claim",
@@ -237,8 +388,13 @@ def test_production_result_rolls_back_when_final_fence_rejects(database_session:
         database_session.expire_all()
         assert database_session.scalar(select(SectionRevision).join(Section).where(Section.project_id == project_id)) is None
         assert database_session.scalar(select(Artifact).where(Artifact.run_id.in_(select(ProductionRun.id).where(ProductionRun.project_id == project_id)))) is None
-        assert database_session.scalar(select(UsageCall).where(UsageCall.project_id == project_id)) is None
-        assert database_session.scalar(select(Job.state).join(Task).join(ProductionRun).where(ProductionRun.project_id == project_id)) == "running"
+        outline_usage = database_session.scalar(select(UsageCall).where(UsageCall.project_id == project_id))
+        assert outline_usage is not None and outline_usage.purpose == "outline"
+        assert database_session.scalar(
+            select(Job.state).join(Task).join(ProductionRun).where(
+                ProductionRun.project_id == project_id, Task.task_type == "production"
+            )
+        ) == "running"
         monkeypatch.setattr(main_module, "complete_job", original_complete_job)
         retry_response = client.post(
             "/private/worker/production-result",
@@ -254,8 +410,14 @@ def test_production_result_rolls_back_when_final_fence_rejects(database_session:
     database_session.expire_all()
     assert len(database_session.scalars(select(SectionRevision).join(Section).where(Section.project_id == project_id)).all()) == 1
     assert len(database_session.scalars(select(Artifact).where(Artifact.run_id.in_(select(ProductionRun.id).where(ProductionRun.project_id == project_id)))).all()) == 1
-    assert len(database_session.scalars(select(UsageCall).where(UsageCall.project_id == project_id)).all()) == 1
-    assert database_session.scalar(select(Job.state).join(Task).join(ProductionRun).where(ProductionRun.project_id == project_id)) == "succeeded"
+    usage_calls = database_session.scalars(select(UsageCall).where(UsageCall.project_id == project_id)).all()
+    assert len(usage_calls) == 2
+    assert {call.purpose for call in usage_calls} == {"outline", "production"}
+    assert database_session.scalar(
+        select(Job.state).join(Task).join(ProductionRun).where(
+            ProductionRun.project_id == project_id, Task.task_type == "production"
+        )
+    ) == "succeeded"
 
 
 def test_production_result_rejects_whitespace_content(database_session: Session) -> None:
@@ -267,6 +429,16 @@ def test_production_result_rejects_whitespace_content(database_session: Session)
         brief_response = client.post(f"/projects/{project_id}/briefs", json={"structured_brief": {"promise_or_premise": "whitespace"}})
         brief = brief_response.json()
         client.post(f"/projects/{project_id}/briefs/{brief['brief_id']}/approve", json={"expected_content_hash": brief["content_hash"], "budget": {"max_turns": 4}})
+        outline_lease = client.post("/private/worker/claim", json={"worker_id": "whitespace-worker", "lease_seconds": 60}, headers={"X-Ebook-Worker-Token": "test-worker-token"}).json()
+        assert client.post(
+            "/private/worker/task-result",
+            headers={"X-Ebook-Worker-Token": "test-worker-token"},
+            json={
+                "job_id": outline_lease["job_id"], "worker_id": "whitespace-worker", "generation": outline_lease["generation"],
+                "result": "## Opening\nA bounded outline.", "provider": "test", "model": "test",
+                "call_id": str(uuid4()), "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        ).status_code == 200
         lease = client.post("/private/worker/claim", json={"worker_id": "whitespace-worker", "lease_seconds": 60}, headers={"X-Ebook-Worker-Token": "test-worker-token"}).json()
         response = client.post(
             "/private/worker/production-result",
@@ -354,6 +526,16 @@ def _approve(database_session: Session) -> tuple[object, object]:
         budget={"max_turns": 8},
     )
     database_session.commit()
+    outline_lease = claim_job(database_session, worker_id="outline-worker", lease_seconds=60)
+    assert outline_lease is not None
+    complete_job(
+        database_session,
+        job_id=outline_lease.job_id,
+        worker_id="outline-worker",
+        generation=outline_lease.generation,
+        result_refs={"result": "## Opening\nA bounded outline."},
+    )
+    database_session.commit()
     return result, project_id
 
 
@@ -408,7 +590,7 @@ def test_claim_heartbeat_checkpoint_and_completion_are_fenced(database_session: 
         "artifact": "private/draft.md"
     }
     event_kinds = [event.kind for event in replay_events(database_session, project_id=project_id)]
-    assert event_kinds == ["run.approved", "job.claimed", "job.checkpointed", "job.completed"]
+    assert event_kinds == ["run.approved", "job.claimed", "job.completed", "job.claimed", "job.checkpointed", "job.completed"]
 
 
 def test_concurrent_claims_have_one_owner(database_session: Session) -> None:

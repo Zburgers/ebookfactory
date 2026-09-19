@@ -2191,6 +2191,88 @@
         "title": "SectionView",
         "type": "object"
       },
+      "TaskResultRequest": {
+        "properties": {
+          "call_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Id"
+          },
+          "generation": {
+            "minimum": 1.0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_request_id": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Request Id"
+          },
+          "result": {
+            "maxLength": 65536,
+            "minLength": 1,
+            "title": "Result",
+            "type": "string"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductionUsageRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "worker_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "worker_id",
+          "generation",
+          "result",
+          "provider",
+          "model"
+        ],
+        "title": "TaskResultRequest",
+        "type": "object"
+      },
       "TelegramLinkRequest": {
         "properties": {
           "chat_id": {
@@ -2537,6 +2619,80 @@
         "title": "WorkerClaimRequest",
         "type": "object"
       },
+      "WorkerJobContextResponse": {
+        "properties": {
+          "brief": {
+            "additionalProperties": true,
+            "title": "Brief",
+            "type": "object"
+          },
+          "budget": {
+            "additionalProperties": true,
+            "title": "Budget",
+            "type": "object"
+          },
+          "cancellation_epoch": {
+            "title": "Cancellation Epoch",
+            "type": "integer"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "language": {
+            "title": "Language",
+            "type": "string"
+          },
+          "outline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkerOutlineContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "profile": {
+            "title": "Profile",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "task_type": {
+            "title": "Task Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "run_id",
+          "task_id",
+          "job_id",
+          "task_type",
+          "cancellation_epoch",
+          "profile",
+          "language",
+          "brief",
+          "budget"
+        ],
+        "title": "WorkerJobContextResponse",
+        "type": "object"
+      },
       "WorkerLeaseResponse": {
         "properties": {
           "attempt_id": {
@@ -2583,6 +2739,25 @@
           "lease_until"
         ],
         "title": "WorkerLeaseResponse",
+        "type": "object"
+      },
+      "WorkerOutlineContext": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "result"
+        ],
+        "title": "WorkerOutlineContext",
         "type": "object"
       }
     },
@@ -3782,9 +3957,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Worker Job Context Private Worker Jobs  Job Id  Context Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/WorkerJobContextResponse"
                 }
               }
             },
@@ -3917,6 +4090,68 @@
           }
         ],
         "summary": "List Worker Providers",
+        "tags": [
+          "private-worker"
+        ]
+      }
+    },
+    "/private/worker/task-result": {
+      "post": {
+        "operationId": "worker_task_result_private_worker_task_result_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Ebook-Worker-Token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Ebook-Worker-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskResultRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Worker Task Result Private Worker Task Result Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "WorkerToken": []
+          }
+        ],
+        "summary": "Worker Task Result",
         "tags": [
           "private-worker"
         ]

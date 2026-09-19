@@ -1,5 +1,15 @@
 # Build status
 
+2026-09-19: The durable production path now enqueues an outline task before
+the manuscript task. The production task is dependency-gated, receives the
+persisted outline through the fenced worker context, and records outline and
+manuscript provider/model usage separately. Terminal outline failure now
+propagates to dependent jobs and marks the run/project failed rather than
+leaving work stranded. A real enabled-systemd run completed both tasks,
+persisted a 9-section manuscript and entered `draft_review`; evidence is at
+`evidence/P05/outline-stage-live.md`. This closes the outline handoff hole but
+does not claim the full 50–150 page research/review/publishing graph.
+
 2026-09-19: A real disposable production restart probe reclaimed one job from
 fencing generation 1 to generation 2 after the worker service was killed and
 automatically restarted. The probe then found an unbounded Codex art
