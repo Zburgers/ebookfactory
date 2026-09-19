@@ -11,6 +11,10 @@
   (SHA-256
   `37ab2151798eaa4fd4d59aa0f29632f008fcdd42bff29522c7f9c4918b23277c`), the
   command returned `0 fatals / 0 errors / 0 warnings / 0 infos`.
+- Validator packet revision: `72c7a9a`; runtime used Node.js `v26.0.0`, npm
+  `11.12.1`, and the validator reported EPUBCheck `v5.4.0`. `npm ci
+  --prefix tools/epubcheck --ignore-scripts --no-audit --fund=false --dry-run`
+  reported the lockfile was up to date.
 - Kindle Previewer was not run, so `kindle_preview_pending` remains explicit
   and no Amazon certification is claimed. PDF is a reading copy, not a KDP
   print guarantee.
